@@ -30,6 +30,7 @@
   function setNotice(message) {
     const notice = document.getElementById('notice');
     notice.textContent = message || '';
+    notice.classList.toggle('notice--active', Boolean(message));
   }
 
   function setLoading(isLoading) {
@@ -59,6 +60,7 @@
     state.lastFetch = Date.now();
     const board = document.getElementById('board');
     board.innerHTML = '';
+    renderSummary(data);
 
     if (!data.chargers.length) {
       const empty = document.createElement('div');
@@ -74,12 +76,51 @@
     updateReservationUI(data);
     loadSlots();
     updateStickyBar();
+    updateSelectionUI();
     updateCountdowns();
+  }
+
+  function renderSummary(data) {
+    const summary = document.getElementById('summary');
+    if (!summary) {
+      return;
+    }
+    if (!data?.chargers?.length) {
+      summary.classList.add('is-hidden');
+      summary.innerHTML = '';
+      return;
+    }
+    summary.classList.remove('is-hidden');
+    const counts = data.chargers.reduce(
+      (acc, charger) => {
+        acc[charger.statusKey] = (acc[charger.statusKey] || 0) + 1;
+        return acc;
+      },
+      { free: 0, in_use: 0, reserved: 0, overdue: 0 }
+    );
+    summary.innerHTML = '';
+    [
+      { key: 'free', label: 'Free' },
+      { key: 'in_use', label: 'In use' },
+      { key: 'reserved', label: 'Reserved' },
+      { key: 'overdue', label: 'Overdue' }
+    ].forEach((item) => {
+      const chip = document.createElement('div');
+      chip.className = `summary-item status-${item.key}`;
+      const count = document.createElement('strong');
+      count.textContent = counts[item.key] || 0;
+      const label = document.createElement('span');
+      label.textContent = item.label;
+      chip.appendChild(count);
+      chip.appendChild(label);
+      summary.appendChild(chip);
+    });
   }
 
   function createCard(charger) {
     const card = document.createElement('div');
     card.className = `card status-${charger.statusKey}`;
+    card.dataset.chargerId = charger.id;
 
     const header = document.createElement('div');
     header.className = 'card-header';
@@ -145,17 +186,17 @@
     body.className = 'card-body';
 
     if (charger.session) {
-      body.appendChild(createInfoRow('Max time', formatDuration(charger.maxMinutes)));
+      body.appendChild(createInfoRow('Max time', formatDuration(charger.maxMinutes), { secondary: true }));
       body.appendChild(createInfoRow('Ends at', formatTime(charger.session.endTime)));
       const countdown = createInfoRow('Countdown', '--');
       countdown.querySelector('.value').classList.add('countdown');
       countdown.querySelector('.value').dataset.endTime = charger.session.endTime;
       body.appendChild(countdown);
     } else if (charger.reservation) {
-      body.appendChild(createInfoRow('Max time', formatDuration(charger.maxMinutes)));
+      body.appendChild(createInfoRow('Max time', formatDuration(charger.maxMinutes), { secondary: true }));
       body.appendChild(createInfoRow('Reserved at', formatTime(charger.reservation.startTime)));
     } else {
-      body.appendChild(createInfoRow('Max time', formatDuration(charger.maxMinutes)));
+      body.appendChild(createInfoRow('Max time', formatDuration(charger.maxMinutes), { secondary: true }));
       body.appendChild(createInfoRow('Status', 'Available now'));
     }
 
@@ -172,6 +213,10 @@
     card.appendChild(header);
     card.appendChild(body);
     card.appendChild(actions);
+    const hint = document.createElement('div');
+    hint.className = 'card-hint';
+    hint.textContent = 'Tap to select';
+    card.appendChild(hint);
     card.addEventListener('click', (event) => {
       if (event.target.closest('button')) {
         return;
@@ -181,8 +226,12 @@
     return card;
   }
 
-  function createInfoRow(label, value) {
+  function createInfoRow(label, value, options = {}) {
     const row = document.createElement('div');
+    row.className = 'info-row';
+    if (options.secondary) {
+      row.classList.add('secondary');
+    }
     const labelSpan = document.createElement('span');
     labelSpan.className = 'label';
     labelSpan.textContent = label;
@@ -200,6 +249,28 @@
     button.className = className;
     button.addEventListener('click', onClick);
     return button;
+  }
+
+  function slotKey(slot) {
+    return encodeURIComponent(`${slot.chargerId}::${slot.startTime}`);
+  }
+
+  function updateSelectionUI() {
+    document.querySelectorAll('.card.selected').forEach((card) => card.classList.remove('selected'));
+    document.querySelectorAll('.slot-row.selected').forEach((row) => row.classList.remove('selected'));
+    if (state.selectedCharger) {
+      const card = document.querySelector(`.card[data-charger-id="${state.selectedCharger.id}"]`);
+      if (card) {
+        card.classList.add('selected');
+      }
+    }
+    if (state.selectedSlot) {
+      const key = slotKey(state.selectedSlot);
+      const row = document.querySelector(`.slot-row[data-slot-key="${key}"]`);
+      if (row) {
+        row.classList.add('selected');
+      }
+    }
   }
 
   function callServer(method, args) {
@@ -477,25 +548,29 @@
   function selectCharger(charger) {
     state.selectedCharger = charger;
     state.selectedSlot = null;
+    updateSelectionUI();
     updateStickyBar();
   }
 
   function selectSlot(slot) {
     state.selectedSlot = slot;
     state.selectedCharger = null;
+    updateSelectionUI();
     updateStickyBar();
   }
 
   function clearSelection() {
     state.selectedCharger = null;
     state.selectedSlot = null;
+    updateSelectionUI();
+    updateStickyBar();
   }
 
   function updateStickyBar() {
     const bar = document.getElementById('sticky-bar');
     const info = document.getElementById('sticky-info');
     const actionBtn = document.getElementById('sticky-action');
-    if (window.innerWidth > 768) {
+    if (window.innerWidth >= 900) {
       bar.classList.remove('active');
       return;
     }
@@ -555,6 +630,7 @@
       group.slots.forEach((slot) => {
         const row = document.createElement('div');
         row.className = 'slot-row';
+        row.dataset.slotKey = slotKey(slot);
         row.addEventListener('click', () => selectSlot(slot));
         const meta = document.createElement('div');
         meta.className = 'slot-meta';
@@ -571,6 +647,7 @@
       });
       container.appendChild(groupEl);
     });
+    updateSelectionUI();
   }
 
   function groupSlotsByDay(slots) {
