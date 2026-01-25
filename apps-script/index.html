@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <?!= include('styles'); ?>
+  </head>
+  <body>
+    <div class="app">
+      <header class="header">
+        <div class="title-group">
+          <div class="title">ChargeMatter</div>
+          <div class="subtitle">EV charger status board</div>
+        </div>
+        <nav class="mode-tabs" id="mode-tabs">
+          <button class="mode-tab active" data-mode="now">Now</button>
+          <button class="mode-tab" data-mode="reserve">Reserve</button>
+        </nav>
+        <div class="header-actions">
+          <div class="user-meta" id="user-meta"></div>
+          <button class="btn ghost" id="refresh-btn">Refresh</button>
+        </div>
+      </header>
+
+      <section class="notice" id="notice" aria-live="polite"></section>
+
+      <section class="mode mode-now active" id="mode-now">
+        <main class="board" id="board"></main>
+      </section>
+
+      <section class="mode mode-reserve" id="mode-reserve">
+        <div class="section-header">
+          <div>
+            <div class="section-title">Next available slots</div>
+            <div class="section-subtitle">Book the soonest open charger.</div>
+          </div>
+          <div class="section-meta" id="reservation-limits"></div>
+        </div>
+        <div class="edit-banner" id="edit-banner"></div>
+        <div id="slots-list"></div>
+
+        <div class="reservations">
+          <div class="section-header">
+            <div>
+              <div class="section-title">My reservations</div>
+              <div class="section-subtitle">Edit or cancel upcoming slots.</div>
+            </div>
+          </div>
+          <div class="reservation-list">
+            <div id="reservations-list"></div>
+          </div>
+        </div>
+      </section>
+
+      <footer class="footer">
+        <div>Last updated: <span id="last-updated">--</span></div>
+        <div class="legend">
+          <span class="legend-item status-free">Free</span>
+          <span class="legend-item status-in_use">In use</span>
+          <span class="legend-item status-reserved">Reserved</span>
+          <span class="legend-item status-overdue">Overdue</span>
+        </div>
+      </footer>
+    </div>
+
+    <div class="sticky-bar" id="sticky-bar" aria-live="polite">
+      <div class="sticky-info" id="sticky-info">Select a charger or slot</div>
+      <button class="btn" id="sticky-action" disabled>Action</button>
+    </div>
+
+    <nav class="mobile-tabs" id="mobile-tabs">
+      <button class="mobile-tab active" data-mode="now">Now</button>
+      <button class="mobile-tab" data-mode="reserve">Reserve</button>
+    </nav>
+
+    <script>
+      window.APP_CONFIG = {
+        userEmail: <?= JSON.stringify(userEmail) ?>,
+        userName: <?= JSON.stringify(userName) ?>,
+        isAdmin: <?= JSON.stringify(isAdmin) ?>
+      };
+    </script>
+    <?!= include('script'); ?>
+  </body>
+</html>

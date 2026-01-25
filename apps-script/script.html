@@ -1,0 +1,636 @@
+<script>
+  const state = {
+    board: null,
+    reservations: [],
+    serverTime: null,
+    lastFetch: null,
+    editingReservationId: null,
+    mode: 'now',
+    selectedCharger: null,
+    selectedSlot: null,
+    highlightReservationId: null
+  };
+
+  function init() {
+    const refreshBtn = document.getElementById('refresh-btn');
+    refreshBtn.addEventListener('click', loadBoard);
+    setUserMeta();
+    loadBoard();
+    setInterval(updateCountdowns, 1000);
+    setupModeTabs();
+    setupGlobalHandlers();
+    setMode('now');
+  }
+
+  function setUserMeta() {
+    const meta = document.getElementById('user-meta');
+    meta.textContent = `${APP_CONFIG.userName} (${APP_CONFIG.userEmail})`;
+  }
+
+  function setNotice(message) {
+    const notice = document.getElementById('notice');
+    notice.textContent = message || '';
+  }
+
+  function setLoading(isLoading) {
+    const refreshBtn = document.getElementById('refresh-btn');
+    refreshBtn.disabled = isLoading;
+  }
+
+  function loadBoard() {
+    setNotice('');
+    setLoading(true);
+    google.script.run
+      .withSuccessHandler((data) => {
+        setLoading(false);
+        renderBoard(data);
+      })
+      .withFailureHandler((err) => {
+        setLoading(false);
+        setNotice(err.message || String(err));
+      })
+      .getBoardData();
+  }
+
+  function renderBoard(data) {
+    state.board = data;
+    state.reservations = data.reservations || [];
+    state.serverTime = new Date(data.serverTime);
+    state.lastFetch = Date.now();
+    const board = document.getElementById('board');
+    board.innerHTML = '';
+
+    if (!data.chargers.length) {
+      const empty = document.createElement('div');
+      empty.textContent = 'No chargers configured yet.';
+      board.appendChild(empty);
+      return;
+    }
+
+    data.chargers.forEach((charger) => {
+      board.appendChild(createCard(charger));
+    });
+
+    updateReservationUI(data);
+    loadSlots();
+    updateStickyBar();
+    updateCountdowns();
+  }
+
+  function createCard(charger) {
+    const card = document.createElement('div');
+    card.className = `card status-${charger.statusKey}`;
+
+    const header = document.createElement('div');
+    header.className = 'card-header';
+
+    const title = document.createElement('div');
+    title.className = 'card-title';
+    title.textContent = charger.name;
+
+    const headerRight = document.createElement('div');
+    headerRight.className = 'card-header-right';
+
+    const status = document.createElement('div');
+    status.className = 'status-pill';
+    status.textContent = charger.status;
+
+    header.appendChild(title);
+    headerRight.appendChild(status);
+
+    if (APP_CONFIG.isAdmin) {
+      const menu = document.createElement('div');
+      menu.className = 'menu';
+      const trigger = document.createElement('button');
+      trigger.className = 'menu-trigger';
+      trigger.type = 'button';
+      trigger.textContent = '⋯';
+      const list = document.createElement('div');
+      list.className = 'menu-list';
+      const forceBtn = document.createElement('button');
+      forceBtn.className = 'menu-item';
+      forceBtn.textContent = 'Force end';
+      forceBtn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        if (confirm('Force end this session?')) {
+          callServer('forceEnd', [charger.id]);
+        }
+        list.classList.remove('active');
+      });
+      const resetBtn = document.createElement('button');
+      resetBtn.className = 'menu-item';
+      resetBtn.textContent = 'Reset charger';
+      resetBtn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        if (confirm('Reset this charger?')) {
+          callServer('resetCharger', [charger.id]);
+        }
+        list.classList.remove('active');
+      });
+      list.appendChild(forceBtn);
+      list.appendChild(resetBtn);
+      trigger.addEventListener('click', (event) => {
+        event.stopPropagation();
+        closeAllMenus();
+        list.classList.toggle('active');
+      });
+      menu.appendChild(trigger);
+      menu.appendChild(list);
+      headerRight.appendChild(menu);
+    }
+
+    header.appendChild(headerRight);
+
+    const body = document.createElement('div');
+    body.className = 'card-body';
+
+    if (charger.session) {
+      body.appendChild(createInfoRow('Max time', formatDuration(charger.maxMinutes)));
+      body.appendChild(createInfoRow('Ends at', formatTime(charger.session.endTime)));
+      const countdown = createInfoRow('Countdown', '--');
+      countdown.querySelector('.value').classList.add('countdown');
+      countdown.querySelector('.value').dataset.endTime = charger.session.endTime;
+      body.appendChild(countdown);
+    } else if (charger.reservation) {
+      body.appendChild(createInfoRow('Max time', formatDuration(charger.maxMinutes)));
+      body.appendChild(createInfoRow('Reserved at', formatTime(charger.reservation.startTime)));
+    } else {
+      body.appendChild(createInfoRow('Max time', formatDuration(charger.maxMinutes)));
+      body.appendChild(createInfoRow('Status', 'Available now'));
+    }
+
+    const actions = document.createElement('div');
+    actions.className = 'card-actions';
+
+    const primary = getPrimaryAction(charger);
+    const primaryBtn = createButton(primary.label, 'btn primary-action', () => {
+      selectCharger(charger);
+      primary.action();
+    });
+    actions.appendChild(primaryBtn);
+
+    card.appendChild(header);
+    card.appendChild(body);
+    card.appendChild(actions);
+    card.addEventListener('click', (event) => {
+      if (event.target.closest('button')) {
+        return;
+      }
+      selectCharger(charger);
+    });
+    return card;
+  }
+
+  function createInfoRow(label, value) {
+    const row = document.createElement('div');
+    const labelSpan = document.createElement('span');
+    labelSpan.className = 'label';
+    labelSpan.textContent = label;
+    const valueSpan = document.createElement('span');
+    valueSpan.className = 'value';
+    valueSpan.textContent = value || '--';
+    row.appendChild(labelSpan);
+    row.appendChild(valueSpan);
+    return row;
+  }
+
+  function createButton(text, className, onClick) {
+    const button = document.createElement('button');
+    button.textContent = text;
+    button.className = className;
+    button.addEventListener('click', onClick);
+    return button;
+  }
+
+  function callServer(method, args) {
+    setNotice('');
+    setLoading(true);
+    const runner = google.script.run
+      .withSuccessHandler((data) => {
+        setLoading(false);
+        renderBoard(data);
+      })
+      .withFailureHandler((err) => {
+        setLoading(false);
+        setNotice(err.message || String(err));
+      });
+    runner[method].apply(runner, args);
+  }
+
+  function updateReservationUI(data) {
+    renderReservationsList(state.reservations || []);
+    renderReservationLimits(data.config || {});
+    renderEditBanner();
+  }
+
+  function renderReservationLimits(config) {
+    const meta = document.getElementById('reservation-limits');
+    const parts = [];
+    if (config.reservationAdvanceDays) {
+      parts.push(`Up to ${config.reservationAdvanceDays} days ahead`);
+    }
+    if (config.reservationMaxUpcoming) {
+      parts.push(`Max ${config.reservationMaxUpcoming} upcoming`);
+    }
+    if (config.reservationMaxPerDay) {
+      parts.push(`Max ${config.reservationMaxPerDay} per day`);
+    }
+    meta.textContent = parts.join(' · ');
+  }
+
+  function renderReservationsList(reservations) {
+    const list = document.getElementById('reservations-list');
+    list.innerHTML = '';
+    if (!reservations.length) {
+      const empty = document.createElement('div');
+      empty.textContent = 'No upcoming reservations yet.';
+      list.appendChild(empty);
+      return;
+    }
+    reservations.forEach((reservation) => {
+      const item = document.createElement('div');
+      item.className = 'reservation-item';
+      if (state.highlightReservationId === reservation.reservationId) {
+        item.classList.add('highlight');
+      }
+      const title = document.createElement('strong');
+      title.textContent = reservationLabel(reservation);
+      item.appendChild(title);
+      item.appendChild(createInfoRow('Start', formatTime(reservation.startTime)));
+      item.appendChild(createInfoRow('End', formatTime(reservation.endTime)));
+      const status = reservation.status ? reservation.status.replace(/_/g, ' ') : 'active';
+      item.appendChild(createInfoRow('Status', status));
+      const actions = document.createElement('div');
+      actions.className = 'reservation-actions';
+      const editBtn = createButton('Change', 'btn ghost', () => startReservationEdit(reservation));
+      const cancelBtn = createButton('Cancel', 'btn warn', () => {
+        if (confirm('Cancel this reservation?')) {
+          callServer('cancelReservation', [reservation.reservationId]);
+        }
+      });
+      actions.appendChild(editBtn);
+      actions.appendChild(cancelBtn);
+      if (shouldShowCheckIn(reservation)) {
+        const checkInBtn = createButton('Check in', 'btn secondary', () => {
+          callServer('checkInReservation', [reservation.reservationId]);
+        });
+        actions.appendChild(checkInBtn);
+      }
+      item.appendChild(actions);
+      list.appendChild(item);
+    });
+  }
+
+  function reservationLabel(reservation) {
+    const charger = state.board?.chargers?.find((item) => item.id === reservation.chargerId);
+    return charger ? charger.name : `Charger ${reservation.chargerId}`;
+  }
+
+  function startReservationEdit(reservation) {
+    state.editingReservationId = reservation.reservationId;
+    setMode('reserve');
+    renderEditBanner();
+    setNotice('Select a new slot to replace this reservation.');
+  }
+
+  function cancelReservationEdit() {
+    state.editingReservationId = null;
+    renderEditBanner();
+    setNotice('');
+  }
+
+  function updateCountdowns() {
+    if (!state.serverTime || !state.lastFetch) {
+      return;
+    }
+    const now = new Date(state.serverTime.getTime() + (Date.now() - state.lastFetch));
+    document.getElementById('last-updated').textContent = now.toLocaleTimeString([], {
+      hour: 'numeric',
+      minute: '2-digit'
+    });
+    document.querySelectorAll('.countdown').forEach((el) => {
+      const endTime = new Date(el.dataset.endTime);
+      if (Number.isNaN(endTime.getTime())) {
+        return;
+      }
+      const diffMs = endTime.getTime() - now.getTime();
+      if (diffMs >= 0) {
+        const mins = Math.floor(diffMs / 60000);
+        const secs = Math.floor((diffMs % 60000) / 1000);
+        el.textContent = formatCountdown(mins, secs);
+      } else {
+        const overdueMinutes = Math.max(1, Math.ceil(Math.abs(diffMs) / 60000));
+        el.textContent = `Overdue by ${overdueMinutes}m`;
+      }
+    });
+  }
+
+  function formatCountdown(minutes, seconds) {
+    const hours = Math.floor(minutes / 60);
+    const remaining = minutes % 60;
+    if (hours > 0) {
+      return `${hours}h ${pad(remaining)}m`;
+    }
+    return `${remaining}m ${pad(seconds)}s`;
+  }
+
+  function formatTime(isoString) {
+    const date = new Date(isoString);
+    if (Number.isNaN(date.getTime())) {
+      return '--';
+    }
+    return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  }
+
+  function formatDuration(minutes) {
+    if (!minutes) {
+      return '--';
+    }
+    if (minutes < 60) {
+      return `${minutes} minutes`;
+    }
+    const hours = minutes / 60;
+    if (Number.isInteger(hours)) {
+      return `${hours} hours`;
+    }
+    return `${hours.toFixed(1)} hours`;
+  }
+
+  function pad(value) {
+    return String(value).padStart(2, '0');
+  }
+
+  function formatDateInput(date) {
+    if (Number.isNaN(date.getTime())) {
+      return '';
+    }
+    const year = date.getFullYear();
+    const month = pad(date.getMonth() + 1);
+    const day = pad(date.getDate());
+    return `${year}-${month}-${day}`;
+  }
+
+  function formatTimeInput(date) {
+    if (Number.isNaN(date.getTime())) {
+      return '';
+    }
+    const hours = pad(date.getHours());
+    const minutes = pad(date.getMinutes());
+    return `${hours}:${minutes}`;
+  }
+
+  function shouldShowCheckIn(reservation) {
+    if (!reservation.startTime || reservation.status === 'no_show' || reservation.status === 'canceled') {
+      return false;
+    }
+    const config = state.board?.config || {};
+    const earlyMinutes = config.reservationCheckinEarlyMinutes || 5;
+    const graceMinutes = config.reservationLateGraceMinutes || 10;
+    const start = new Date(reservation.startTime);
+    const now = getClientNow();
+    const earliest = new Date(start.getTime() - earlyMinutes * 60000);
+    const latest = new Date(start.getTime() + graceMinutes * 60000);
+    if (Number.isNaN(start.getTime())) {
+      return false;
+    }
+    return now >= earliest && now <= latest;
+  }
+
+  function getClientNow() {
+    if (!state.serverTime || !state.lastFetch) {
+      return new Date();
+    }
+    return new Date(state.serverTime.getTime() + (Date.now() - state.lastFetch));
+  }
+
+  function setupModeTabs() {
+    document.querySelectorAll('.mode-tab, .mobile-tab').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        setMode(btn.dataset.mode);
+      });
+    });
+  }
+
+  function setupGlobalHandlers() {
+    document.addEventListener('click', () => closeAllMenus());
+    window.addEventListener('resize', () => updateStickyBar());
+  }
+
+  function setMode(mode) {
+    state.mode = mode;
+    document.querySelectorAll('.mode-tab').forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset.mode === mode);
+    });
+    document.querySelectorAll('.mobile-tab').forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset.mode === mode);
+    });
+    document.getElementById('mode-now').classList.toggle('active', mode === 'now');
+    document.getElementById('mode-reserve').classList.toggle('active', mode === 'reserve');
+    clearSelection();
+    updateStickyBar();
+  }
+
+  function closeAllMenus() {
+    document.querySelectorAll('.menu-list.active').forEach((menu) => menu.classList.remove('active'));
+  }
+
+  function getPrimaryAction(charger) {
+    if (charger.session) {
+      if (charger.session.userEmail === APP_CONFIG.userEmail) {
+        return {
+          label: 'End session',
+          action: () => callServer('endSession', [charger.session.sessionId])
+        };
+      }
+      return {
+        label: 'Notify owner',
+        action: () => callServer('notifyOwner', [charger.id])
+      };
+    }
+    if (charger.statusKey === 'overdue') {
+      return {
+        label: 'Notify owner',
+        action: () => callServer('notifyOwner', [charger.id])
+      };
+    }
+    if (charger.statusKey === 'reserved') {
+      return {
+        label: 'View reservation',
+        action: () => viewReservation(charger)
+      };
+    }
+    return {
+      label: 'Start charging',
+      action: () => callServer('startSession', [charger.id])
+    };
+  }
+
+  function viewReservation(charger) {
+    setMode('reserve');
+    if (charger.reservation) {
+      state.highlightReservationId = charger.reservation.reservationId;
+      renderReservationsList(state.reservations || []);
+    }
+    document.getElementById('reservations-list').scrollIntoView({ behavior: 'smooth' });
+  }
+
+  function selectCharger(charger) {
+    state.selectedCharger = charger;
+    state.selectedSlot = null;
+    updateStickyBar();
+  }
+
+  function selectSlot(slot) {
+    state.selectedSlot = slot;
+    state.selectedCharger = null;
+    updateStickyBar();
+  }
+
+  function clearSelection() {
+    state.selectedCharger = null;
+    state.selectedSlot = null;
+  }
+
+  function updateStickyBar() {
+    const bar = document.getElementById('sticky-bar');
+    const info = document.getElementById('sticky-info');
+    const actionBtn = document.getElementById('sticky-action');
+    if (window.innerWidth > 768) {
+      bar.classList.remove('active');
+      return;
+    }
+    actionBtn.disabled = true;
+    actionBtn.onclick = null;
+    if (state.mode === 'now' && state.selectedCharger) {
+      const primary = getPrimaryAction(state.selectedCharger);
+      info.textContent = `${state.selectedCharger.name} selected`;
+      actionBtn.textContent = primary.label;
+      actionBtn.disabled = false;
+      actionBtn.onclick = () => primary.action();
+      bar.classList.add('active');
+      return;
+    }
+    if (state.mode === 'reserve' && state.selectedSlot) {
+      const label = `${formatTime(state.selectedSlot.startTime)} · ${reservationLabel({
+        chargerId: state.selectedSlot.chargerId
+      })}`;
+      info.textContent = label;
+      actionBtn.textContent = state.editingReservationId ? 'Update reservation' : 'Book slot';
+      actionBtn.disabled = false;
+      actionBtn.onclick = () => bookSlot(state.selectedSlot);
+      bar.classList.add('active');
+      return;
+    }
+    bar.classList.remove('active');
+  }
+
+  function loadSlots() {
+    google.script.run
+      .withSuccessHandler((slots) => {
+        renderSlotsList(slots || []);
+      })
+      .withFailureHandler((err) => {
+        setNotice(err.message || String(err));
+      })
+      .getAvailabilitySummary();
+  }
+
+  function renderSlotsList(slots) {
+    const container = document.getElementById('slots-list');
+    container.innerHTML = '';
+    if (!slots.length) {
+      const empty = document.createElement('div');
+      empty.textContent = 'No available slots found.';
+      container.appendChild(empty);
+      return;
+    }
+    const groups = groupSlotsByDay(slots);
+    groups.forEach((group) => {
+      const groupEl = document.createElement('div');
+      groupEl.className = 'slots-group';
+      const title = document.createElement('div');
+      title.className = 'slots-group-title';
+      title.textContent = group.label;
+      groupEl.appendChild(title);
+      group.slots.forEach((slot) => {
+        const row = document.createElement('div');
+        row.className = 'slot-row';
+        row.addEventListener('click', () => selectSlot(slot));
+        const meta = document.createElement('div');
+        meta.className = 'slot-meta';
+        meta.innerHTML = `<div>${formatTime(slot.startTime)} – ${formatTime(slot.endTime)}</div><div>${reservationLabel({
+          chargerId: slot.chargerId
+        })}</div>`;
+        const action = createButton('Book', 'btn', (event) => {
+          event.stopPropagation();
+          bookSlot(slot);
+        });
+        row.appendChild(meta);
+        row.appendChild(action);
+        groupEl.appendChild(row);
+      });
+      container.appendChild(groupEl);
+    });
+  }
+
+  function groupSlotsByDay(slots) {
+    const grouped = {};
+    slots.forEach((slot) => {
+      const dateKey = formatDateInput(new Date(slot.startTime));
+      if (!grouped[dateKey]) {
+        grouped[dateKey] = [];
+      }
+      grouped[dateKey].push(slot);
+    });
+    return Object.keys(grouped)
+      .sort()
+      .map((dateKey) => ({
+        label: formatDayLabel(new Date(`${dateKey}T00:00:00`)),
+        slots: grouped[dateKey]
+      }));
+  }
+
+  function formatDayLabel(date) {
+    const now = getClientNow();
+    const today = formatDateInput(now);
+    const tomorrow = formatDateInput(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1));
+    const dateKey = formatDateInput(date);
+    if (dateKey === today) {
+      return 'Today';
+    }
+    if (dateKey === tomorrow) {
+      return 'Tomorrow';
+    }
+    return date.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+  }
+
+  function bookSlot(slot) {
+    if (state.editingReservationId) {
+      callServer('updateReservation', [state.editingReservationId, slot.chargerId, slot.startTime]);
+    } else {
+      callServer('createReservation', [slot.chargerId, slot.startTime]);
+    }
+    cancelReservationEdit();
+    clearSelection();
+  }
+
+  function renderEditBanner() {
+    const banner = document.getElementById('edit-banner');
+    if (!banner) {
+      return;
+    }
+    banner.innerHTML = '';
+    if (!state.editingReservationId) {
+      banner.classList.remove('active');
+      return;
+    }
+    banner.classList.add('active');
+    const text = document.createElement('div');
+    text.textContent = 'Changing a reservation. Pick a new slot below.';
+    const cancel = createButton('Cancel change', 'btn ghost', () => cancelReservationEdit());
+    banner.appendChild(text);
+    banner.appendChild(cancel);
+  }
+
+  document.addEventListener('DOMContentLoaded', init);
+</script>
