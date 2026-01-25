@@ -82,6 +82,13 @@ Key/value settings (strings). Common keys:
 - Start times round up to 15-minute increments.
 - Check-in opens 5 minutes early; no-show after 10 minutes releases the reservation.
 
+## Security and authorization
+- Deploy the Apps Script web app to **only your Workspace domain** (e.g., `company.com`).
+- The server checks the active user’s email domain against `allowed_domain` to restrict access.
+- Admin actions are gated by `admin_emails` and hidden in the UI by default.
+
+This provides a lightweight SSO-like gate when used inside an Enterprise Google Workspace.
+
 ## Notifications
 Slack DM or webhook for reminders and no-show notices, with email fallback if Slack is unavailable.
 
