@@ -31,8 +31,8 @@ This creates these tabs: `chargers`, `sessions`, `config`, `reservations`.
 Use the `config` tab (key/value pairs) or Script Properties.
 
 Recommended keys:
-- `allowed_domain`: `graymatter-robotics.com`
-- `admin_emails`: `you@graymatter-robotics.com,ops@graymatter-robotics.com`
+- `allowed_domain`: `company.com`
+- `admin_emails`: `you@company.com,ops@company.com`
 - `overdue_repeat_minutes`: `15`
 - `slack_webhook_url`: webhook URL for a channel (optional)
 - `slack_webhook_channel`: channel override (optional)

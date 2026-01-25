@@ -1,6 +1,6 @@
 # ChargeMatter
 
-ChargeMatter is a lightweight internal web app for managing EV charger usage and reservations at GrayMatter Robotics.
+ChargeMatter is a lightweight internal web app for managing EV charger usage and reservations at Company Name.
 
 ## Core user flows
 - **Charge now**: view chargers, start a session, end session.

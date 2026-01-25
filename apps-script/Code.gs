@@ -1,5 +1,5 @@
 var APP_DEFAULTS = {
-  allowedDomain: 'graymatter-robotics.com',
+  allowedDomain: 'company.com',
   overdueRepeatMinutes: 15,
   reservationAdvanceDays: 7,
   reservationMaxUpcoming: 3,
