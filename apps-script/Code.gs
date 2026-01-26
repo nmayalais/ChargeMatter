@@ -1476,19 +1476,39 @@ function formatTime_(date) {
   return Utilities.formatDate(date, Session.getScriptTimeZone(), 'h:mm a');
 }
 
+function deriveFullNameFromEmail_(email) {
+  if (!email) {
+    return '';
+  }
+  var local = String(email).split('@')[0] || '';
+  var parts = local.split(/[._-]+/).filter(function(part) {
+    return part;
+  });
+  if (parts.length < 2) {
+    return '';
+  }
+  return parts
+    .map(function(part) {
+      return part.charAt(0).toUpperCase() + part.slice(1);
+    })
+    .join(' ');
+}
+
 function formatUserDisplay_(name, email) {
   var safeName = String(name || '').trim();
   var safeEmail = String(email || '').trim();
-  if (safeName && safeEmail) {
-    return safeName + ' (' + safeEmail + ')';
+  var derivedName = deriveFullNameFromEmail_(safeEmail);
+  var displayName = safeName;
+  if (displayName && displayName.split(/\s+/).length < 2 && derivedName) {
+    displayName = derivedName;
   }
-  if (safeName) {
-    return safeName;
+  if (!displayName) {
+    displayName = derivedName;
   }
-  if (safeEmail) {
-    return safeEmail;
+  if (!displayName) {
+    return safeEmail || 'A driver';
   }
-  return 'A driver';
+  return displayName;
 }
 
 function notifyUser_(session, charger, text) {
