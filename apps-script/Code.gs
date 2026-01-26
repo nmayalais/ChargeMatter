@@ -7,7 +7,9 @@ var APP_DEFAULTS = {
   reservationGapMinutes: 1,
   reservationRoundingMinutes: 15,
   reservationCheckinEarlyMinutes: 5,
-  reservationLateGraceMinutes: 10
+  reservationLateGraceMinutes: 10,
+  reservationOpenHour: 6,
+  reservationOpenMinute: 0
 };
 
 var SHEETS = {
@@ -21,6 +23,7 @@ var CHARGERS_HEADERS = [
   'charger_id',
   'name',
   'max_minutes',
+  'slot_starts',
   'active_session_id'
 ];
 
@@ -52,6 +55,8 @@ var RESERVATIONS_HEADERS = [
   'status',
   'checked_in_at',
   'no_show_at',
+  'reminder_5_before_sent',
+  'reminder_5_after_sent',
   'created_at',
   'updated_at',
   'canceled_at'
@@ -94,7 +99,9 @@ function getBoardData() {
       reservationGapMinutes: board.reservationGapMinutes,
       reservationRoundingMinutes: board.reservationRoundingMinutes,
       reservationCheckinEarlyMinutes: board.reservationCheckinEarlyMinutes,
-      reservationLateGraceMinutes: board.reservationLateGraceMinutes
+      reservationLateGraceMinutes: board.reservationLateGraceMinutes,
+      reservationOpenHour: board.reservationOpenHour,
+      reservationOpenMinute: board.reservationOpenMinute
     }
   };
 }
@@ -117,17 +124,26 @@ function startSession(chargerId) {
       throw new Error('Charger max minutes is not configured.');
     }
     var now = new Date();
-    var intendedEnd = addMinutes_(now, maxMinutes);
-    var blockingReservation = findBlockingReservationForSession_(
-      reservationsData.rows,
-      chargerId,
-      now,
-      intendedEnd,
-      auth.email
-    );
-    if (blockingReservation) {
-      var reservedBy = blockingReservation.user_name || blockingReservation.user_id || 'another user';
-      throw new Error('Charger is reserved by ' + reservedBy + ' for this time window.');
+    var config = getReservationConfig_(getConfig_());
+    var slot = findSlotForTime_(charger, now);
+    if (!slot) {
+      throw new Error('Charging is only available during scheduled blocks.');
+    }
+    var openAt = addMinutes_(slot.startTime, config.lateGraceMinutes);
+    var slotReservation = findReservationForSlot_(reservationsData.rows, chargerId, slot.startTime);
+    if (slotReservation && (isReservationCanceled_(slotReservation) || isReservationNoShow_(slotReservation))) {
+      slotReservation = null;
+    }
+    var isReservedByUser =
+      slotReservation && String(slotReservation.user_id || '').toLowerCase() === String(auth.email || '').toLowerCase();
+    if (now.getTime() < openAt.getTime()) {
+      if (!slotReservation) {
+        throw new Error('This slot opens at ' + formatTime_(openAt) + ' for walk-up charging.');
+      }
+      if (!isReservedByUser) {
+        var reservedBy = formatUserDisplay_(slotReservation.user_name, slotReservation.user_id);
+        throw new Error('Charger is reserved by ' + reservedBy + ' until ' + formatTime_(openAt) + '.');
+      }
     }
     if (charger.active_session_id) {
       var existing = findById_(sessionsData.rows, 'session_id', charger.active_session_id);
@@ -138,7 +154,7 @@ function startSession(chargerId) {
         active_session_id: ''
       });
     }
-    var endTime = addMinutes_(now, maxMinutes);
+    var endTime = slot.endTime;
     var sessionId = Utilities.getUuid();
     var sessionRow = [
       sessionId,
@@ -184,7 +200,6 @@ function createReservation(chargerId, startTimeIso) {
     if (!startTime) {
       throw new Error('Invalid reservation start time.');
     }
-    startTime = roundUpToIncrement_(startTime, getReservationConfig_(getConfig_()).roundingMinutes);
     var maxMinutes = Number(charger.max_minutes) || 0;
     if (maxMinutes <= 0) {
       throw new Error('Charger max minutes is not configured.');
@@ -245,7 +260,6 @@ function updateReservation(reservationId, chargerId, startTimeIso) {
     if (!startTime) {
       throw new Error('Invalid reservation start time.');
     }
-    startTime = roundUpToIncrement_(startTime, getReservationConfig_(getConfig_()).roundingMinutes);
     if (startTime.getTime() < now.getTime()) {
       throw new Error('Reservation time must be in the future.');
     }
@@ -321,14 +335,9 @@ function getAvailabilitySummary(startDateIso, days) {
   initSheets_();
   requireAuthorizedUser_();
   var now = new Date();
-  var start = startDateIso ? toDate_(startDateIso) : now;
-  if (!start) {
-    start = now;
-  }
-  var rangeDays = Math.max(1, Math.min(7, parseInt(days, 10) || 7));
   var chargersData = getSheetData_(SHEETS.chargers, CHARGERS_HEADERS);
   var reservationsData = getSheetData_(SHEETS.reservations, RESERVATIONS_HEADERS);
-  var slots = getNextAvailableSlots_(start, chargersData.rows, reservationsData.rows, rangeDays, 10);
+  var slots = getNextAvailableSlots_(now, chargersData.rows, reservationsData.rows, 1, 10);
   return slots.map(function(slot) {
     return {
       chargerId: String(slot.charger_id),
@@ -506,66 +515,97 @@ function sendReminders() {
   }
   try {
     initSheets_();
-    markNoShowReservations_(new Date());
-    var config = getConfig_();
-    var repeatMinutes = parseInt(config.overdue_repeat_minutes, 10);
-    if (isNaN(repeatMinutes)) {
-      repeatMinutes = APP_DEFAULTS.overdueRepeatMinutes;
-    }
     var now = new Date();
+    markNoShowReservations_(now);
+    var config = getConfig_();
+    var reservationConfig = getReservationConfig_(config);
     var chargersData = getSheetData_(SHEETS.chargers, CHARGERS_HEADERS);
     var sessionsData = getSheetData_(SHEETS.sessions, SESSIONS_HEADERS);
+    var reservationsData = getSheetData_(SHEETS.reservations, RESERVATIONS_HEADERS);
     var chargersById = {};
     chargersData.rows.forEach(function(charger) {
       chargersById[String(charger.charger_id)] = charger;
     });
     sessionsData.rows.forEach(function(session) {
-      if (!session.session_id || isComplete_(session)) {
-        return;
-      }
-      var endTime = toDate_(session.end_time);
-      if (!endTime) {
-        return;
-      }
-      var charger = chargersById[String(session.charger_id)] || {};
-      var minutesToEnd = Math.floor((endTime.getTime() - now.getTime()) / 60000);
-      var isOverdue = now.getTime() >= endTime.getTime();
-      var updates = {};
-      if (isOverdue && session.status !== 'overdue') {
-        updates.status = 'overdue';
-        updates.active = true;
-        updates.overdue = true;
-        updates.complete = false;
-      }
-      var sentOverdueNow = false;
-      if (!isTrue_(session.reminder_10_sent) && minutesToEnd <= 10 && minutesToEnd > 5) {
-        notifyUser_(session, charger, buildReminderText_('tminus10', session, charger, endTime, now));
-        updates.reminder_10_sent = true;
-      }
-      if (!isTrue_(session.reminder_5_sent) && minutesToEnd <= 5 && minutesToEnd > 0) {
-        notifyUser_(session, charger, buildReminderText_('tminus5', session, charger, endTime, now));
-        updates.reminder_5_sent = true;
-      }
-      if (!isTrue_(session.reminder_0_sent) && minutesToEnd <= 0) {
-        notifyUser_(session, charger, buildReminderText_('expire', session, charger, endTime, now));
-        updates.reminder_0_sent = true;
-        updates.status = 'overdue';
-        updates.active = true;
-        updates.overdue = true;
-        updates.complete = false;
-        updates.overdue_last_sent_at = now;
-        sentOverdueNow = true;
-      }
-      if (isOverdue && repeatMinutes > 0 && !sentOverdueNow) {
-        var lastSent = toDate_(session.overdue_last_sent_at);
-        var minutesSince = lastSent ? (now.getTime() - lastSent.getTime()) / 60000 : repeatMinutes + 1;
-        if (minutesSince >= repeatMinutes) {
-          notifyUser_(session, charger, buildReminderText_('overdue', session, charger, endTime, now));
-          updates.overdue_last_sent_at = now;
+      try {
+        if (!session.session_id || isComplete_(session)) {
+          return;
         }
+        var endTime = toDate_(session.end_time);
+        if (!endTime) {
+          return;
+        }
+        var charger = chargersById[String(session.charger_id)] || {};
+        var minutesToEnd = Math.floor((endTime.getTime() - now.getTime()) / 60000);
+        var isOverdue = now.getTime() >= endTime.getTime();
+        var updates = {};
+        if (isOverdue && session.status !== 'overdue') {
+          updates.status = 'overdue';
+          updates.active = true;
+          updates.overdue = true;
+          updates.complete = false;
+        }
+        if (!isTrue_(session.reminder_5_sent) && minutesToEnd <= 5 && minutesToEnd > 0) {
+          if (notifyUser_(session, charger, buildReminderText_('tminus5', session, charger, endTime, now))) {
+            updates.reminder_5_sent = true;
+          }
+        }
+        if (!isTrue_(session.reminder_0_sent) && minutesToEnd <= 0) {
+          if (notifyUser_(session, charger, buildReminderText_('expire', session, charger, endTime, now))) {
+            updates.reminder_0_sent = true;
+            updates.status = 'overdue';
+            updates.active = true;
+            updates.overdue = true;
+            updates.complete = false;
+            updates.overdue_last_sent_at = now;
+          }
+        }
+        if (Object.keys(updates).length > 0) {
+          updateRow_(sessionsData.sheet, sessionsData.headerMap, session._row, updates);
+        }
+      } catch (err) {
+        logError_('sendReminders session failed', err, {
+          sessionId: session.session_id,
+          chargerId: session.charger_id
+        });
       }
-      if (Object.keys(updates).length > 0) {
-        updateRow_(sessionsData.sheet, sessionsData.headerMap, session._row, updates);
+    });
+    reservationsData.rows.forEach(function(reservation) {
+      try {
+        if (!reservation.reservation_id || isReservationCanceled_(reservation) || isReservationNoShow_(reservation)) {
+          return;
+        }
+        if (reservation.checked_in_at) {
+          return;
+        }
+        var startTime = toDate_(reservation.start_time);
+        if (!startTime) {
+          return;
+        }
+        var charger = chargersById[String(reservation.charger_id)] || {};
+        var minutesToStart = Math.floor((startTime.getTime() - now.getTime()) / 60000);
+        var minutesSinceStart = Math.floor((now.getTime() - startTime.getTime()) / 60000);
+        var resUpdates = {};
+        if (!isTrue_(reservation.reminder_5_before_sent) && minutesToStart <= 5 && minutesToStart > 0) {
+          if (notifyUser_(reservation, charger, buildReservationReminderText_('upcoming', reservation, charger, startTime, reservationConfig))) {
+            resUpdates.reminder_5_before_sent = true;
+          }
+        }
+        if (!isTrue_(reservation.reminder_5_after_sent) &&
+            minutesSinceStart >= 5 &&
+            minutesSinceStart < reservationConfig.lateGraceMinutes) {
+          if (notifyUser_(reservation, charger, buildReservationReminderText_('late', reservation, charger, startTime, reservationConfig))) {
+            resUpdates.reminder_5_after_sent = true;
+          }
+        }
+        if (Object.keys(resUpdates).length > 0) {
+          updateRow_(reservationsData.sheet, reservationsData.headerMap, reservation._row, resUpdates);
+        }
+      } catch (err) {
+        logError_('sendReminders reservation failed', err, {
+          reservationId: reservation.reservation_id,
+          chargerId: reservation.charger_id
+        });
       }
     });
   } finally {
@@ -680,7 +720,9 @@ function buildBoard_(now, reservationsData) {
     reservationGapMinutes: reservationConfig.gapMinutes,
     reservationRoundingMinutes: reservationConfig.roundingMinutes,
     reservationCheckinEarlyMinutes: reservationConfig.checkinEarlyMinutes,
-    reservationLateGraceMinutes: reservationConfig.lateGraceMinutes
+    reservationLateGraceMinutes: reservationConfig.lateGraceMinutes,
+    reservationOpenHour: reservationConfig.openHour,
+    reservationOpenMinute: reservationConfig.openMinute
   };
 }
 
@@ -803,6 +845,14 @@ function getConfig_() {
     config.reservation_late_grace_minutes ||
     props.getProperty('RESERVATION_LATE_GRACE_MINUTES') ||
     APP_DEFAULTS.reservationLateGraceMinutes;
+  config.reservation_open_hour =
+    config.reservation_open_hour ||
+    props.getProperty('RESERVATION_OPEN_HOUR') ||
+    APP_DEFAULTS.reservationOpenHour;
+  config.reservation_open_minute =
+    config.reservation_open_minute ||
+    props.getProperty('RESERVATION_OPEN_MINUTE') ||
+    APP_DEFAULTS.reservationOpenMinute;
   return config;
 }
 
@@ -931,6 +981,8 @@ function getReservationConfig_(config) {
   var roundingMinutes = parseInt(config.reservation_rounding_minutes, 10);
   var checkinEarlyMinutes = parseInt(config.reservation_checkin_early_minutes, 10);
   var lateGraceMinutes = parseInt(config.reservation_late_grace_minutes, 10);
+  var openHour = parseInt(config.reservation_open_hour, 10);
+  var openMinute = parseInt(config.reservation_open_minute, 10);
   return {
     advanceDays: isNaN(advanceDays) ? APP_DEFAULTS.reservationAdvanceDays : advanceDays,
     maxUpcoming: isNaN(maxUpcoming) ? APP_DEFAULTS.reservationMaxUpcoming : maxUpcoming,
@@ -938,7 +990,9 @@ function getReservationConfig_(config) {
     gapMinutes: isNaN(gapMinutes) ? APP_DEFAULTS.reservationGapMinutes : gapMinutes,
     roundingMinutes: isNaN(roundingMinutes) ? APP_DEFAULTS.reservationRoundingMinutes : roundingMinutes,
     checkinEarlyMinutes: isNaN(checkinEarlyMinutes) ? APP_DEFAULTS.reservationCheckinEarlyMinutes : checkinEarlyMinutes,
-    lateGraceMinutes: isNaN(lateGraceMinutes) ? APP_DEFAULTS.reservationLateGraceMinutes : lateGraceMinutes
+    lateGraceMinutes: isNaN(lateGraceMinutes) ? APP_DEFAULTS.reservationLateGraceMinutes : lateGraceMinutes,
+    openHour: isNaN(openHour) ? APP_DEFAULTS.reservationOpenHour : openHour,
+    openMinute: isNaN(openMinute) ? APP_DEFAULTS.reservationOpenMinute : openMinute
   };
 }
 
@@ -1013,9 +1067,15 @@ function validateReservation_(params) {
   if (startTime.getTime() < now.getTime()) {
     throw new Error('Reservation time must be in the future.');
   }
-  var latestAllowed = addMinutes_(now, config.advanceDays * 24 * 60);
-  if (startTime.getTime() > latestAllowed.getTime()) {
-    throw new Error('Reservations can only be made ' + config.advanceDays + ' days in advance.');
+  var openTime = getReservationOpenTime_(now, config);
+  if (now.getTime() < openTime.getTime()) {
+    throw new Error('Booking opens at ' + formatTime_(openTime) + ' for same-day slots.');
+  }
+  if (!isSameDay_(startTime, now)) {
+    throw new Error('Reservations can only be made for today.');
+  }
+  if (!isSlotStart_(params.charger, startTime)) {
+    throw new Error('Reservations must start at a scheduled slot time.');
   }
 
   var upcoming = reservations.filter(function(reservation) {
@@ -1076,6 +1136,115 @@ function dayKey_(date) {
   return Utilities.formatDate(date, Session.getScriptTimeZone(), 'yyyy-MM-dd');
 }
 
+function isSameDay_(first, second) {
+  return dayKey_(first) === dayKey_(second);
+}
+
+function parseSlotStarts_(value) {
+  if (!value) {
+    return [];
+  }
+  var raw = Array.isArray(value) ? value.join(',') : String(value);
+  var starts = raw
+    .split(/[,;\n]/)
+    .map(function(item) {
+      return String(item || '').trim();
+    })
+    .filter(function(item) {
+      return item;
+    })
+    .map(function(item) {
+      var parts = item.split(':');
+      if (parts.length < 2) {
+        return null;
+      }
+      var hours = parseInt(parts[0], 10);
+      var minutes = parseInt(parts[1], 10);
+      if (isNaN(hours) || isNaN(minutes) || hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+        return null;
+      }
+      return hours * 60 + minutes;
+    })
+    .filter(function(value) {
+      return value !== null;
+    });
+  starts.sort(function(a, b) {
+    return a - b;
+  });
+  return starts.filter(function(value, index) {
+    return starts.indexOf(value) === index;
+  });
+}
+
+function buildSlotsForDay_(charger, day) {
+  var maxMinutes = Number(charger.max_minutes) || 0;
+  if (maxMinutes <= 0) {
+    return [];
+  }
+  var slotStarts = parseSlotStarts_(charger.slot_starts);
+  if (!slotStarts.length) {
+    return [];
+  }
+  var base = startOfDay_(day);
+  return slotStarts.map(function(minutes) {
+    var start = addMinutes_(base, minutes);
+    return {
+      start_time: start,
+      end_time: addMinutes_(start, maxMinutes)
+    };
+  });
+}
+
+function findSlotForTime_(charger, time) {
+  var day = startOfDay_(time);
+  var slots = buildSlotsForDay_(charger, day);
+  for (var i = 0; i < slots.length; i++) {
+    if (time.getTime() >= slots[i].start_time.getTime() && time.getTime() < slots[i].end_time.getTime()) {
+      return {
+        startTime: slots[i].start_time,
+        endTime: slots[i].end_time
+      };
+    }
+  }
+  return null;
+}
+
+function isSlotStart_(charger, startTime) {
+  var slotStarts = parseSlotStarts_(charger.slot_starts);
+  var minutes = startTime.getHours() * 60 + startTime.getMinutes();
+  return slotStarts.indexOf(minutes) !== -1;
+}
+
+function findReservationForSlot_(reservations, chargerId, slotStart) {
+  var slotStartMs = slotStart.getTime();
+  for (var i = 0; i < reservations.length; i++) {
+    var reservation = reservations[i];
+    if (!reservation.reservation_id || isReservationCanceled_(reservation) || isReservationNoShow_(reservation)) {
+      continue;
+    }
+    if (String(reservation.charger_id) !== String(chargerId)) {
+      continue;
+    }
+    var resStart = toDate_(reservation.start_time);
+    if (resStart && resStart.getTime() === slotStartMs) {
+      return reservation;
+    }
+  }
+  return null;
+}
+
+function getReservationOpenTime_(now, config) {
+  var openHour = Number(config.openHour);
+  var openMinute = Number(config.openMinute);
+  if (isNaN(openHour)) {
+    openHour = APP_DEFAULTS.reservationOpenHour;
+  }
+  if (isNaN(openMinute)) {
+    openMinute = APP_DEFAULTS.reservationOpenMinute;
+  }
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate(), openHour, openMinute, 0);
+}
+
 function findBlockingReservationForSession_(reservations, chargerId, startTime, endTime, userEmail) {
   var user = String(userEmail || '').toLowerCase();
   for (var i = 0; i < reservations.length; i++) {
@@ -1111,68 +1280,43 @@ function roundUpToIncrement_(date, minutes) {
 }
 
 function getNextAvailableSlot_(now, chargers, reservations) {
-  var config = getReservationConfig_(getConfig_());
-  var searchStart = roundUpToIncrement_(now, config.roundingMinutes);
-  var searchEnd = addMinutes_(now, config.advanceDays * 24 * 60);
-  var slots = [];
-  chargers.forEach(function(charger) {
-    var maxMinutes = Number(charger.max_minutes) || 0;
-    if (maxMinutes <= 0) {
-      return;
-    }
-    var current = new Date(searchStart.getTime());
-    while (current.getTime() <= searchEnd.getTime()) {
-      var endTime = addMinutes_(current, maxMinutes);
-      if (endTime.getTime() > searchEnd.getTime()) {
-        break;
-      }
-      var conflict = hasReservationConflict_(reservations, charger.charger_id, current, endTime, config.gapMinutes);
-      if (!conflict) {
-        slots.push({
-          charger_id: charger.charger_id,
-          start_time: new Date(current.getTime()),
-          end_time: new Date(endTime.getTime())
-        });
-        break;
-      }
-      current = addMinutes_(current, config.roundingMinutes);
-    }
-  });
-  if (!slots.length) {
-    return null;
-  }
-  slots.sort(function(a, b) {
-    return a.start_time.getTime() - b.start_time.getTime();
-  });
-  return slots[0];
+  var slots = getNextAvailableSlots_(now, chargers, reservations, 1, 1);
+  return slots.length ? slots[0] : null;
 }
 
 function getNextAvailableSlots_(now, chargers, reservations, rangeDays, limit) {
   var config = getReservationConfig_(getConfig_());
-  var searchStart = roundUpToIncrement_(now, config.roundingMinutes);
-  var searchEnd = addMinutes_(now, (rangeDays || config.advanceDays) * 24 * 60);
+  var openTime = getReservationOpenTime_(now, config);
+  if (now.getTime() < openTime.getTime()) {
+    return [];
+  }
   var slots = [];
+  var day = startOfDay_(now);
   chargers.forEach(function(charger) {
     var maxMinutes = Number(charger.max_minutes) || 0;
     if (maxMinutes <= 0) {
       return;
     }
-    var current = new Date(searchStart.getTime());
-    while (current.getTime() <= searchEnd.getTime()) {
-      var endTime = addMinutes_(current, maxMinutes);
-      if (endTime.getTime() > searchEnd.getTime()) {
-        break;
+    var daySlots = buildSlotsForDay_(charger, day);
+    daySlots.forEach(function(slot) {
+      if (slot.start_time.getTime() < now.getTime()) {
+        return;
       }
-      var conflict = hasReservationConflict_(reservations, charger.charger_id, current, endTime, config.gapMinutes);
+      var conflict = hasReservationConflict_(
+        reservations,
+        charger.charger_id,
+        slot.start_time,
+        slot.end_time,
+        config.gapMinutes
+      );
       if (!conflict) {
         slots.push({
           charger_id: charger.charger_id,
-          start_time: new Date(current.getTime()),
-          end_time: new Date(endTime.getTime())
+          start_time: slot.start_time,
+          end_time: slot.end_time
         });
       }
-      current = addMinutes_(current, config.roundingMinutes);
-    }
+    });
   });
   slots.sort(function(a, b) {
     return a.start_time.getTime() - b.start_time.getTime();
@@ -1183,9 +1327,7 @@ function getNextAvailableSlots_(now, chargers, reservations, rangeDays, limit) {
 function buildTimelineForCharger_(charger, day, reservations) {
   var config = getReservationConfig_(getConfig_());
   var start = startOfDay_(day);
-  var end = addMinutes_(start, 1440);
   var blocks = [];
-  var current = new Date(start.getTime());
   var maxMinutes = Number(charger.max_minutes) || 0;
   if (maxMinutes <= 0) {
     return {
@@ -1195,19 +1337,15 @@ function buildTimelineForCharger_(charger, day, reservations) {
       blocks: []
     };
   }
-  while (current.getTime() < end.getTime()) {
-    var slotEnd = addMinutes_(current, maxMinutes);
-    if (slotEnd.getTime() > end.getTime()) {
-      break;
-    }
-    var conflict = hasReservationConflict_(reservations, charger.charger_id, current, slotEnd, config.gapMinutes);
+  var slots = buildSlotsForDay_(charger, start);
+  slots.forEach(function(slot) {
+    var conflict = hasReservationConflict_(reservations, charger.charger_id, slot.start_time, slot.end_time, config.gapMinutes);
     blocks.push({
-      startTime: toIso_(current),
-      endTime: toIso_(slotEnd),
+      startTime: toIso_(slot.start_time),
+      endTime: toIso_(slot.end_time),
       status: conflict ? 'reserved' : 'available'
     });
-    current = addMinutes_(current, config.roundingMinutes);
-  }
+  });
   return {
     chargerId: String(charger.charger_id),
     chargerName: charger.name || ('Charger ' + charger.charger_id),
@@ -1219,7 +1357,6 @@ function buildTimelineForCharger_(charger, day, reservations) {
 function buildCalendarDay_(day, chargers, reservations) {
   var config = getReservationConfig_(getConfig_());
   var start = startOfDay_(day);
-  var end = addMinutes_(start, 1440);
   var totalSlots = 0;
   var availableSlots = 0;
   chargers.forEach(function(charger) {
@@ -1227,19 +1364,14 @@ function buildCalendarDay_(day, chargers, reservations) {
     if (maxMinutes <= 0) {
       return;
     }
-    var current = new Date(start.getTime());
-    while (current.getTime() < end.getTime()) {
-      var slotEnd = addMinutes_(current, maxMinutes);
-      if (slotEnd.getTime() > end.getTime()) {
-        break;
-      }
+    var slots = buildSlotsForDay_(charger, start);
+    slots.forEach(function(slot) {
       totalSlots += 1;
-      var conflict = hasReservationConflict_(reservations, charger.charger_id, current, slotEnd, config.gapMinutes);
+      var conflict = hasReservationConflict_(reservations, charger.charger_id, slot.start_time, slot.end_time, config.gapMinutes);
       if (!conflict) {
         availableSlots += 1;
       }
-      current = addMinutes_(current, config.roundingMinutes);
-    }
+    });
   });
   return {
     date: Utilities.formatDate(start, Session.getScriptTimeZone(), 'yyyy-MM-dd'),
@@ -1297,10 +1429,12 @@ function markNoShowReservations_(now) {
         no_show_at: now,
         updated_at: now
       });
+      var releasedCharger = reservation.charger_id ? 'Charger ' + reservation.charger_id : 'the charger';
+      var releasedUser = formatUserDisplay_(reservation.user_name, reservation.user_id);
       notifyUser_(
         reservation,
         {},
-        'ChargeMatter: You missed your reservation and it has been released.'
+        'ChargeMatter: ' + releasedUser + '\'s reservation on ' + releasedCharger + ' was released after 30 minutes.'
       );
     }
   });
@@ -1309,42 +1443,99 @@ function markNoShowReservations_(now) {
 function buildReminderText_(type, session, charger, endTime, now) {
   var chargerName = charger.name || ('Charger ' + charger.charger_id);
   var endDisplay = formatTime_(endTime);
-  if (type === 'tminus10') {
-    return 'ChargeMatter: 10 minutes left on ' + chargerName + '. Ends at ' + endDisplay + '.';
-  }
+  var userName = formatUserDisplay_(session.user_name, session.user_id);
   if (type === 'tminus5') {
-    return 'ChargeMatter: 5 minutes left on ' + chargerName + '. Ends at ' + endDisplay + '.';
+    return 'ChargeMatter: ' + userName + '\'s session on ' + chargerName +
+      ' ends in 5 minutes (ends at ' + endDisplay + '). Please move within 10 minutes of ending.';
   }
   if (type === 'expire') {
-    return 'ChargeMatter: Charging time expired for ' + chargerName + '. Please move your car now.';
+    return 'ChargeMatter: ' + userName + '\'s session on ' + chargerName +
+      ' just ended at ' + endDisplay + '. Please move within 10 minutes.';
   }
-  var overdueMinutes = Math.max(1, Math.floor((now.getTime() - endTime.getTime()) / 60000));
-  return 'ChargeMatter: ' + chargerName + ' is overdue by ' + overdueMinutes + ' minutes. Please move your car now.';
+  return '';
+}
+
+function buildReservationReminderText_(type, reservation, charger, startTime, config) {
+  var chargerName = charger.name || ('Charger ' + charger.charger_id);
+  var startDisplay = formatTime_(startTime);
+  var releaseTime = addMinutes_(startTime, config.lateGraceMinutes);
+  var releaseDisplay = formatTime_(releaseTime);
+  var userName = formatUserDisplay_(reservation.user_name, reservation.user_id);
+  if (type === 'upcoming') {
+    return 'ChargeMatter: ' + userName + '\'s reservation on ' + chargerName +
+      ' starts in 5 minutes at ' + startDisplay + '.';
+  }
+  if (type === 'late') {
+    return 'ChargeMatter: ' + userName + '\'s reservation on ' + chargerName +
+      ' started at ' + startDisplay + ' and will be released at ' + releaseDisplay + ' if unused.';
+  }
+  return '';
 }
 
 function formatTime_(date) {
   return Utilities.formatDate(date, Session.getScriptTimeZone(), 'h:mm a');
 }
 
+function formatUserDisplay_(name, email) {
+  var safeName = String(name || '').trim();
+  var safeEmail = String(email || '').trim();
+  if (safeName && safeEmail) {
+    return safeName + ' (' + safeEmail + ')';
+  }
+  if (safeName) {
+    return safeName;
+  }
+  if (safeEmail) {
+    return safeEmail;
+  }
+  return 'A driver';
+}
+
 function notifyUser_(session, charger, text) {
   var config = getConfig_();
   var email = String(session.user_id || '');
   var sentSlack = false;
-  if (config.slack_bot_token) {
+  var sentEmail = false;
+  var slackText = text;
+  if (config.slack_bot_token && email) {
     try {
-      sendSlackDm_(config.slack_bot_token, email, text);
-      sentSlack = true;
+      var userId = getSlackUserId_(email, config.slack_bot_token);
+      if (userId) {
+        slackText = '<@' + userId + '> ' + text;
+      }
     } catch (err) {
-      sentSlack = false;
+      logError_('Slack user lookup failed', err, { email: email });
     }
   }
-  if (!sentSlack && config.slack_webhook_url) {
-    sendSlackWebhook_(config.slack_webhook_url, text, config.slack_webhook_channel);
-    sentSlack = true;
+  if (config.slack_bot_token && config.slack_webhook_channel) {
+    try {
+      sendSlackChannelMessage_(config.slack_bot_token, config.slack_webhook_channel, slackText);
+      sentSlack = true;
+    } catch (err) {
+      logError_('Slack bot channel failed', err, { channel: config.slack_webhook_channel });
+    }
   }
-  if (!sentSlack && email) {
-    MailApp.sendEmail(email, 'ChargeMatter reminder', text);
+  if (!sentSlack) {
+    if (config.slack_webhook_url) {
+      try {
+        sendSlackWebhook_(config.slack_webhook_url, slackText, config.slack_webhook_channel);
+        sentSlack = true;
+      } catch (err) {
+        logError_('Slack webhook failed', err, { channel: config.slack_webhook_channel });
+      }
+    } else {
+      logError_('Slack webhook missing', '', {});
+    }
   }
+  if (email) {
+    try {
+      MailApp.sendEmail(email, 'ChargeMatter reminder', text);
+      sentEmail = true;
+    } catch (err) {
+      logError_('Email notification failed', err, { email: email });
+    }
+  }
+  return sentSlack || sentEmail;
 }
 
 function sendSlackWebhook_(webhookUrl, text, channel) {
@@ -1361,6 +1552,24 @@ function sendSlackWebhook_(webhookUrl, text, channel) {
     method: 'post',
     contentType: 'application/json',
     payload: JSON.stringify(payload),
+    muteHttpExceptions: true
+  });
+}
+
+function sendSlackChannelMessage_(token, channel, text) {
+  if (!token || !channel) {
+    throw new Error('Missing Slack token or channel.');
+  }
+  UrlFetchApp.fetch('https://slack.com/api/chat.postMessage', {
+    method: 'post',
+    contentType: 'application/json',
+    headers: {
+      Authorization: 'Bearer ' + token
+    },
+    payload: JSON.stringify({
+      channel: channel,
+      text: text
+    }),
     muteHttpExceptions: true
   });
 }
@@ -1414,5 +1623,31 @@ function openSlackDm_(token, userId) {
   });
   var data = JSON.parse(response.getContentText() || '{}');
   return data && data.ok && data.channel ? data.channel.id : '';
+}
+
+function logError_(message, err, context) {
+  var detail = err && err.stack ? err.stack : String(err || '');
+  var payload = context ? JSON.stringify(context) : '';
+  Logger.log(message + (detail ? ' :: ' + detail : '') + (payload ? ' :: ' + payload : ''));
+}
+
+function getSlackUserId_(email, token) {
+  if (!email || !token) {
+    return '';
+  }
+  var cache = CacheService.getScriptCache();
+  var cacheKey = 'slack_user_' + String(email).toLowerCase();
+  var cached = cache.get(cacheKey);
+  if (cached !== null) {
+    return cached;
+  }
+  var userId = '';
+  try {
+    userId = lookupSlackUserId_(token, email) || '';
+  } catch (err) {
+    logError_('Slack lookup failed', err, { email: email });
+  }
+  cache.put(cacheKey, userId, userId ? 21600 : 3600);
+  return userId;
 }
 

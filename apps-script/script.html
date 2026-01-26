@@ -8,12 +8,20 @@
     mode: 'now',
     selectedCharger: null,
     selectedSlot: null,
-    highlightReservationId: null
+    highlightReservationId: null,
+    isLoading: false,
+    loadingButton: null
   };
 
   function init() {
     const refreshBtn = document.getElementById('refresh-btn');
-    refreshBtn.addEventListener('click', loadBoard);
+    refreshBtn.addEventListener('click', () => {
+      if (state.isLoading) {
+        return;
+      }
+      setActionFeedback(refreshBtn, 'Refreshing...');
+      loadBoard();
+    });
     setUserMeta();
     loadBoard();
     setInterval(updateCountdowns, 1000);
@@ -34,11 +42,69 @@
   }
 
   function setLoading(isLoading) {
+    state.isLoading = isLoading;
     const refreshBtn = document.getElementById('refresh-btn');
-    refreshBtn.disabled = isLoading;
+    if (refreshBtn) {
+      refreshBtn.disabled = isLoading;
+    }
+    document.body.classList.toggle('is-loading', isLoading);
+    toggleActionButtons(isLoading);
+    if (!isLoading) {
+      clearActionFeedback();
+    }
+  }
+
+  function toggleActionButtons(disabled) {
+    document.querySelectorAll('button').forEach((button) => {
+      if (button.id === 'refresh-btn') {
+        return;
+      }
+      if (disabled) {
+        if (!button.dataset.prevDisabled) {
+          button.dataset.prevDisabled = button.disabled ? 'true' : 'false';
+        }
+        button.disabled = true;
+      } else if (button.dataset.prevDisabled) {
+        button.disabled = button.dataset.prevDisabled === 'true';
+        delete button.dataset.prevDisabled;
+      }
+    });
+  }
+
+  function setActionFeedback(button, label) {
+    if (!button) {
+      return;
+    }
+    if (state.loadingButton && state.loadingButton !== button) {
+      clearActionFeedback();
+    }
+    state.loadingButton = button;
+    if (!button.dataset.originalText) {
+      button.dataset.originalText = button.textContent;
+    }
+    button.textContent = label || 'Working...';
+    button.classList.add('btn-loading');
+    button.setAttribute('aria-busy', 'true');
+  }
+
+  function clearActionFeedback() {
+    const button = state.loadingButton;
+    if (!button) {
+      return;
+    }
+    if (button.dataset.originalText) {
+      button.textContent = button.dataset.originalText;
+      delete button.dataset.originalText;
+    }
+    button.classList.remove('btn-loading');
+    button.removeAttribute('aria-busy');
+    state.loadingButton = null;
   }
 
   function loadBoard() {
+    if (state.isLoading) {
+      return;
+    }
     setNotice('');
     setLoading(true);
     google.script.run
@@ -73,8 +139,10 @@
       board.appendChild(createCard(charger));
     });
 
-    updateReservationUI(data);
-    loadSlots();
+    if (state.mode === 'reserve') {
+      updateReservationUI(data);
+      loadSlots();
+    }
     updateStickyBar();
     updateSelectionUI();
     updateCountdowns();
@@ -154,6 +222,7 @@
       forceBtn.addEventListener('click', (event) => {
         event.stopPropagation();
         if (confirm('Force end this session?')) {
+          setActionFeedback(forceBtn, 'Ending...');
           callServer('forceEnd', [charger.id]);
         }
         list.classList.remove('active');
@@ -164,6 +233,7 @@
       resetBtn.addEventListener('click', (event) => {
         event.stopPropagation();
         if (confirm('Reset this charger?')) {
+          setActionFeedback(resetBtn, 'Resetting...');
           callServer('resetCharger', [charger.id]);
         }
         list.classList.remove('active');
@@ -187,27 +257,54 @@
 
     if (charger.session) {
       body.appendChild(createInfoRow('Max time', formatDuration(charger.maxMinutes), { secondary: true }));
+      body.appendChild(createInfoRow('In use by', formatUserLabel(charger.session.userName, charger.session.userEmail)));
       body.appendChild(createInfoRow('Ends at', formatTime(charger.session.endTime)));
       const countdown = createInfoRow('Countdown', '--');
       countdown.querySelector('.value').classList.add('countdown');
       countdown.querySelector('.value').dataset.endTime = charger.session.endTime;
       body.appendChild(countdown);
+      if (charger.nextReservation) {
+        body.appendChild(
+          createInfoRow('Next reservation', formatReservationSummary(charger.nextReservation))
+        );
+      }
     } else if (charger.reservation) {
       body.appendChild(createInfoRow('Max time', formatDuration(charger.maxMinutes), { secondary: true }));
+      body.appendChild(
+        createInfoRow('Reserved for', formatUserLabel(charger.reservation.userName, charger.reservation.userEmail))
+      );
       body.appendChild(createInfoRow('Reserved at', formatTime(charger.reservation.startTime)));
+      if (charger.nextReservation) {
+        body.appendChild(
+          createInfoRow('Next reservation', formatReservationSummary(charger.nextReservation))
+        );
+      }
     } else {
       body.appendChild(createInfoRow('Max time', formatDuration(charger.maxMinutes), { secondary: true }));
       body.appendChild(createInfoRow('Status', 'Available now'));
+      if (charger.nextReservation) {
+        body.appendChild(
+          createInfoRow('Next reservation', formatReservationSummary(charger.nextReservation))
+        );
+      }
     }
 
     const actions = document.createElement('div');
     actions.className = 'card-actions';
 
     const primary = getPrimaryAction(charger);
-    const primaryBtn = createButton(primary.label, 'btn primary-action', () => {
-      selectCharger(charger);
-      primary.action();
-    });
+    const primaryBtn = createButton(
+      primary.label,
+      'btn primary-action',
+      () => {
+        selectCharger(charger);
+        primary.action();
+      },
+      {
+        showLoading: primary.needsServer,
+        loadingLabel: primary.loadingLabel
+      }
+    );
     actions.appendChild(primaryBtn);
 
     card.appendChild(header);
@@ -243,11 +340,19 @@
     return row;
   }
 
-  function createButton(text, className, onClick) {
+  function createButton(text, className, onClick, options = {}) {
     const button = document.createElement('button');
     button.textContent = text;
     button.className = className;
-    button.addEventListener('click', onClick);
+    button.addEventListener('click', (event) => {
+      if (state.isLoading) {
+        return;
+      }
+      if (options.showLoading) {
+        setActionFeedback(button, options.loadingLabel);
+      }
+      onClick(event);
+    });
     return button;
   }
 
@@ -274,6 +379,9 @@
   }
 
   function callServer(method, args) {
+    if (state.isLoading) {
+      return;
+    }
     setNotice('');
     setLoading(true);
     const runner = google.script.run
@@ -297,8 +405,10 @@
   function renderReservationLimits(config) {
     const meta = document.getElementById('reservation-limits');
     const parts = [];
-    if (config.reservationAdvanceDays) {
-      parts.push(`Up to ${config.reservationAdvanceDays} days ahead`);
+    parts.push('Same-day only');
+    const openLabel = formatReservationOpenTime(config);
+    if (openLabel) {
+      parts.push(`Opens at ${openLabel}`);
     }
     if (config.reservationMaxUpcoming) {
       parts.push(`Max ${config.reservationMaxUpcoming} upcoming`);
@@ -336,6 +446,7 @@
       const editBtn = createButton('Change', 'btn ghost', () => startReservationEdit(reservation));
       const cancelBtn = createButton('Cancel', 'btn warn', () => {
         if (confirm('Cancel this reservation?')) {
+          setActionFeedback(cancelBtn, 'Canceling...');
           callServer('cancelReservation', [reservation.reservationId]);
         }
       });
@@ -343,6 +454,7 @@
       actions.appendChild(cancelBtn);
       if (shouldShowCheckIn(reservation)) {
         const checkInBtn = createButton('Check in', 'btn secondary', () => {
+          setActionFeedback(checkInBtn, 'Checking in...');
           callServer('checkInReservation', [reservation.reservationId]);
         });
         actions.appendChild(checkInBtn);
@@ -411,6 +523,67 @@
       return '--';
     }
     return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  }
+
+  function getReservationOpenTime(config) {
+    if (!config) {
+      return null;
+    }
+    const hour = Number(config.reservationOpenHour);
+    const minute = Number(config.reservationOpenMinute);
+    if (Number.isNaN(hour) || Number.isNaN(minute)) {
+      return null;
+    }
+    const now = getClientNow();
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour, minute, 0);
+  }
+
+  function formatReservationOpenTime(config) {
+    const openTime = getReservationOpenTime(config);
+    if (!openTime) {
+      return '';
+    }
+    return openTime.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  }
+
+  function getReservationClosedMessage() {
+    const config = state.board?.config;
+    const openTime = getReservationOpenTime(config);
+    if (!openTime) {
+      return '';
+    }
+    const now = getClientNow();
+    if (now < openTime) {
+      return `Bookings open at ${formatReservationOpenTime(config)}.`;
+    }
+    return '';
+  }
+
+  function formatUserLabel(userName, userEmail) {
+    if (userName && userName.trim()) {
+      return userName;
+    }
+    if (userEmail && userEmail.trim()) {
+      return userEmail;
+    }
+    return 'Unknown';
+  }
+
+  function formatReservationSummary(reservation) {
+    if (!reservation) {
+      return '--';
+    }
+    const start = new Date(reservation.startTime);
+    const who = formatUserLabel(reservation.userName, reservation.userEmail);
+    if (Number.isNaN(start.getTime())) {
+      return who;
+    }
+    const now = getClientNow();
+    const isSameDay = formatDateInput(start) === formatDateInput(now);
+    const dayLabel = isSameDay
+      ? 'Today'
+      : start.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+    return `${dayLabel} ${formatTime(reservation.startTime)} · ${who}`;
   }
 
   function formatDuration(minutes) {
@@ -498,6 +671,10 @@
     document.getElementById('mode-now').classList.toggle('active', mode === 'now');
     document.getElementById('mode-reserve').classList.toggle('active', mode === 'reserve');
     clearSelection();
+    if (mode === 'reserve' && state.board) {
+      updateReservationUI(state.board);
+      loadSlots();
+    }
     updateStickyBar();
   }
 
@@ -510,29 +687,39 @@
       if (charger.session.userEmail === APP_CONFIG.userEmail) {
         return {
           label: 'End session',
-          action: () => callServer('endSession', [charger.session.sessionId])
+          action: () => callServer('endSession', [charger.session.sessionId]),
+          needsServer: true,
+          loadingLabel: 'Ending...'
         };
       }
       return {
         label: 'Notify owner',
-        action: () => callServer('notifyOwner', [charger.id])
+        action: () => callServer('notifyOwner', [charger.id]),
+        needsServer: true,
+        loadingLabel: 'Notifying...'
       };
     }
     if (charger.statusKey === 'overdue') {
       return {
         label: 'Notify owner',
-        action: () => callServer('notifyOwner', [charger.id])
+        action: () => callServer('notifyOwner', [charger.id]),
+        needsServer: true,
+        loadingLabel: 'Notifying...'
       };
     }
     if (charger.statusKey === 'reserved') {
       return {
         label: 'View reservation',
-        action: () => viewReservation(charger)
+        action: () => viewReservation(charger),
+        needsServer: false,
+        loadingLabel: ''
       };
     }
     return {
       label: 'Start charging',
-      action: () => callServer('startSession', [charger.id])
+      action: () => callServer('startSession', [charger.id]),
+      needsServer: true,
+      loadingLabel: 'Starting...'
     };
   }
 
@@ -581,7 +768,15 @@
       info.textContent = `${state.selectedCharger.name} selected`;
       actionBtn.textContent = primary.label;
       actionBtn.disabled = false;
-      actionBtn.onclick = () => primary.action();
+      actionBtn.onclick = () => {
+        if (state.isLoading) {
+          return;
+        }
+        if (primary.needsServer) {
+          setActionFeedback(actionBtn, primary.loadingLabel);
+        }
+        primary.action();
+      };
       bar.classList.add('active');
       return;
     }
@@ -592,7 +787,13 @@
       info.textContent = label;
       actionBtn.textContent = state.editingReservationId ? 'Update reservation' : 'Book slot';
       actionBtn.disabled = false;
-      actionBtn.onclick = () => bookSlot(state.selectedSlot);
+      actionBtn.onclick = () => {
+        if (state.isLoading) {
+          return;
+        }
+        setActionFeedback(actionBtn, state.editingReservationId ? 'Updating...' : 'Booking...');
+        bookSlot(state.selectedSlot);
+      };
       bar.classList.add('active');
       return;
     }
@@ -615,7 +816,7 @@
     container.innerHTML = '';
     if (!slots.length) {
       const empty = document.createElement('div');
-      empty.textContent = 'No available slots found.';
+      empty.textContent = getReservationClosedMessage() || 'No available slots found.';
       container.appendChild(empty);
       return;
     }
@@ -637,10 +838,15 @@
         meta.innerHTML = `<div>${formatTime(slot.startTime)} – ${formatTime(slot.endTime)}</div><div>${reservationLabel({
           chargerId: slot.chargerId
         })}</div>`;
-        const action = createButton('Book', 'btn', (event) => {
-          event.stopPropagation();
-          bookSlot(slot);
-        });
+        const action = createButton(
+          'Book',
+          'btn',
+          (event) => {
+            event.stopPropagation();
+            bookSlot(slot);
+          },
+          { showLoading: true, loadingLabel: 'Booking...' }
+        );
         row.appendChild(meta);
         row.appendChild(action);
         groupEl.appendChild(row);
