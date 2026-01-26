@@ -75,7 +75,7 @@ function doGet() {
   template.userEmail = auth.email;
   template.userName = auth.name;
   template.isAdmin = auth.isAdmin;
-  return template.evaluate().setTitle('ChargeMatter');
+  return template.evaluate().setTitle('ChargingMatters');
 }
 
 function getBoardData() {
@@ -451,7 +451,7 @@ function notifyOwner(chargerId) {
     throw new Error('Session not found.');
   }
   var chargerName = charger.name || ('Charger ' + charger.charger_id);
-  notifyUser_(session, charger, 'ChargeMatter: Someone is waiting for ' + chargerName + '. Please check your car.');
+  notifyUser_(session, charger, 'ChargingMatters: Someone is waiting for ' + chargerName + '. Please check your car.');
   return getBoardData();
 }
 
@@ -1434,7 +1434,7 @@ function markNoShowReservations_(now) {
       notifyUser_(
         reservation,
         {},
-        'ChargeMatter: ' + releasedUser + '\'s reservation on ' + releasedCharger + ' was released after 30 minutes.'
+        'ChargingMatters: ' + releasedUser + '\'s reservation on ' + releasedCharger + ' was released after 30 minutes.'
       );
     }
   });
@@ -1445,11 +1445,11 @@ function buildReminderText_(type, session, charger, endTime, now) {
   var endDisplay = formatTime_(endTime);
   var userName = formatUserDisplay_(session.user_name, session.user_id);
   if (type === 'tminus5') {
-    return 'ChargeMatter: ' + userName + '\'s session on ' + chargerName +
+    return 'ChargingMatters: ' + userName + '\'s session on ' + chargerName +
       ' ends in 5 minutes (ends at ' + endDisplay + '). Please move within 10 minutes of ending.';
   }
   if (type === 'expire') {
-    return 'ChargeMatter: ' + userName + '\'s session on ' + chargerName +
+    return 'ChargingMatters: ' + userName + '\'s session on ' + chargerName +
       ' just ended at ' + endDisplay + '. Please move within 10 minutes.';
   }
   return '';
@@ -1462,11 +1462,11 @@ function buildReservationReminderText_(type, reservation, charger, startTime, co
   var releaseDisplay = formatTime_(releaseTime);
   var userName = formatUserDisplay_(reservation.user_name, reservation.user_id);
   if (type === 'upcoming') {
-    return 'ChargeMatter: ' + userName + '\'s reservation on ' + chargerName +
+    return 'ChargingMatters: ' + userName + '\'s reservation on ' + chargerName +
       ' starts in 5 minutes at ' + startDisplay + '.';
   }
   if (type === 'late') {
-    return 'ChargeMatter: ' + userName + '\'s reservation on ' + chargerName +
+    return 'ChargingMatters: ' + userName + '\'s reservation on ' + chargerName +
       ' started at ' + startDisplay + ' and will be released at ' + releaseDisplay + ' if unused.';
   }
   return '';
@@ -1549,7 +1549,7 @@ function notifyUser_(session, charger, text) {
   }
   if (email) {
     try {
-      MailApp.sendEmail(email, 'ChargeMatter reminder', text);
+      MailApp.sendEmail(email, 'ChargingMatters reminder', text);
       sentEmail = true;
     } catch (err) {
       logError_('Email notification failed', err, { email: email });

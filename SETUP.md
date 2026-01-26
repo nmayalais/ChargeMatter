@@ -1,9 +1,9 @@
-# ChargeMatter Setup
+# ChargingMatters Setup
 
 This MVP runs on Google Apps Script + Google Sheets with optional Slack notifications.
 
 ## 1) Create the Google Sheet
-1. Create a new Google Sheet named `ChargeMatter`.
+1. Create a new Google Sheet named `ChargingMatters`.
 2. Copy the Spreadsheet ID from the URL.
 3. In the Apps Script project, set Script Properties:
    - `SPREADSHEET_ID` = your sheet ID
