@@ -1,13 +1,17 @@
 var APP_DEFAULTS = {
   allowedDomain: 'company.com',
   overdueRepeatMinutes: 15,
+  sessionMoveGraceMinutes: 10,
+  strikeThreshold: 2,
+  suspensionBusinessDays: 2,
   reservationAdvanceDays: 7,
   reservationMaxUpcoming: 3,
-  reservationMaxPerDay: 2,
+  reservationMaxPerDay: 1,
   reservationGapMinutes: 1,
   reservationRoundingMinutes: 15,
   reservationCheckinEarlyMinutes: 5,
-  reservationLateGraceMinutes: 10,
+  reservationEarlyStartMinutes: 90,
+  reservationLateGraceMinutes: 30,
   reservationOpenHour: 6,
   reservationOpenMinute: 0
 };
@@ -16,6 +20,8 @@ var SHEETS = {
   chargers: 'chargers',
   sessions: 'sessions',
   reservations: 'reservations',
+  strikes: 'strikes',
+  suspensions: 'suspensions',
   config: 'config'
 };
 
@@ -42,6 +48,8 @@ var SESSIONS_HEADERS = [
   'reminder_5_sent',
   'reminder_0_sent',
   'overdue_last_sent_at',
+  'grace_notified_at',
+  'late_strike_at',
   'ended_at'
 ];
 
@@ -55,11 +63,35 @@ var RESERVATIONS_HEADERS = [
   'status',
   'checked_in_at',
   'no_show_at',
+  'no_show_strike_at',
   'reminder_5_before_sent',
   'reminder_5_after_sent',
   'created_at',
   'updated_at',
   'canceled_at'
+];
+
+var STRIKES_HEADERS = [
+  'strike_id',
+  'user_id',
+  'user_name',
+  'type',
+  'source_type',
+  'source_id',
+  'reason',
+  'occurred_at',
+  'month_key'
+];
+
+var SUSPENSIONS_HEADERS = [
+  'suspension_id',
+  'user_id',
+  'user_name',
+  'start_at',
+  'end_at',
+  'reason',
+  'active',
+  'created_at'
 ];
 
 var CONFIG_HEADERS = ['key', 'value'];
@@ -85,6 +117,10 @@ function getBoardData() {
   var reservationsData = getSheetData_(SHEETS.reservations, RESERVATIONS_HEADERS);
   var board = buildBoard_(now, reservationsData);
   var userReservations = getUpcomingReservationsForUser_(reservationsData.rows, auth.email, now);
+  var suspension = getActiveSuspensionForUser_(auth.email);
+  if (suspension) {
+    auth.suspension = serializeSuspension_(suspension);
+  }
   return {
     user: auth,
     chargers: board.chargers,
@@ -93,12 +129,15 @@ function getBoardData() {
     timezone: Session.getScriptTimeZone(),
     config: {
       overdueRepeatMinutes: board.overdueRepeatMinutes,
+      sessionMoveGraceMinutes: board.sessionMoveGraceMinutes,
+      suspensionBusinessDays: board.suspensionBusinessDays,
       reservationAdvanceDays: board.reservationAdvanceDays,
       reservationMaxUpcoming: board.reservationMaxUpcoming,
       reservationMaxPerDay: board.reservationMaxPerDay,
       reservationGapMinutes: board.reservationGapMinutes,
       reservationRoundingMinutes: board.reservationRoundingMinutes,
       reservationCheckinEarlyMinutes: board.reservationCheckinEarlyMinutes,
+      reservationEarlyStartMinutes: board.reservationEarlyStartMinutes,
       reservationLateGraceMinutes: board.reservationLateGraceMinutes,
       reservationOpenHour: board.reservationOpenHour,
       reservationOpenMinute: board.reservationOpenMinute
@@ -112,6 +151,7 @@ function startSession(chargerId) {
   try {
     initSheets_();
     var auth = requireAuthorizedUser_();
+    assertNotSuspended_(auth);
     var chargersData = getSheetData_(SHEETS.chargers, CHARGERS_HEADERS);
     var sessionsData = getSheetData_(SHEETS.sessions, SESSIONS_HEADERS);
     var reservationsData = getSheetData_(SHEETS.reservations, RESERVATIONS_HEADERS);
@@ -124,6 +164,18 @@ function startSession(chargerId) {
       throw new Error('Charger max minutes is not configured.');
     }
     var now = new Date();
+    var activeSession = findActiveSessionForUser_(sessionsData.rows, auth.email);
+    if (activeSession) {
+      var activeCharger = findById_(chargersData.rows, 'charger_id', activeSession.charger_id);
+      var activeName = activeCharger ? (activeCharger.name || ('Charger ' + activeCharger.charger_id)) : 'another charger';
+      throw new Error('You already have an active session on ' + activeName + '. End it before starting another.');
+    }
+    var conflictingReservation = findUserReservationAtTime_(reservationsData.rows, auth.email, now, chargerId);
+    if (conflictingReservation) {
+      var reservedCharger = findById_(chargersData.rows, 'charger_id', conflictingReservation.charger_id);
+      var reservedName = reservedCharger ? (reservedCharger.name || ('Charger ' + reservedCharger.charger_id)) : 'another charger';
+      throw new Error('You already have a reservation on ' + reservedName + ' at this time.');
+    }
     var config = getReservationConfig_(getConfig_());
     var slot = findSlotForTime_(charger, now);
     if (!slot) {
@@ -189,9 +241,11 @@ function createReservation(chargerId, startTimeIso) {
   try {
     initSheets_();
     var auth = requireAuthorizedUser_();
+    assertNotSuspended_(auth);
     var now = new Date();
     var chargersData = getSheetData_(SHEETS.chargers, CHARGERS_HEADERS);
     var reservationsData = getSheetData_(SHEETS.reservations, RESERVATIONS_HEADERS);
+    var sessionsData = getSheetData_(SHEETS.sessions, SESSIONS_HEADERS);
     var charger = findById_(chargersData.rows, 'charger_id', chargerId);
     if (!charger) {
       throw new Error('Charger not found.');
@@ -212,6 +266,7 @@ function createReservation(chargerId, startTimeIso) {
       auth: auth,
       now: now,
       reservations: reservationsData.rows,
+      sessions: sessionsData.rows,
       excludeReservationId: ''
     });
     var reservationId = Utilities.getUuid();
@@ -223,6 +278,9 @@ function createReservation(chargerId, startTimeIso) {
       startTime,
       endTime,
       'active',
+      '',
+      '',
+      '',
       '',
       '',
       now,
@@ -242,9 +300,11 @@ function updateReservation(reservationId, chargerId, startTimeIso) {
   try {
     initSheets_();
     var auth = requireAuthorizedUser_();
+    assertNotSuspended_(auth);
     var now = new Date();
     var reservationsData = getSheetData_(SHEETS.reservations, RESERVATIONS_HEADERS);
     var chargersData = getSheetData_(SHEETS.chargers, CHARGERS_HEADERS);
+    var sessionsData = getSheetData_(SHEETS.sessions, SESSIONS_HEADERS);
     var reservation = findById_(reservationsData.rows, 'reservation_id', reservationId);
     if (!reservation || isReservationCanceled_(reservation)) {
       throw new Error('Reservation not found.');
@@ -275,6 +335,7 @@ function updateReservation(reservationId, chargerId, startTimeIso) {
       auth: auth,
       now: now,
       reservations: reservationsData.rows,
+      sessions: sessionsData.rows,
       excludeReservationId: reservationId
     });
     updateRow_(reservationsData.sheet, reservationsData.headerMap, reservation._row, {
@@ -282,6 +343,12 @@ function updateReservation(reservationId, chargerId, startTimeIso) {
       start_time: startTime,
       end_time: endTime,
       status: 'active',
+      checked_in_at: '',
+      no_show_at: '',
+      no_show_strike_at: '',
+      reminder_5_before_sent: '',
+      reminder_5_after_sent: '',
+      canceled_at: '',
       updated_at: now
     });
     return getBoardData();
@@ -388,8 +455,11 @@ function checkInReservation(reservationId) {
   try {
     initSheets_();
     var auth = requireAuthorizedUser_();
+    assertNotSuspended_(auth);
     var now = new Date();
     var reservationsData = getSheetData_(SHEETS.reservations, RESERVATIONS_HEADERS);
+    var sessionsData = getSheetData_(SHEETS.sessions, SESSIONS_HEADERS);
+    var chargersData = getSheetData_(SHEETS.chargers, CHARGERS_HEADERS);
     var reservation = findById_(reservationsData.rows, 'reservation_id', reservationId);
     if (!reservation || isReservationCanceled_(reservation)) {
       throw new Error('Reservation not found.');
@@ -402,13 +472,25 @@ function checkInReservation(reservationId) {
     if (!startTime) {
       throw new Error('Invalid reservation start time.');
     }
-    var earliest = new Date(startTime.getTime() - config.checkinEarlyMinutes * 60000);
+    var earlyWindowMinutes = Math.max(config.checkinEarlyMinutes, config.earlyStartMinutes);
+    var earliest = new Date(startTime.getTime() - earlyWindowMinutes * 60000);
     var latest = new Date(startTime.getTime() + config.lateGraceMinutes * 60000);
     if (now.getTime() < earliest.getTime()) {
-      throw new Error('Check-in is available within ' + config.checkinEarlyMinutes + ' minutes of start time.');
+      throw new Error('Check-in is available within ' + earlyWindowMinutes + ' minutes of start time.');
     }
     if (now.getTime() > latest.getTime()) {
       throw new Error('This reservation is too late to check in.');
+    }
+    var activeSession = findActiveSessionForUser_(sessionsData.rows, auth.email);
+    if (activeSession) {
+      var activeCharger = findById_(chargersData.rows, 'charger_id', activeSession.charger_id);
+      var activeName = activeCharger ? (activeCharger.name || ('Charger ' + activeCharger.charger_id)) : 'another charger';
+      throw new Error('You already have an active session on ' + activeName + '. End it before checking in.');
+    }
+    if (now.getTime() < startTime.getTime()) {
+      startSessionForReservation_(reservation, auth, now, config, chargersData, sessionsData, reservationsData);
+    } else {
+      startSession(reservation.charger_id);
     }
     if (!reservation.checked_in_at) {
       updateRow_(reservationsData.sheet, reservationsData.headerMap, reservation._row, {
@@ -417,7 +499,6 @@ function checkInReservation(reservationId) {
         updated_at: now
       });
     }
-    startSession(reservation.charger_id);
     return getBoardData();
   } finally {
     lock.releaseLock();
@@ -451,8 +532,27 @@ function notifyOwner(chargerId) {
     throw new Error('Session not found.');
   }
   var chargerName = charger.name || ('Charger ' + charger.charger_id);
-  notifyUser_(session, charger, 'ChargingMatters: Someone is waiting for ' + chargerName + '. Please check your car.');
+  notifyChannel_(
+    'ChargingMatters: Someone is waiting for ' + chargerName +
+      '. Please move your car and post any delays in #ChargingMatters.',
+    session.user_id
+  );
   return getBoardData();
+}
+
+function postChannelMessage(message) {
+  initSheets_();
+  var auth = requireAuthorizedUser_();
+  var text = String(message || '').trim();
+  if (!text) {
+    throw new Error('Message cannot be empty.');
+  }
+  var displayName = formatUserDisplay_(auth.name, auth.email);
+  var payload = 'ChargingMatters: ' + displayName + ' says: ' + text;
+  if (!notifyChannel_(payload, auth.email)) {
+    throw new Error('Unable to post to the ChargingMatters channel.');
+  }
+  return true;
 }
 
 function forceEnd(chargerId) {
@@ -519,6 +619,10 @@ function sendReminders() {
     markNoShowReservations_(now);
     var config = getConfig_();
     var reservationConfig = getReservationConfig_(config);
+    var sessionMoveGraceMinutes = parseInt(config.session_move_grace_minutes, 10);
+    var overdueRepeatMinutes = parseInt(config.overdue_repeat_minutes, 10);
+    sessionMoveGraceMinutes = isNaN(sessionMoveGraceMinutes) ? APP_DEFAULTS.sessionMoveGraceMinutes : sessionMoveGraceMinutes;
+    overdueRepeatMinutes = isNaN(overdueRepeatMinutes) ? APP_DEFAULTS.overdueRepeatMinutes : overdueRepeatMinutes;
     var chargersData = getSheetData_(SHEETS.chargers, CHARGERS_HEADERS);
     var sessionsData = getSheetData_(SHEETS.sessions, SESSIONS_HEADERS);
     var reservationsData = getSheetData_(SHEETS.reservations, RESERVATIONS_HEADERS);
@@ -537,7 +641,8 @@ function sendReminders() {
         }
         var charger = chargersById[String(session.charger_id)] || {};
         var minutesToEnd = Math.floor((endTime.getTime() - now.getTime()) / 60000);
-        var isOverdue = now.getTime() >= endTime.getTime();
+        var graceCutoff = addMinutes_(endTime, sessionMoveGraceMinutes);
+        var isOverdue = now.getTime() >= graceCutoff.getTime();
         var updates = {};
         if (isOverdue && session.status !== 'overdue') {
           updates.status = 'overdue';
@@ -545,19 +650,47 @@ function sendReminders() {
           updates.overdue = true;
           updates.complete = false;
         }
+        if (!isOverdue && session.status !== 'active') {
+          updates.status = 'active';
+          updates.active = true;
+          updates.overdue = false;
+          updates.complete = false;
+        }
         if (!isTrue_(session.reminder_5_sent) && minutesToEnd <= 5 && minutesToEnd > 0) {
-          if (notifyUser_(session, charger, buildReminderText_('tminus5', session, charger, endTime, now))) {
+          if (notifyChannel_(buildReminderText_('tminus5', session, charger, endTime, now, sessionMoveGraceMinutes), session.user_id)) {
             updates.reminder_5_sent = true;
           }
         }
         if (!isTrue_(session.reminder_0_sent) && minutesToEnd <= 0) {
-          if (notifyUser_(session, charger, buildReminderText_('expire', session, charger, endTime, now))) {
+          if (notifyChannel_(buildReminderText_('expire', session, charger, endTime, now, sessionMoveGraceMinutes), session.user_id)) {
             updates.reminder_0_sent = true;
-            updates.status = 'overdue';
-            updates.active = true;
-            updates.overdue = true;
-            updates.complete = false;
             updates.overdue_last_sent_at = now;
+          }
+        }
+        if (isOverdue) {
+          if (!session.grace_notified_at) {
+            if (notifyChannel_(buildReminderText_('grace', session, charger, endTime, now, sessionMoveGraceMinutes), session.user_id)) {
+              updates.grace_notified_at = now;
+              updates.overdue_last_sent_at = now;
+            }
+          }
+          if (!session.late_strike_at) {
+            recordStrike_({
+              type: 'late',
+              sourceType: 'session',
+              sourceId: session.session_id,
+              userEmail: session.user_id,
+              userName: session.user_name,
+              reason: 'Late move after grace period',
+              occurredAt: now
+            });
+            updates.late_strike_at = now;
+          }
+          var lastSent = toDate_(session.overdue_last_sent_at);
+          if (!lastSent || now.getTime() - lastSent.getTime() >= overdueRepeatMinutes * 60000) {
+            if (notifyChannel_(buildReminderText_('overdue', session, charger, endTime, now, sessionMoveGraceMinutes), session.user_id)) {
+              updates.overdue_last_sent_at = now;
+            }
           }
         }
         if (Object.keys(updates).length > 0) {
@@ -587,14 +720,14 @@ function sendReminders() {
         var minutesSinceStart = Math.floor((now.getTime() - startTime.getTime()) / 60000);
         var resUpdates = {};
         if (!isTrue_(reservation.reminder_5_before_sent) && minutesToStart <= 5 && minutesToStart > 0) {
-          if (notifyUser_(reservation, charger, buildReservationReminderText_('upcoming', reservation, charger, startTime, reservationConfig))) {
+          if (notifyChannel_(buildReservationReminderText_('upcoming', reservation, charger, startTime, reservationConfig), reservation.user_id)) {
             resUpdates.reminder_5_before_sent = true;
           }
         }
         if (!isTrue_(reservation.reminder_5_after_sent) &&
             minutesSinceStart >= 5 &&
             minutesSinceStart < reservationConfig.lateGraceMinutes) {
-          if (notifyUser_(reservation, charger, buildReservationReminderText_('late', reservation, charger, startTime, reservationConfig))) {
+          if (notifyChannel_(buildReservationReminderText_('late', reservation, charger, startTime, reservationConfig), reservation.user_id)) {
             resUpdates.reminder_5_after_sent = true;
           }
         }
@@ -648,6 +781,7 @@ function buildBoard_(now, reservationsData) {
   var sessionsData = getSheetData_(SHEETS.sessions, SESSIONS_HEADERS);
   var reservations = reservationsData ? reservationsData.rows : [];
   var reservationConfig = getReservationConfig_(config);
+  var sessionMoveGraceMinutes = Number(config.session_move_grace_minutes) || APP_DEFAULTS.sessionMoveGraceMinutes;
   var sessionsById = {};
   sessionsData.rows.forEach(function(session) {
     if (session.session_id) {
@@ -676,7 +810,8 @@ function buildBoard_(now, reservationsData) {
       var nextReservation = reservationsByCharger.next[String(charger.charger_id || '')] || null;
       if (session) {
         var endTime = toDate_(session.end_time);
-        var isOverdue = endTime && now.getTime() >= endTime.getTime();
+        var graceCutoff = endTime ? addMinutes_(endTime, sessionMoveGraceMinutes) : null;
+        var isOverdue = graceCutoff && now.getTime() >= graceCutoff.getTime();
         if (isOverdue && session.status !== 'overdue') {
           updateRow_(sessionsData.sheet, sessionsData.headerMap, session._row, {
             status: 'overdue',
@@ -714,12 +849,15 @@ function buildBoard_(now, reservationsData) {
     chargers: chargersView,
     serverTime: now.toISOString(),
     overdueRepeatMinutes: Number(config.overdue_repeat_minutes) || APP_DEFAULTS.overdueRepeatMinutes,
+    sessionMoveGraceMinutes: sessionMoveGraceMinutes,
+    suspensionBusinessDays: Number(config.suspension_business_days) || APP_DEFAULTS.suspensionBusinessDays,
     reservationAdvanceDays: reservationConfig.advanceDays,
     reservationMaxUpcoming: reservationConfig.maxUpcoming,
     reservationMaxPerDay: reservationConfig.maxPerDay,
     reservationGapMinutes: reservationConfig.gapMinutes,
     reservationRoundingMinutes: reservationConfig.roundingMinutes,
     reservationCheckinEarlyMinutes: reservationConfig.checkinEarlyMinutes,
+    reservationEarlyStartMinutes: reservationConfig.earlyStartMinutes,
     reservationLateGraceMinutes: reservationConfig.lateGraceMinutes,
     reservationOpenHour: reservationConfig.openHour,
     reservationOpenMinute: reservationConfig.openMinute
@@ -796,6 +934,8 @@ function initSheets_() {
   ensureHeaders_(getSheet_(SHEETS.chargers), CHARGERS_HEADERS);
   ensureHeaders_(getSheet_(SHEETS.sessions), SESSIONS_HEADERS);
   ensureHeaders_(getSheet_(SHEETS.reservations), RESERVATIONS_HEADERS);
+  ensureHeaders_(getSheet_(SHEETS.strikes), STRIKES_HEADERS);
+  ensureHeaders_(getSheet_(SHEETS.suspensions), SUSPENSIONS_HEADERS);
   ensureHeaders_(getSheet_(SHEETS.config), CONFIG_HEADERS);
 }
 
@@ -825,6 +965,18 @@ function getConfig_() {
   config.slack_bot_token = config.slack_bot_token || props.getProperty('SLACK_BOT_TOKEN') || '';
   config.admin_emails = config.admin_emails || props.getProperty('ADMIN_EMAILS') || '';
   config.overdue_repeat_minutes = config.overdue_repeat_minutes || props.getProperty('OVERDUE_REPEAT_MINUTES') || APP_DEFAULTS.overdueRepeatMinutes;
+  config.session_move_grace_minutes =
+    config.session_move_grace_minutes ||
+    props.getProperty('SESSION_MOVE_GRACE_MINUTES') ||
+    APP_DEFAULTS.sessionMoveGraceMinutes;
+  config.strike_threshold =
+    config.strike_threshold ||
+    props.getProperty('STRIKE_THRESHOLD') ||
+    APP_DEFAULTS.strikeThreshold;
+  config.suspension_business_days =
+    config.suspension_business_days ||
+    props.getProperty('SUSPENSION_BUSINESS_DAYS') ||
+    APP_DEFAULTS.suspensionBusinessDays;
   config.reservation_advance_days =
     config.reservation_advance_days || props.getProperty('RESERVATION_ADVANCE_DAYS') || APP_DEFAULTS.reservationAdvanceDays;
   config.reservation_max_upcoming =
@@ -841,6 +993,10 @@ function getConfig_() {
     config.reservation_checkin_early_minutes ||
     props.getProperty('RESERVATION_CHECKIN_EARLY_MINUTES') ||
     APP_DEFAULTS.reservationCheckinEarlyMinutes;
+  config.reservation_early_start_minutes =
+    config.reservation_early_start_minutes ||
+    props.getProperty('RESERVATION_EARLY_START_MINUTES') ||
+    APP_DEFAULTS.reservationEarlyStartMinutes;
   config.reservation_late_grace_minutes =
     config.reservation_late_grace_minutes ||
     props.getProperty('RESERVATION_LATE_GRACE_MINUTES') ||
@@ -927,6 +1083,173 @@ function isComplete_(session) {
   return isTrue_(session.complete) || String(session.status).toLowerCase() === 'complete';
 }
 
+function findActiveSessionForUser_(sessions, userEmail) {
+  var email = String(userEmail || '').toLowerCase();
+  for (var i = 0; i < sessions.length; i++) {
+    var session = sessions[i];
+    if (!session || !session.session_id) {
+      continue;
+    }
+    if (isComplete_(session)) {
+      continue;
+    }
+    if (String(session.user_id || '').toLowerCase() === email) {
+      return session;
+    }
+  }
+  return null;
+}
+
+function findUserReservationAtTime_(reservations, userEmail, moment, excludeChargerId) {
+  var email = String(userEmail || '').toLowerCase();
+  var target = moment ? moment.getTime() : 0;
+  for (var i = 0; i < reservations.length; i++) {
+    var reservation = reservations[i];
+    if (!reservation || !reservation.reservation_id) {
+      continue;
+    }
+    if (isReservationCanceled_(reservation) || isReservationNoShow_(reservation)) {
+      continue;
+    }
+    if (String(reservation.user_id || '').toLowerCase() !== email) {
+      continue;
+    }
+    if (excludeChargerId && String(reservation.charger_id) === String(excludeChargerId)) {
+      continue;
+    }
+    var start = toDate_(reservation.start_time);
+    var end = toDate_(reservation.end_time);
+    if (!start || !end) {
+      continue;
+    }
+    if (target >= start.getTime() && target < end.getTime()) {
+      return reservation;
+    }
+  }
+  return null;
+}
+
+function monthKey_(date) {
+  return Utilities.formatDate(date, Session.getScriptTimeZone(), 'yyyy-MM');
+}
+
+function addBusinessDays_(date, days) {
+  var result = new Date(date.getTime());
+  var remaining = Math.max(0, days);
+  while (remaining > 0) {
+    result.setDate(result.getDate() + 1);
+    var day = result.getDay();
+    if (day !== 0 && day !== 6) {
+      remaining -= 1;
+    }
+  }
+  return result;
+}
+
+function getActiveSuspensionForUser_(email) {
+  var data = getSheetData_(SHEETS.suspensions, SUSPENSIONS_HEADERS);
+  var now = new Date();
+  var normalized = String(email || '').toLowerCase();
+  var active = null;
+  data.rows.forEach(function(row) {
+    if (!row.user_id || String(row.user_id).toLowerCase() !== normalized) {
+      return;
+    }
+    var endAt = toDate_(row.end_at);
+    var isActive = isTrue_(row.active);
+    if (endAt && now.getTime() > endAt.getTime()) {
+      if (isActive) {
+        updateRow_(data.sheet, data.headerMap, row._row, { active: false });
+      }
+      return;
+    }
+    if (isActive && endAt) {
+      active = row;
+    }
+  });
+  return active;
+}
+
+function assertNotSuspended_(auth) {
+  var suspension = getActiveSuspensionForUser_(auth.email);
+  if (suspension) {
+    var endAt = toDate_(suspension.end_at);
+    var endDisplay = endAt ? formatTime_(endAt) + ' on ' + Utilities.formatDate(endAt, Session.getScriptTimeZone(), 'MMM d') : 'soon';
+    throw new Error('Charging privileges suspended until ' + endDisplay + '.');
+  }
+}
+
+function getMonthlyStrikeCount_(strikes, email, monthKey) {
+  var normalized = String(email || '').toLowerCase();
+  return strikes.filter(function(strike) {
+    return strike.user_id &&
+      String(strike.user_id).toLowerCase() === normalized &&
+      String(strike.month_key) === String(monthKey);
+  }).length;
+}
+
+function recordStrike_(params) {
+  var strikesData = getSheetData_(SHEETS.strikes, STRIKES_HEADERS);
+  var userEmail = String(params.userEmail || '').toLowerCase();
+  var sourceId = String(params.sourceId || '');
+  var sourceType = String(params.sourceType || '');
+  var type = String(params.type || '');
+  for (var i = 0; i < strikesData.rows.length; i++) {
+    var existing = strikesData.rows[i];
+    if (String(existing.source_id) === sourceId && String(existing.type) === type) {
+      return existing;
+    }
+  }
+  var now = params.occurredAt || new Date();
+  var monthKey = monthKey_(now);
+  strikesData.sheet.appendRow([
+    Utilities.getUuid(),
+    userEmail,
+    params.userName || '',
+    type,
+    sourceType,
+    sourceId,
+    params.reason || '',
+    now,
+    monthKey
+  ]);
+  var refreshed = getSheetData_(SHEETS.strikes, STRIKES_HEADERS);
+  var count = getMonthlyStrikeCount_(refreshed.rows, userEmail, monthKey);
+  maybeApplySuspension_(params.userEmail, params.userName, monthKey, now, count);
+  return null;
+}
+
+function maybeApplySuspension_(userEmail, userName, monthKey, now, strikeCount) {
+  var config = getConfig_();
+  var threshold = parseInt(config.strike_threshold, 10);
+  var suspensionDays = parseInt(config.suspension_business_days, 10);
+  var required = isNaN(threshold) ? APP_DEFAULTS.strikeThreshold : threshold;
+  var days = isNaN(suspensionDays) ? APP_DEFAULTS.suspensionBusinessDays : suspensionDays;
+  if (strikeCount < required) {
+    return null;
+  }
+  var existing = getActiveSuspensionForUser_(userEmail);
+  if (existing) {
+    return existing;
+  }
+  var suspensionsData = getSheetData_(SHEETS.suspensions, SUSPENSIONS_HEADERS);
+  var startAt = now || new Date();
+  var endAt = addBusinessDays_(startAt, days);
+  suspensionsData.sheet.appendRow([
+    Utilities.getUuid(),
+    userEmail,
+    userName || '',
+    startAt,
+    endAt,
+    'Two-strike rule',
+    true,
+    new Date()
+  ]);
+  notifyChannel_('ChargingMatters: ' + formatUserDisplay_(userName, userEmail) +
+    ' has reached ' + required + ' strikes and is suspended until ' + formatTime_(endAt) + '.');
+  return null;
+}
+
 function isTrue_(value) {
   return value === true || value === 'TRUE' || value === 'true' || value === 1;
 }
@@ -968,6 +1291,14 @@ function serializeReservation_(reservation) {
   };
 }
 
+function serializeSuspension_(suspension) {
+  return {
+    startAt: toIso_(suspension.start_at),
+    endAt: toIso_(suspension.end_at),
+    reason: String(suspension.reason || '')
+  };
+}
+
 function toIso_(value) {
   var date = toDate_(value);
   return date ? date.toISOString() : '';
@@ -980,16 +1311,20 @@ function getReservationConfig_(config) {
   var gapMinutes = parseInt(config.reservation_gap_minutes, 10);
   var roundingMinutes = parseInt(config.reservation_rounding_minutes, 10);
   var checkinEarlyMinutes = parseInt(config.reservation_checkin_early_minutes, 10);
+  var earlyStartMinutes = parseInt(config.reservation_early_start_minutes, 10);
   var lateGraceMinutes = parseInt(config.reservation_late_grace_minutes, 10);
   var openHour = parseInt(config.reservation_open_hour, 10);
   var openMinute = parseInt(config.reservation_open_minute, 10);
+  var resolvedMaxPerDay = isNaN(maxPerDay) ? APP_DEFAULTS.reservationMaxPerDay : maxPerDay;
+  resolvedMaxPerDay = Math.max(1, Math.min(resolvedMaxPerDay, 1));
   return {
     advanceDays: isNaN(advanceDays) ? APP_DEFAULTS.reservationAdvanceDays : advanceDays,
     maxUpcoming: isNaN(maxUpcoming) ? APP_DEFAULTS.reservationMaxUpcoming : maxUpcoming,
-    maxPerDay: isNaN(maxPerDay) ? APP_DEFAULTS.reservationMaxPerDay : maxPerDay,
+    maxPerDay: resolvedMaxPerDay,
     gapMinutes: isNaN(gapMinutes) ? APP_DEFAULTS.reservationGapMinutes : gapMinutes,
     roundingMinutes: isNaN(roundingMinutes) ? APP_DEFAULTS.reservationRoundingMinutes : roundingMinutes,
     checkinEarlyMinutes: isNaN(checkinEarlyMinutes) ? APP_DEFAULTS.reservationCheckinEarlyMinutes : checkinEarlyMinutes,
+    earlyStartMinutes: isNaN(earlyStartMinutes) ? APP_DEFAULTS.reservationEarlyStartMinutes : earlyStartMinutes,
     lateGraceMinutes: isNaN(lateGraceMinutes) ? APP_DEFAULTS.reservationLateGraceMinutes : lateGraceMinutes,
     openHour: isNaN(openHour) ? APP_DEFAULTS.reservationOpenHour : openHour,
     openMinute: isNaN(openMinute) ? APP_DEFAULTS.reservationOpenMinute : openMinute
@@ -1078,6 +1413,21 @@ function validateReservation_(params) {
     throw new Error('Reservations must start at a scheduled slot time.');
   }
 
+  var sessions = params.sessions || [];
+  var activeSession = findActiveSessionForUser_(sessions, auth.email);
+  if (activeSession) {
+    var sessionStart = toDate_(activeSession.start_time);
+    var sessionEnd = toDate_(activeSession.end_time);
+    if (!sessionStart || !sessionEnd) {
+      throw new Error('You already have an active session. End it before booking another slot.');
+    }
+    var overlapsSession =
+      startTime.getTime() < sessionEnd.getTime() && endTime.getTime() > sessionStart.getTime();
+    if (overlapsSession) {
+      throw new Error('You already have an active session that overlaps this reservation.');
+    }
+  }
+
   var upcoming = reservations.filter(function(reservation) {
     if (!reservation.reservation_id || isReservationCanceled_(reservation) || isReservationNoShow_(reservation)) {
       return false;
@@ -1101,8 +1451,8 @@ function validateReservation_(params) {
     var resStart = toDate_(reservation.start_time);
     return resStart && dayKey_(resStart) === dayKey;
   }).length;
-  if (perDayCount >= config.maxPerDay) {
-    throw new Error('You can only have ' + config.maxPerDay + ' reservations per day.');
+  if (perDayCount >= 1) {
+    throw new Error('You already have a reservation for today. Change or cancel it to book another.');
   }
 
   var gapMs = config.gapMinutes * 60000;
@@ -1231,6 +1581,130 @@ function findReservationForSlot_(reservations, chargerId, slotStart) {
     }
   }
   return null;
+}
+
+function findPreviousReservation_(reservations, chargerId, startTime) {
+  var startMs = startTime.getTime();
+  var previous = null;
+  reservations.forEach(function(reservation) {
+    if (!reservation.reservation_id || isReservationCanceled_(reservation) || isReservationNoShow_(reservation)) {
+      return;
+    }
+    if (String(reservation.charger_id) !== String(chargerId)) {
+      return;
+    }
+    var resStart = toDate_(reservation.start_time);
+    if (!resStart || resStart.getTime() >= startMs) {
+      return;
+    }
+    if (!previous) {
+      previous = reservation;
+      return;
+    }
+    var prevStart = toDate_(previous.start_time);
+    if (prevStart && resStart.getTime() > prevStart.getTime()) {
+      previous = reservation;
+    }
+  });
+  return previous;
+}
+
+function startSessionForReservation_(reservation, auth, now, config, chargersData, sessionsData, reservationsData) {
+  var charger = findById_(chargersData.rows, 'charger_id', reservation.charger_id);
+  if (!charger) {
+    throw new Error('Charger not found.');
+  }
+  var maxMinutes = Number(charger.max_minutes) || 0;
+  if (maxMinutes <= 0) {
+    throw new Error('Charger max minutes is not configured.');
+  }
+  var startTime = toDate_(reservation.start_time);
+  var endTime = toDate_(reservation.end_time);
+  if (!startTime || !endTime) {
+    throw new Error('Invalid reservation time.');
+  }
+  var earliest = new Date(startTime.getTime() - config.earlyStartMinutes * 60000);
+  if (now.getTime() < earliest.getTime()) {
+    throw new Error('Check-in is available within ' + config.earlyStartMinutes + ' minutes of start time.');
+  }
+
+  var previous = findPreviousReservation_(reservationsData.rows, reservation.charger_id, startTime);
+  if (previous && !previous.checked_in_at) {
+    var previousStart = toDate_(previous.start_time);
+    if (previousStart) {
+      var graceEnd = addMinutes_(previousStart, config.lateGraceMinutes);
+      if (now.getTime() < graceEnd.getTime()) {
+        throw new Error('Previous reservation can still check in until ' + formatTime_(graceEnd) + '.');
+      }
+    }
+  }
+
+  if (charger.active_session_id) {
+    var existing = findById_(sessionsData.rows, 'session_id', charger.active_session_id);
+    if (existing && !isComplete_(existing)) {
+      throw new Error('Charger is already in use.');
+    }
+    updateRow_(chargersData.sheet, chargersData.headerMap, charger._row, {
+      active_session_id: ''
+    });
+  }
+
+  var hasConflict = reservationsData.rows.some(function(other) {
+    if (!other.reservation_id || isReservationCanceled_(other) || isReservationNoShow_(other)) {
+      return false;
+    }
+    if (String(other.reservation_id) === String(reservation.reservation_id)) {
+      return false;
+    }
+    if (String(other.charger_id) !== String(reservation.charger_id)) {
+      return false;
+    }
+    var otherStart = toDate_(other.start_time);
+    var otherEnd = toDate_(other.end_time);
+    if (!otherStart || !otherEnd) {
+      return false;
+    }
+    var overlaps = otherStart.getTime() < endTime.getTime() && otherEnd.getTime() > now.getTime();
+    if (!overlaps) {
+      return false;
+    }
+    var otherUser = String(other.user_id || '').toLowerCase();
+    if (otherUser === String(auth.email || '').toLowerCase()) {
+      return false;
+    }
+    var graceEnd = addMinutes_(otherStart, config.lateGraceMinutes);
+    if (otherEnd.getTime() === startTime.getTime() && now.getTime() >= graceEnd.getTime()) {
+      return false;
+    }
+    return true;
+  });
+
+  if (hasConflict) {
+    throw new Error('Charger is reserved for another user before your slot.');
+  }
+
+  var sessionId = Utilities.getUuid();
+  var sessionRow = [
+    sessionId,
+    reservation.charger_id,
+    auth.email,
+    auth.name,
+    now,
+    endTime,
+    'active',
+    true,
+    false,
+    false,
+    false,
+    false,
+    false,
+    '',
+    ''
+  ];
+  sessionsData.sheet.appendRow(sessionRow);
+  updateRow_(chargersData.sheet, chargersData.headerMap, charger._row, {
+    active_session_id: sessionId
+  });
 }
 
 function getReservationOpenTime_(now, config) {
@@ -1411,6 +1885,11 @@ function hasReservationConflict_(reservations, chargerId, startTime, endTime, ga
 function markNoShowReservations_(now) {
   var reservationsData = getSheetData_(SHEETS.reservations, RESERVATIONS_HEADERS);
   var config = getReservationConfig_(getConfig_());
+  var chargersData = getSheetData_(SHEETS.chargers, CHARGERS_HEADERS);
+  var chargersById = {};
+  chargersData.rows.forEach(function(charger) {
+    chargersById[String(charger.charger_id)] = charger;
+  });
   reservationsData.rows.forEach(function(reservation) {
     if (!reservation.reservation_id || isReservationCanceled_(reservation) || isReservationNoShow_(reservation)) {
       return;
@@ -1424,33 +1903,57 @@ function markNoShowReservations_(now) {
     }
     var latest = new Date(startTime.getTime() + config.lateGraceMinutes * 60000);
     if (now.getTime() > latest.getTime()) {
-      updateRow_(reservationsData.sheet, reservationsData.headerMap, reservation._row, {
+      var updates = {
         status: 'no_show',
         no_show_at: now,
         updated_at: now
-      });
-      var releasedCharger = reservation.charger_id ? 'Charger ' + reservation.charger_id : 'the charger';
+      };
+      if (!reservation.no_show_strike_at) {
+        recordStrike_({
+          type: 'no_show',
+          sourceType: 'reservation',
+          sourceId: reservation.reservation_id,
+          userEmail: reservation.user_id,
+          userName: reservation.user_name,
+          reason: 'No-show for reservation',
+          occurredAt: now
+        });
+        updates.no_show_strike_at = now;
+      }
+      updateRow_(reservationsData.sheet, reservationsData.headerMap, reservation._row, updates);
+      var charger = chargersById[String(reservation.charger_id)] || {};
+      var chargerName = charger.name || ('Charger ' + reservation.charger_id);
       var releasedUser = formatUserDisplay_(reservation.user_name, reservation.user_id);
-      notifyUser_(
-        reservation,
-        {},
-        'ChargingMatters: ' + releasedUser + '\'s reservation on ' + releasedCharger + ' was released after 30 minutes.'
+      notifyChannel_(
+        'ChargingMatters: ' + releasedUser + '\'s reservation on ' + chargerName +
+          ' was released (no-show after ' + config.lateGraceMinutes + ' minutes).',
+        reservation.user_id
       );
     }
   });
 }
 
-function buildReminderText_(type, session, charger, endTime, now) {
+function buildReminderText_(type, session, charger, endTime, now, graceMinutes) {
   var chargerName = charger.name || ('Charger ' + charger.charger_id);
   var endDisplay = formatTime_(endTime);
   var userName = formatUserDisplay_(session.user_name, session.user_id);
+  var grace = graceMinutes || APP_DEFAULTS.sessionMoveGraceMinutes;
   if (type === 'tminus5') {
     return 'ChargingMatters: ' + userName + '\'s session on ' + chargerName +
-      ' ends in 5 minutes (ends at ' + endDisplay + '). Please move within 10 minutes of ending.';
+      ' ends in 5 minutes (ends at ' + endDisplay + '). Please move within ' + grace + ' minutes of ending.';
   }
   if (type === 'expire') {
     return 'ChargingMatters: ' + userName + '\'s session on ' + chargerName +
-      ' just ended at ' + endDisplay + '. Please move within 10 minutes.';
+      ' just ended at ' + endDisplay + '. Please move within ' + grace + ' minutes.';
+  }
+  if (type === 'grace') {
+    return 'ChargingMatters: ' + userName + '\'s session on ' + chargerName +
+      ' is past the ' + grace + '-minute grace period. Please move now and post updates in #ChargingMatters. ' +
+      'If the cable reaches the next spot, unlock the charge port remotely.';
+  }
+  if (type === 'overdue') {
+    return 'ChargingMatters: ' + userName + '\'s session on ' + chargerName +
+      ' is still overdue. Please move now and post updates in #ChargingMatters.';
   }
   return '';
 }
@@ -1509,6 +2012,43 @@ function formatUserDisplay_(name, email) {
     return safeEmail || 'A driver';
   }
   return displayName;
+}
+
+function notifyChannel_(text, email) {
+  var config = getConfig_();
+  var sentSlack = false;
+  var slackText = text;
+  if (config.slack_bot_token && email) {
+    try {
+      var userId = getSlackUserId_(email, config.slack_bot_token);
+      if (userId) {
+        slackText = '<@' + userId + '> ' + text;
+      }
+    } catch (err) {
+      logError_('Slack user lookup failed', err, { email: email });
+    }
+  }
+  if (config.slack_bot_token && config.slack_webhook_channel) {
+    try {
+      sendSlackChannelMessage_(config.slack_bot_token, config.slack_webhook_channel, slackText);
+      sentSlack = true;
+    } catch (err) {
+      logError_('Slack bot channel failed', err, { channel: config.slack_webhook_channel });
+    }
+  }
+  if (!sentSlack) {
+    if (config.slack_webhook_url) {
+      try {
+        sendSlackWebhook_(config.slack_webhook_url, slackText, config.slack_webhook_channel);
+        sentSlack = true;
+      } catch (err) {
+        logError_('Slack webhook failed', err, { channel: config.slack_webhook_channel });
+      }
+    } else {
+      logError_('Slack webhook missing', '', {});
+    }
+  }
+  return sentSlack;
 }
 
 function notifyUser_(session, charger, text) {
@@ -1670,4 +2210,3 @@ function getSlackUserId_(email, token) {
   cache.put(cacheKey, userId, userId ? 21600 : 3600);
   return userId;
 }
-

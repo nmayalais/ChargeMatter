@@ -53,6 +53,9 @@ Tabs created by `initSheets()`:
 - `status`: `active`, `checked_in`, `canceled`, or `no_show`.
 - `checked_in_at`: timestamp when user checked in (auto-starts session).
 - `no_show_at`: timestamp when reservation was released.
+- `no_show_strike_at`: timestamp when a no-show strike was recorded.
+- `reminder_5_before_sent`: boolean for 5-minute pre-start reminder.
+- `reminder_5_after_sent`: boolean for 5-minute post-start reminder.
 - `created_at`: timestamp created.
 - `updated_at`: last update timestamp.
 - `canceled_at`: timestamp when canceled.
@@ -71,16 +74,19 @@ Key/value settings (strings). Common keys:
 - `reservation_gap_minutes`: minimum gap between reservations on same charger.
 - `reservation_rounding_minutes`: rounding increment for reservation start times.
 - `reservation_checkin_early_minutes`: earliest check-in window.
+- `reservation_early_start_minutes`: how early a reserved slot can start if the charger is free.
 - `reservation_late_grace_minutes`: no-show grace window.
 
 ## Reservation rules
-- Up to 7 days in advance.
-- Max 3 upcoming reservations per user.
-- Max 2 reservations per day per user.
-- No back-to-back reservations on the same charger.
+- Same-day only.
+- Max upcoming reservations per user is enforced (default 3).
+- Max reservations per day is currently enforced as 1.
+- No overlapping or near-overlapping reservations on the same charger.
 - Slot length equals charger `max_minutes`.
-- Start times round up to 15-minute increments.
-- Check-in opens 5 minutes early; no-show after 10 minutes releases the reservation.
+- Start times must match a configured slot start.
+- Early start: if the charger is free, a user can start their reservation up to `reservation_early_start_minutes` early (default 90).
+- Prior reservation protection: early starts are blocked while a prior reservation is still within its no-show grace window.
+- No-show: after `reservation_late_grace_minutes` (default 30), an unused reservation is released and can receive a strike.
 
 ## Security and authorization
 - Deploy the Apps Script web app to **only your Workspace domain** (e.g., `company.com`).

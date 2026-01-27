@@ -27,7 +27,67 @@
     setInterval(updateCountdowns, 1000);
     setupModeTabs();
     setupGlobalHandlers();
+    setupChannelInput();
     setMode('now');
+  }
+
+  function setupChannelInput() {
+    const postBtn = document.getElementById('post-channel-btn');
+    const inputRow = document.getElementById('channel-input-row');
+    const messageInput = document.getElementById('channel-message');
+    const sendBtn = document.getElementById('send-channel-btn');
+    const cancelBtn = document.getElementById('cancel-channel-btn');
+
+    // Gracefully no-op if the channel UI isn't present in index.html.
+    if (!postBtn || !inputRow || !messageInput || !sendBtn || !cancelBtn) {
+      return;
+    }
+
+    postBtn.addEventListener('click', () => {
+      inputRow.classList.add('active');
+      messageInput.focus();
+    });
+
+    cancelBtn.addEventListener('click', () => {
+      inputRow.classList.remove('active');
+      messageInput.value = '';
+    });
+
+    sendBtn.addEventListener('click', () => sendChannelMessage());
+    messageInput.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        sendChannelMessage();
+      }
+    });
+  }
+
+  function sendChannelMessage() {
+    const inputRow = document.getElementById('channel-input-row');
+    const messageInput = document.getElementById('channel-message');
+    const sendBtn = document.getElementById('send-channel-btn');
+    const message = messageInput.value.trim();
+    if (!message) {
+      setNotice('Please enter a message.', 'error');
+      return;
+    }
+    if (state.isLoading) {
+      return;
+    }
+    setActionFeedback(sendBtn, 'Sending...');
+    setLoading(true);
+    google.script.run
+      .withSuccessHandler(() => {
+        setLoading(false);
+        messageInput.value = '';
+        inputRow.classList.remove('active');
+        setNotice('Message posted to #ChargingMatters.', 'success');
+      })
+      .withFailureHandler((err) => {
+        setLoading(false);
+        setNotice(err.message || String(err), 'error');
+      })
+      .postChannelMessage(message);
   }
 
   function setUserMeta() {
@@ -35,10 +95,28 @@
     meta.textContent = `${APP_CONFIG.userName} (${APP_CONFIG.userEmail})`;
   }
 
-  function setNotice(message) {
+  function setNotice(message, type) {
     const notice = document.getElementById('notice');
-    notice.textContent = message || '';
-    notice.classList.toggle('notice--active', Boolean(message));
+    const noticeHelp = document.getElementById('notice-help');
+    const variants = ['notice--error', 'notice--success', 'notice--info'];
+    variants.forEach((variant) => notice.classList.remove(variant));
+    if (!message) {
+      notice.textContent = '';
+      if (noticeHelp) {
+        noticeHelp.textContent = '';
+      }
+      return;
+    }
+    const variant = type || 'error';
+    notice.textContent = message;
+    notice.classList.add(`notice--${variant}`);
+    if (noticeHelp) {
+      if (variant === 'error' && /admin access required/i.test(message)) {
+        noticeHelp.textContent = 'Need access? Contact Facilities or IT to be added as an admin.';
+      } else {
+        noticeHelp.textContent = '';
+      }
+    }
   }
 
   function setLoading(isLoading) {
@@ -114,7 +192,7 @@
       })
       .withFailureHandler((err) => {
         setLoading(false);
-        setNotice(err.message || String(err));
+        setNotice(err.message || String(err), 'error');
       })
       .getBoardData();
   }
@@ -126,6 +204,7 @@
     state.lastFetch = Date.now();
     const board = document.getElementById('board');
     board.innerHTML = '';
+    renderSuspensionBanner(data.user);
     renderSummary(data);
 
     if (!data.chargers.length) {
@@ -146,19 +225,50 @@
     updateStickyBar();
     updateSelectionUI();
     updateCountdowns();
+    updateCheckoutReminder();
+  }
+
+  function renderSuspensionBanner(user) {
+    const banner = document.getElementById('suspension-banner');
+    if (!banner) {
+      return;
+    }
+    if (!user?.suspension) {
+      banner.classList.remove('active');
+      banner.innerHTML = '';
+      return;
+    }
+    const endAt = user.suspension.endAt ? new Date(user.suspension.endAt) : null;
+    let endLabel = 'soon';
+    if (endAt && !Number.isNaN(endAt.getTime())) {
+      endLabel = endAt.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }) +
+        ' at ' + endAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    }
+    banner.innerHTML =
+      '<strong>Charging privileges suspended</strong>' +
+      'You cannot start sessions or make reservations until ' + endLabel + '. ' +
+      'Please contact Facilities if you have questions.';
+    banner.classList.add('active');
   }
 
   function renderSummary(data) {
     const summary = document.getElementById('summary');
+    const summaryCaption = document.getElementById('summary-caption');
     if (!summary) {
       return;
     }
     if (!data?.chargers?.length) {
       summary.classList.add('is-hidden');
       summary.innerHTML = '';
+      if (summaryCaption) {
+        summaryCaption.classList.add('is-hidden');
+      }
       return;
     }
     summary.classList.remove('is-hidden');
+    if (summaryCaption) {
+      summaryCaption.classList.remove('is-hidden');
+    }
     const counts = data.chargers.reduce(
       (acc, charger) => {
         acc[charger.statusKey] = (acc[charger.statusKey] || 0) + 1;
@@ -175,6 +285,7 @@
     ].forEach((item) => {
       const chip = document.createElement('div');
       chip.className = `summary-item status-${item.key}`;
+      chip.title = getStatusHint(item.key);
       const count = document.createElement('strong');
       count.textContent = counts[item.key] || 0;
       const label = document.createElement('span');
@@ -203,6 +314,7 @@
     const status = document.createElement('div');
     status.className = 'status-pill';
     status.textContent = charger.status;
+    status.title = getStatusHint(charger.statusKey);
 
     header.appendChild(title);
     headerRight.appendChild(status);
@@ -256,10 +368,15 @@
     body.className = 'card-body';
 
     if (charger.session) {
-      body.appendChild(createInfoRow('Max time', formatDuration(charger.maxMinutes), { secondary: true }));
+      body.appendChild(
+        createInfoRow('Max time', formatDuration(charger.maxMinutes), {
+          secondary: true,
+          hint: 'Max time before a session is marked overdue.'
+        })
+      );
       body.appendChild(createInfoRow('In use by', formatUserLabel(charger.session.userName, charger.session.userEmail)));
       body.appendChild(createInfoRow('Ends at', formatTime(charger.session.endTime)));
-      const countdown = createInfoRow('Countdown', '--');
+      const countdown = createInfoRow('Countdown', '--', { hint: 'Time remaining in the current session.' });
       countdown.querySelector('.value').classList.add('countdown');
       countdown.querySelector('.value').dataset.endTime = charger.session.endTime;
       body.appendChild(countdown);
@@ -269,7 +386,12 @@
         );
       }
     } else if (charger.reservation) {
-      body.appendChild(createInfoRow('Max time', formatDuration(charger.maxMinutes), { secondary: true }));
+      body.appendChild(
+        createInfoRow('Max time', formatDuration(charger.maxMinutes), {
+          secondary: true,
+          hint: 'Max time before a session is marked overdue.'
+        })
+      );
       body.appendChild(
         createInfoRow('Reserved for', formatUserLabel(charger.reservation.userName, charger.reservation.userEmail))
       );
@@ -280,8 +402,13 @@
         );
       }
     } else {
-      body.appendChild(createInfoRow('Max time', formatDuration(charger.maxMinutes), { secondary: true }));
-      body.appendChild(createInfoRow('Status', 'Available now'));
+      body.appendChild(
+        createInfoRow('Max time', formatDuration(charger.maxMinutes), {
+          secondary: true,
+          hint: 'Max time before a session is marked overdue.'
+        })
+      );
+      body.appendChild(createInfoRow('Status', 'Available now', { hint: 'Current availability.' }));
       if (charger.nextReservation) {
         body.appendChild(
           createInfoRow('Next reservation', formatReservationSummary(charger.nextReservation))
@@ -306,6 +433,12 @@
       }
     );
     actions.appendChild(primaryBtn);
+    if (primary.helpText) {
+      const helpText = document.createElement('div');
+      helpText.className = 'action-help';
+      helpText.textContent = primary.helpText;
+      actions.appendChild(helpText);
+    }
 
     card.appendChild(header);
     card.appendChild(body);
@@ -332,6 +465,10 @@
     const labelSpan = document.createElement('span');
     labelSpan.className = 'label';
     labelSpan.textContent = label;
+    if (options.hint) {
+      labelSpan.title = options.hint;
+      row.title = options.hint;
+    }
     const valueSpan = document.createElement('span');
     valueSpan.className = 'value';
     valueSpan.textContent = value || '--';
@@ -378,7 +515,7 @@
     }
   }
 
-  function callServer(method, args) {
+  function callServer(method, args, options = {}) {
     if (state.isLoading) {
       return;
     }
@@ -388,10 +525,13 @@
       .withSuccessHandler((data) => {
         setLoading(false);
         renderBoard(data);
+        if (options.successMessage) {
+          setNotice(options.successMessage, options.successType || 'success');
+        }
       })
       .withFailureHandler((err) => {
         setLoading(false);
-        setNotice(err.message || String(err));
+        setNotice(err.message || String(err), 'error');
       });
     runner[method].apply(runner, args);
   }
@@ -424,7 +564,7 @@
     list.innerHTML = '';
     if (!reservations.length) {
       const empty = document.createElement('div');
-      empty.textContent = 'No upcoming reservations yet.';
+      empty.textContent = 'No upcoming reservations yet. Book a slot above.';
       list.appendChild(empty);
       return;
     }
@@ -473,7 +613,7 @@
     state.editingReservationId = reservation.reservationId;
     setMode('reserve');
     renderEditBanner();
-    setNotice('Select a new slot to replace this reservation.');
+    setNotice('Select a new slot to replace this reservation.', 'info');
   }
 
   function cancelReservationEdit() {
@@ -506,6 +646,7 @@
         el.textContent = `Overdue by ${overdueMinutes}m`;
       }
     });
+    updateCheckoutReminder(now);
   }
 
   function formatCountdown(minutes, seconds) {
@@ -648,7 +789,9 @@
       return false;
     }
     const config = state.board?.config || {};
-    const earlyMinutes = config.reservationCheckinEarlyMinutes || 5;
+    const checkinEarlyMinutes = config.reservationCheckinEarlyMinutes || 5;
+    const earlyStartMinutes = config.reservationEarlyStartMinutes || checkinEarlyMinutes;
+    const earlyMinutes = Math.max(checkinEarlyMinutes, earlyStartMinutes);
     const graceMinutes = config.reservationLateGraceMinutes || 10;
     const start = new Date(reservation.startTime);
     const now = getClientNow();
@@ -665,6 +808,44 @@
       return new Date();
     }
     return new Date(state.serverTime.getTime() + (Date.now() - state.lastFetch));
+  }
+
+  function getCurrentUserSession() {
+    const chargers = state.board?.chargers || [];
+    return chargers
+      .map((charger) => ({ charger, session: charger.session }))
+      .filter((entry) => entry.session && entry.session.userEmail === APP_CONFIG.userEmail)
+      .sort((a, b) => new Date(a.session.endTime) - new Date(b.session.endTime))[0] || null;
+  }
+
+  function updateCheckoutReminder(referenceNow) {
+    const reminder = document.getElementById('checkout-reminder');
+    if (!reminder) {
+      return;
+    }
+    const now = referenceNow || getClientNow();
+    const entry = getCurrentUserSession();
+    if (!entry || !entry.session?.endTime) {
+      reminder.textContent = '';
+      return;
+    }
+    const endTime = new Date(entry.session.endTime);
+    if (Number.isNaN(endTime.getTime())) {
+      reminder.textContent = '';
+      return;
+    }
+    const diffMs = endTime.getTime() - now.getTime();
+    const diffMinutes = Math.ceil(diffMs / 60000);
+    if (diffMinutes > 10) {
+      reminder.textContent = '';
+      return;
+    }
+    const chargerName = entry.charger?.name || 'this charger';
+    if (diffMs > 0) {
+      reminder.textContent = `Your session on ${chargerName} ends at ${formatTime(entry.session.endTime)}. Please move your car and tap "I've moved my car".`;
+      return;
+    }
+    reminder.textContent = `Your session on ${chargerName} is past its end time. Please move your car and tap "I've moved my car".`;
   }
 
   function setupModeTabs() {
@@ -706,17 +887,23 @@
     if (charger.session) {
       if (charger.session.userEmail === APP_CONFIG.userEmail) {
         return {
-          label: 'End session',
-          action: () => callServer('endSession', [charger.session.sessionId]),
+          label: "I've moved my car",
+          action: () =>
+            callServer('endSession', [charger.session.sessionId], {
+              successMessage: 'Session ended. Thanks for checking out.',
+              successType: 'success'
+            }),
           needsServer: true,
-          loadingLabel: 'Ending...'
+          loadingLabel: 'Ending...',
+          helpText: 'Ends your session and frees this charger.'
         };
       }
       return {
         label: 'Notify owner',
         action: () => callServer('notifyOwner', [charger.id]),
         needsServer: true,
-        loadingLabel: 'Notifying...'
+        loadingLabel: 'Notifying...',
+        helpText: 'Sends a friendly reminder to wrap up.'
       };
     }
     if (charger.statusKey === 'overdue') {
@@ -724,7 +911,8 @@
         label: 'Notify owner',
         action: () => callServer('notifyOwner', [charger.id]),
         needsServer: true,
-        loadingLabel: 'Notifying...'
+        loadingLabel: 'Notifying...',
+        helpText: 'Sends a friendly reminder to wrap up.'
       };
     }
     if (charger.statusKey === 'reserved') {
@@ -732,14 +920,16 @@
         label: 'View reservation',
         action: () => viewReservation(charger),
         needsServer: false,
-        loadingLabel: ''
+        loadingLabel: '',
+        helpText: 'Jump to reservation details below.'
       };
     }
     return {
       label: 'Start charging',
       action: () => callServer('startSession', [charger.id]),
       needsServer: true,
-      loadingLabel: 'Starting...'
+      loadingLabel: 'Starting...',
+      helpText: 'Starts a new session and holds this spot for you.'
     };
   }
 
@@ -777,17 +967,28 @@
     const bar = document.getElementById('sticky-bar');
     const info = document.getElementById('sticky-info');
     const actionBtn = document.getElementById('sticky-action');
+    const hint = document.getElementById('sticky-hint');
+    const defaultHint = 'Select a charger or slot to begin.';
+    if (!bar || !info || !actionBtn) {
+      return;
+    }
     if (window.innerWidth >= 900) {
       bar.classList.remove('active');
       return;
     }
     actionBtn.disabled = true;
     actionBtn.onclick = null;
+    if (hint) {
+      hint.textContent = defaultHint;
+    }
     if (state.mode === 'now' && state.selectedCharger) {
       const primary = getPrimaryAction(state.selectedCharger);
       info.textContent = `${state.selectedCharger.name} selected`;
       actionBtn.textContent = primary.label;
       actionBtn.disabled = false;
+      if (hint) {
+        hint.textContent = primary.helpText || defaultHint;
+      }
       actionBtn.onclick = () => {
         if (state.isLoading) {
           return;
@@ -807,6 +1008,11 @@
       info.textContent = label;
       actionBtn.textContent = state.editingReservationId ? 'Update reservation' : 'Book slot';
       actionBtn.disabled = false;
+      if (hint) {
+        hint.textContent = state.editingReservationId
+          ? 'Updates your reservation to this slot.'
+          : 'Books this time slot for you.';
+      }
       actionBtn.onclick = () => {
         if (state.isLoading) {
           return;
@@ -826,7 +1032,7 @@
         renderSlotsList(slots || []);
       })
       .withFailureHandler((err) => {
-        setNotice(err.message || String(err));
+        setNotice(err.message || String(err), 'error');
       })
       .getAvailabilitySummary();
   }
@@ -836,7 +1042,7 @@
     container.innerHTML = '';
     if (!slots.length) {
       const empty = document.createElement('div');
-      empty.textContent = getReservationClosedMessage() || 'No available slots found.';
+      empty.textContent = getReservationClosedMessage() || 'No available slots found. Check back soon.';
       container.appendChild(empty);
       return;
     }
@@ -936,4 +1142,19 @@
   }
 
   document.addEventListener('DOMContentLoaded', init);
+
+  function getStatusHint(statusKey) {
+    switch (statusKey) {
+      case 'free':
+        return 'Available now';
+      case 'in_use':
+        return 'Currently charging';
+      case 'reserved':
+        return 'Reserved for a future time';
+      case 'overdue':
+        return 'Past the max session time';
+      default:
+        return '';
+    }
+  }
 </script>

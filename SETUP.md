@@ -39,11 +39,12 @@ Recommended keys:
 - `slack_bot_token`: Slack bot token for DMs (optional)
 - `reservation_advance_days`: `7`
 - `reservation_max_upcoming`: `3`
-- `reservation_max_per_day`: `2`
+- `reservation_max_per_day`: `1`
 - `reservation_gap_minutes`: `1`
 - `reservation_rounding_minutes`: `15`
 - `reservation_checkin_early_minutes`: `5`
-- `reservation_late_grace_minutes`: `10`
+- `reservation_early_start_minutes`: `90`
+- `reservation_late_grace_minutes`: `30`
 
 Script Properties equivalents:
 - `ALLOWED_DOMAIN`
@@ -58,6 +59,7 @@ Script Properties equivalents:
 - `RESERVATION_GAP_MINUTES`
 - `RESERVATION_ROUNDING_MINUTES`
 - `RESERVATION_CHECKIN_EARLY_MINUTES`
+- `RESERVATION_EARLY_START_MINUTES`
 - `RESERVATION_LATE_GRACE_MINUTES`
 
 ## 5) Slack setup (optional)
@@ -101,8 +103,11 @@ Standard users can tap **Notify owner** on in-use or overdue chargers.
 
 ## Reservation behavior
 - Slots are rounded **up** to 15-minute increments.
-- Check-in opens 5 minutes before start and auto-starts the session.
-- No-show after 10 minutes releases the reservation and notifies the user.
+- Reservations are currently **same-day only**.
+- Check-in opens near the start time, but early start can be allowed via config.
+- Early start: if the charger is free, a user can start their reservation up to `reservation_early_start_minutes` early (default 90).
+- Prior reservation protection: early starts are blocked while a prior reservation is still within its no-show grace window.
+- No-show after `reservation_late_grace_minutes` (default 30) releases the reservation and notifies the user.
 
 ## Availability
 Reserve mode uses the **Next available** list (earliest slots across chargers) as the primary booking UI.
