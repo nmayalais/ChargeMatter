@@ -87,6 +87,11 @@ Script Properties equivalents:
 3. Set **Who has access**: Anyone within your Google Workspace domain.
 4. Copy the web app URL and share internally.
 
+## 7.5) Optional: use clasp for faster updates
+1. Install clasp and log in (`npm i -g @google/clasp`, `clasp login`).
+2. Create a local `.clasp.json` with your Apps Script `scriptId` and `rootDir: "apps-script"`.
+3. Keep `.clasp.json` out of git (it contains identifiers) and run `clasp push` to sync changes.
+
 ## UI modes
 The app has two modes:
 - **Now** (default): shows charger cards and a single primary action per charger.

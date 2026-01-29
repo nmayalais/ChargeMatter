@@ -2,6 +2,7 @@
 <html>
   <head>
     <base target="_top">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <?!= include('styles'); ?>
   </head>
   <body>
@@ -10,6 +11,8 @@
         <div class="title-group">
           <div class="title">ChargingMatters</div>
           <div class="subtitle">EV charger status board</div>
+          <div class="helper-text">Tap a charger card to view details and actions.</div>
+          <div class="helper-text">One car per person at a time (one reservation per day).</div>
         </div>
         <nav class="mode-tabs" id="mode-tabs">
           <button class="mode-tab active" data-mode="now">Now</button>
@@ -21,10 +24,29 @@
         </div>
       </header>
 
+      <section class="suspension-banner" id="suspension-banner" aria-live="polite"></section>
+
+      <div class="channel-actions" id="channel-actions">
+        <button class="btn ghost" id="post-channel-btn">Post to #ChargingMatters</button>
+      </div>
+      <div class="channel-input-row" id="channel-input-row">
+        <input type="text" id="channel-message" placeholder="Type your message..." maxlength="500">
+        <button class="btn" id="send-channel-btn">Send</button>
+        <button class="btn ghost" id="cancel-channel-btn">Cancel</button>
+      </div>
+
       <section class="notice" id="notice" aria-live="polite"></section>
+      <div class="notice-help" id="notice-help"></div>
+      <section class="notice notice--info" id="checkout-reminder" aria-live="polite"></section>
 
       <section class="mode mode-now active" id="mode-now">
+        <div class="summary-caption" id="summary-caption">
+          Status totals across all chargers. Overdue means a session passed its max time.
+        </div>
         <div class="summary" id="summary"></div>
+        <div class="mode-helper">
+          Select a charger to take action. On mobile, actions appear in the bottom bar.
+        </div>
         <main class="board" id="board"></main>
       </section>
 
@@ -36,6 +58,12 @@
           </div>
           <div class="section-meta" id="reservation-limits"></div>
         </div>
+        <div class="section-hint">
+          Select a slot below to reserve it. On mobile, the action appears in the bottom bar.
+        </div>
+        <div class="section-hint">
+          One car per person at a time (one reservation per day).
+        </div>
         <div class="edit-banner" id="edit-banner"></div>
         <div id="slots-list"></div>
 
@@ -46,6 +74,7 @@
               <div class="section-subtitle">Edit or cancel upcoming slots.</div>
             </div>
           </div>
+          <div class="section-hint">Tip: Change picks a new time. Cancel frees the slot.</div>
           <div class="reservation-list">
             <div id="reservations-list"></div>
           </div>
@@ -55,16 +84,17 @@
       <footer class="footer">
         <div>Last updated: <span id="last-updated">--</span></div>
         <div class="legend">
-          <span class="legend-item status-free">Free</span>
-          <span class="legend-item status-in_use">In use</span>
-          <span class="legend-item status-reserved">Reserved</span>
-          <span class="legend-item status-overdue">Overdue</span>
+          <span class="legend-item status-free" title="Available now">Free</span>
+          <span class="legend-item status-in_use" title="Currently charging">In use</span>
+          <span class="legend-item status-reserved" title="Reserved for a future time">Reserved</span>
+          <span class="legend-item status-overdue" title="Past the max session time">Overdue</span>
         </div>
       </footer>
     </div>
 
     <div class="sticky-bar" id="sticky-bar" aria-live="polite">
       <div class="sticky-info" id="sticky-info">Select a charger or slot</div>
+      <div class="sticky-hint" id="sticky-hint">Select a charger or slot to begin.</div>
       <button class="btn" id="sticky-action" disabled>Action</button>
     </div>
 

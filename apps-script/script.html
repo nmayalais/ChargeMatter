@@ -10,7 +10,9 @@
     selectedSlot: null,
     highlightReservationId: null,
     isLoading: false,
-    loadingButton: null
+    loadingButton: null,
+    countdownIntervalId: null,
+    slotsLoading: false
   };
 
   function init() {
@@ -24,7 +26,7 @@
     });
     setUserMeta();
     loadBoard();
-    setInterval(updateCountdowns, 1000);
+    startCountdowns();
     setupModeTabs();
     setupGlobalHandlers();
     setupChannelInput();
@@ -66,6 +68,9 @@
     const inputRow = document.getElementById('channel-input-row');
     const messageInput = document.getElementById('channel-message');
     const sendBtn = document.getElementById('send-channel-btn');
+    if (!inputRow || !messageInput || !sendBtn) {
+      return;
+    }
     const message = messageInput.value.trim();
     if (!message) {
       setNotice('Please enter a message.', 'error');
@@ -76,18 +81,44 @@
     }
     setActionFeedback(sendBtn, 'Sending...');
     setLoading(true);
-    google.script.run
-      .withSuccessHandler(() => {
-        setLoading(false);
-        messageInput.value = '';
-        inputRow.classList.remove('active');
-        setNotice('Message posted to #ChargingMatters.', 'success');
-      })
-      .withFailureHandler((err) => {
-        setLoading(false);
-        setNotice(err.message || String(err), 'error');
-      })
-      .postChannelMessage(message);
+    let completed = false;
+    const timeoutId = setTimeout(() => {
+      if (completed) {
+        return;
+      }
+      completed = true;
+      setLoading(false);
+      setNotice('Posting is taking longer than expected. Check Apps Script executions/logs.', 'error');
+    }, 20000);
+    try {
+      google.script.run
+        .withSuccessHandler(() => {
+          if (completed) {
+            return;
+          }
+          completed = true;
+          clearTimeout(timeoutId);
+          setLoading(false);
+          messageInput.value = '';
+          inputRow.classList.remove('active');
+          setNotice('Message posted to #ChargingMatters.', 'success');
+        })
+        .withFailureHandler((err) => {
+          if (completed) {
+            return;
+          }
+          completed = true;
+          clearTimeout(timeoutId);
+          setLoading(false);
+          setNotice(err?.message || String(err), 'error');
+        })
+        .postChannelMessage(message);
+    } catch (err) {
+      completed = true;
+      clearTimeout(timeoutId);
+      setLoading(false);
+      setNotice(err?.message || String(err), 'error');
+    }
   }
 
   function setUserMeta() {
@@ -214,9 +245,11 @@
       return;
     }
 
+    const fragment = document.createDocumentFragment();
     data.chargers.forEach((charger) => {
-      board.appendChild(createCard(charger));
+      fragment.appendChild(createCard(charger));
     });
+    board.appendChild(fragment);
 
     if (state.mode === 'reserve') {
       updateReservationUI(data);
@@ -326,36 +359,59 @@
       trigger.className = 'menu-trigger';
       trigger.type = 'button';
       trigger.textContent = '⋯';
+      const menuId = makeSafeId(`menu-${charger.id}`);
+      const triggerId = makeSafeId(`menu-trigger-${charger.id}`);
+      trigger.id = triggerId;
+      trigger.setAttribute('aria-haspopup', 'menu');
+      trigger.setAttribute('aria-expanded', 'false');
+      trigger.setAttribute('aria-controls', menuId);
+      trigger.setAttribute('aria-label', 'Admin actions');
       const list = document.createElement('div');
       list.className = 'menu-list';
+      list.id = menuId;
+      list.dataset.triggerId = triggerId;
+      list.setAttribute('role', 'menu');
+      list.setAttribute('aria-hidden', 'true');
       const forceBtn = document.createElement('button');
       forceBtn.className = 'menu-item';
       forceBtn.textContent = 'Force end';
+      forceBtn.setAttribute('role', 'menuitem');
       forceBtn.addEventListener('click', (event) => {
         event.stopPropagation();
         if (confirm('Force end this session?')) {
           setActionFeedback(forceBtn, 'Ending...');
           callServer('forceEnd', [charger.id]);
         }
-        list.classList.remove('active');
+        closeMenu(list);
       });
       const resetBtn = document.createElement('button');
       resetBtn.className = 'menu-item';
       resetBtn.textContent = 'Reset charger';
+      resetBtn.setAttribute('role', 'menuitem');
       resetBtn.addEventListener('click', (event) => {
         event.stopPropagation();
         if (confirm('Reset this charger?')) {
           setActionFeedback(resetBtn, 'Resetting...');
           callServer('resetCharger', [charger.id]);
         }
-        list.classList.remove('active');
+        closeMenu(list);
       });
       list.appendChild(forceBtn);
       list.appendChild(resetBtn);
       trigger.addEventListener('click', (event) => {
         event.stopPropagation();
-        closeAllMenus();
-        list.classList.toggle('active');
+        if (list.classList.contains('active')) {
+          closeMenu(list);
+        } else {
+          openMenu(list);
+        }
+      });
+      trigger.addEventListener('keydown', (event) => {
+        if (event.key === 'ArrowDown') {
+          event.preventDefault();
+          openMenu(list);
+          forceBtn.focus();
+        }
       });
       menu.appendChild(trigger);
       menu.appendChild(list);
@@ -858,7 +914,13 @@
 
   function setupGlobalHandlers() {
     document.addEventListener('click', () => closeAllMenus());
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        closeAllMenus();
+      }
+    });
     window.addEventListener('resize', () => updateStickyBar());
+    document.addEventListener('visibilitychange', handleVisibilityChange);
   }
 
   function setMode(mode) {
@@ -880,7 +942,7 @@
   }
 
   function closeAllMenus() {
-    document.querySelectorAll('.menu-list.active').forEach((menu) => menu.classList.remove('active'));
+    document.querySelectorAll('.menu-list.active').forEach((menu) => closeMenu(menu));
   }
 
   function getPrimaryAction(charger) {
@@ -1027,11 +1089,14 @@
   }
 
   function loadSlots() {
+    setSlotsLoading(true);
     google.script.run
       .withSuccessHandler((slots) => {
+        setSlotsLoading(false);
         renderSlotsList(slots || []);
       })
       .withFailureHandler((err) => {
+        setSlotsLoading(false);
         setNotice(err.message || String(err), 'error');
       })
       .getAvailabilitySummary();
@@ -1047,6 +1112,7 @@
       return;
     }
     const groups = groupSlotsByDay(slots);
+    const fragment = document.createDocumentFragment();
     groups.forEach((group) => {
       const groupEl = document.createElement('div');
       groupEl.className = 'slots-group';
@@ -1077,8 +1143,9 @@
         row.appendChild(action);
         groupEl.appendChild(row);
       });
-      container.appendChild(groupEl);
+      fragment.appendChild(groupEl);
     });
+    container.appendChild(fragment);
     updateSelectionUI();
   }
 
@@ -1139,6 +1206,69 @@
     const cancel = createButton('Cancel change', 'btn ghost', () => cancelReservationEdit());
     banner.appendChild(text);
     banner.appendChild(cancel);
+  }
+
+  function startCountdowns() {
+    if (state.countdownIntervalId) {
+      return;
+    }
+    state.countdownIntervalId = setInterval(updateCountdowns, 1000);
+  }
+
+  function stopCountdowns() {
+    if (!state.countdownIntervalId) {
+      return;
+    }
+    clearInterval(state.countdownIntervalId);
+    state.countdownIntervalId = null;
+  }
+
+  function handleVisibilityChange() {
+    if (document.hidden) {
+      stopCountdowns();
+      return;
+    }
+    startCountdowns();
+    updateCountdowns();
+  }
+
+  function setSlotsLoading(isLoading) {
+    state.slotsLoading = isLoading;
+    const container = document.getElementById('slots-list');
+    if (!container) {
+      return;
+    }
+    if (!isLoading) {
+      return;
+    }
+    container.innerHTML = '';
+    const loading = document.createElement('div');
+    loading.className = 'loading-state';
+    loading.textContent = 'Loading available slots...';
+    container.appendChild(loading);
+  }
+
+  function openMenu(list) {
+    closeAllMenus();
+    list.classList.add('active');
+    list.setAttribute('aria-hidden', 'false');
+    const trigger = document.getElementById(list.dataset.triggerId);
+    if (trigger) {
+      trigger.setAttribute('aria-expanded', 'true');
+    }
+  }
+
+  function closeMenu(list) {
+    list.classList.remove('active');
+    list.setAttribute('aria-hidden', 'true');
+    const trigger = document.getElementById(list.dataset.triggerId);
+    if (trigger) {
+      trigger.setAttribute('aria-expanded', 'false');
+    }
+  }
+
+  function makeSafeId(value) {
+    return String(value).replace(/[^a-zA-Z0-9_-]/g, '');
   }
 
   document.addEventListener('DOMContentLoaded', init);

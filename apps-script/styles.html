@@ -41,6 +41,10 @@
     box-sizing: border-box;
   }
 
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
   body {
     margin: 0;
     background: var(--color-bg);
@@ -81,6 +85,12 @@
     margin-top: var(--space-1);
     color: var(--color-muted);
     font-size: 13px;
+  }
+
+  .helper-text {
+    margin-top: 6px;
+    color: var(--color-muted);
+    font-size: 12px;
   }
 
   .header-actions {
@@ -128,14 +138,79 @@
     min-height: 0;
     margin-bottom: var(--space-3);
     font-size: 13px;
-    color: var(--color-danger);
+    color: var(--color-text);
   }
 
-  .notice.notice--active {
+  .notice:empty {
+    display: none;
+  }
+
+  .notice-help {
+    margin-top: -8px;
+    margin-bottom: var(--space-3);
+    font-size: 12px;
+    color: var(--color-muted);
+  }
+
+  .notice-help:empty {
+    display: none;
+  }
+
+  .summary-caption {
+    color: var(--color-muted);
+    font-size: 12px;
+    margin-bottom: var(--space-2);
+  }
+
+  .summary-caption.is-hidden {
+    display: none;
+  }
+
+  .mode-helper,
+  .section-hint {
+    color: var(--color-muted);
+    font-size: 12px;
+  }
+
+  .mode-helper {
+    margin: var(--space-2) 0 var(--space-3);
+  }
+
+  .section-hint {
+    margin-bottom: var(--space-3);
+  }
+
+  .loading-state {
+    padding: var(--space-3);
+    border-radius: var(--radius-md);
+    background: #f8fafc;
+    border: 1px dashed var(--color-border);
+    font-size: 13px;
+    color: var(--color-muted);
+  }
+
+  .notice.notice--error {
     padding: var(--space-2) var(--space-3);
     border-radius: var(--radius-md);
     background: var(--color-danger-soft);
     border: 1px solid #fecaca;
+    color: var(--color-danger);
+  }
+
+  .notice.notice--success {
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-md);
+    background: var(--status-free-bg);
+    border: 1px solid #b7ebd0;
+    color: var(--status-free-text);
+  }
+
+  .notice.notice--info {
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-md);
+    background: var(--status-in_use-bg);
+    border: 1px solid #d3dafe;
+    color: var(--status-in_use-text);
   }
 
   .summary {
@@ -313,6 +388,12 @@
     gap: var(--space-2);
   }
 
+  .action-help {
+    color: var(--color-muted);
+    font-size: 12px;
+    text-align: center;
+  }
+
   .card-actions .btn {
     width: 100%;
   }
@@ -408,6 +489,15 @@
   .btn:disabled {
     opacity: 0.6;
     cursor: not-allowed;
+  }
+
+  button:focus-visible,
+  .mode-tab:focus-visible,
+  .mobile-tab:focus-visible,
+  .menu-trigger:focus-visible,
+  .menu-item:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
   }
 
   @keyframes spin {
@@ -620,6 +710,11 @@
     font-size: 13px;
     color: #2f3745;
     font-weight: 600;
+  }
+
+  .sticky-hint {
+    font-size: 12px;
+    color: var(--color-muted);
   }
 
   #sticky-action {
@@ -878,5 +973,62 @@
   .legend-item.status-overdue {
     background: var(--status-overdue-bg);
     color: var(--status-overdue-text);
+  }
+
+  .suspension-banner {
+    display: none;
+    padding: var(--space-3) var(--space-4);
+    border-radius: var(--radius-md);
+    background: var(--color-danger-soft);
+    border: 1px solid #fecaca;
+    color: var(--color-danger);
+    font-size: 13px;
+    margin-bottom: var(--space-4);
+  }
+
+  .suspension-banner.active {
+    display: block;
+  }
+
+  .suspension-banner strong {
+    display: block;
+    font-size: 14px;
+    margin-bottom: 4px;
+  }
+
+  .channel-actions {
+    display: flex;
+    gap: var(--space-2);
+    margin-bottom: var(--space-3);
+  }
+
+  .channel-actions .btn {
+    font-size: 12px;
+    padding: 8px 12px;
+    min-height: 36px;
+  }
+
+  .channel-input-row {
+    display: none;
+    gap: var(--space-2);
+    align-items: stretch;
+    margin-bottom: var(--space-3);
+  }
+
+  .channel-input-row.active {
+    display: flex;
+  }
+
+  .channel-input-row input {
+    flex: 1;
+    padding: 8px 12px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--color-border);
+    font-size: 13px;
+    min-height: var(--tap-target);
+  }
+
+  .channel-input-row .btn {
+    white-space: nowrap;
   }
 </style>
