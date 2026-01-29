@@ -95,6 +95,21 @@ Key/value settings (strings). Common keys:
 
 This provides a lightweight SSO-like gate when used inside an Enterprise Google Workspace.
 
+## Security & secrets hygiene
+Never commit secrets or identifiers that grant access. Keep them in **Script Properties** or local `.clasp.json` only.
+
+Do **not** commit:
+- API keys or tokens
+- Spreadsheet IDs or URLs
+- `.clasp.json`
+- OAuth credentials
+
+Recommended practices:
+- Keep `.clasp.json` in `.gitignore`
+- Use `.env` files locally if needed (and ignore them)
+- Review `git status` before pushing
+- Avoid debug endpoints that expose script IDs or sheet URLs
+
 ## Notifications
 Slack DM or webhook for reminders and no-show notices, with email fallback if Slack is unavailable.
 
