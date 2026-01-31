@@ -609,6 +609,10 @@ function resetCharger(chargerId) {
 }
 
 function sendReminders() {
+  runWithRetries_(sendRemindersCore_, 'sendReminders');
+}
+
+function sendRemindersCore_() {
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(30000)) {
     return;
@@ -655,6 +659,11 @@ function sendReminders() {
           updates.active = true;
           updates.overdue = false;
           updates.complete = false;
+        }
+        if (!isTrue_(session.reminder_10_sent) && minutesToEnd <= 10 && minutesToEnd > 5) {
+          if (notifyChannel_(buildReminderText_('tminus10', session, charger, endTime, now, sessionMoveGraceMinutes), session.user_id)) {
+            updates.reminder_10_sent = true;
+          }
         }
         if (!isTrue_(session.reminder_5_sent) && minutesToEnd <= 5 && minutesToEnd > 0) {
           if (notifyChannel_(buildReminderText_('tminus5', session, charger, endTime, now, sessionMoveGraceMinutes), session.user_id)) {
@@ -748,6 +757,31 @@ function sendReminders() {
 
 function initSheets() {
   initSheets_();
+}
+
+function installReminderTrigger() {
+  installReminderTrigger_(5);
+}
+
+function installReminderTriggerEveryMinute() {
+  installReminderTrigger_(1);
+}
+
+function installReminderTrigger_(minutes) {
+  var interval = parseInt(minutes, 10);
+  if (isNaN(interval) || interval < 1 || interval > 60) {
+    throw new Error('Trigger interval must be between 1 and 60 minutes.');
+  }
+  var triggers = ScriptApp.getProjectTriggers();
+  triggers.forEach(function(trigger) {
+    if (trigger.getHandlerFunction && trigger.getHandlerFunction() === 'sendReminders') {
+      ScriptApp.deleteTrigger(trigger);
+    }
+  });
+  ScriptApp.newTrigger('sendReminders')
+    .timeBased()
+    .everyMinutes(interval)
+    .create();
 }
 
 function endSessionInternal_(sessionId, auth, adminOverride) {
@@ -1316,7 +1350,7 @@ function getReservationConfig_(config) {
   var openHour = parseInt(config.reservation_open_hour, 10);
   var openMinute = parseInt(config.reservation_open_minute, 10);
   var resolvedMaxPerDay = isNaN(maxPerDay) ? APP_DEFAULTS.reservationMaxPerDay : maxPerDay;
-  resolvedMaxPerDay = Math.max(1, Math.min(resolvedMaxPerDay, 1));
+  resolvedMaxPerDay = Math.max(1, resolvedMaxPerDay);
   return {
     advanceDays: isNaN(advanceDays) ? APP_DEFAULTS.reservationAdvanceDays : advanceDays,
     maxUpcoming: isNaN(maxUpcoming) ? APP_DEFAULTS.reservationMaxUpcoming : maxUpcoming,
@@ -1938,6 +1972,10 @@ function buildReminderText_(type, session, charger, endTime, now, graceMinutes) 
   var endDisplay = formatTime_(endTime);
   var userName = formatUserDisplay_(session.user_name, session.user_id);
   var grace = graceMinutes || APP_DEFAULTS.sessionMoveGraceMinutes;
+  if (type === 'tminus10') {
+    return 'ChargingMatters: ' + userName + '\'s session on ' + chargerName +
+      ' ends in 10 minutes (ends at ' + endDisplay + '). Please move within ' + grace + ' minutes of ending.';
+  }
   if (type === 'tminus5') {
     return 'ChargingMatters: ' + userName + '\'s session on ' + chargerName +
       ' ends in 5 minutes (ends at ' + endDisplay + '). Please move within ' + grace + ' minutes of ending.';
@@ -2017,6 +2055,7 @@ function formatUserDisplay_(name, email) {
 function notifyChannel_(text, email) {
   var config = getConfig_();
   var sentSlack = false;
+  var sentEmail = false;
   var slackText = text;
   if (config.slack_bot_token && email) {
     try {
@@ -2048,7 +2087,15 @@ function notifyChannel_(text, email) {
       logError_('Slack webhook missing', '', {});
     }
   }
-  return sentSlack;
+  if (!sentSlack && email) {
+    try {
+      MailApp.sendEmail(email, 'ChargingMatters reminder', text);
+      sentEmail = true;
+    } catch (err) {
+      logError_('Email notification failed', err, { email: email });
+    }
+  }
+  return sentSlack || sentEmail;
 }
 
 function notifyUser_(session, charger, text) {
@@ -2189,6 +2236,42 @@ function logError_(message, err, context) {
   var detail = err && err.stack ? err.stack : String(err || '');
   var payload = context ? JSON.stringify(context) : '';
   Logger.log(message + (detail ? ' :: ' + detail : '') + (payload ? ' :: ' + payload : ''));
+}
+
+function runWithRetries_(fn, label) {
+  var maxAttempts = 3;
+  var baseDelayMs = 1000;
+  for (var attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return fn();
+    } catch (err) {
+      var transient = isTransientError_(err);
+      var context = { attempt: attempt, transient: transient };
+      if (!transient || attempt === maxAttempts) {
+        logError_(label + ' failed', err, context);
+        throw err;
+      }
+      logError_(label + ' transient error, retrying', err, context);
+      var jitter = Math.floor(Math.random() * 250);
+      Utilities.sleep(baseDelayMs * Math.pow(2, attempt - 1) + jitter);
+    }
+  }
+}
+
+function isTransientError_(err) {
+  var message = String(err && err.message ? err.message : err || '');
+  var normalized = message.toLowerCase();
+  return (
+    normalized.indexOf('server error occurred') !== -1 ||
+    normalized.indexOf('please wait a bit and try again') !== -1 ||
+    normalized.indexOf('service invoked too many times') !== -1 ||
+    normalized.indexOf('rate limit exceeded') !== -1 ||
+    normalized.indexOf('service unavailable') !== -1 ||
+    normalized.indexOf('internal error') !== -1 ||
+    normalized.indexOf('backenderror') !== -1 ||
+    normalized.indexOf('socketexception') !== -1 ||
+    normalized.indexOf('timeout') !== -1
+  );
 }
 
 function getSlackUserId_(email, token) {

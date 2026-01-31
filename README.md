@@ -65,6 +65,7 @@ Key/value settings (strings). Common keys:
 - `allowed_domain`: Workspace domain allowed to access.
 - `admin_emails`: comma-separated list of admin emails.
 - `overdue_repeat_minutes`: repeat cadence for overdue reminders.
+- `session_move_grace_minutes`: grace period (in minutes) after session end before overdue enforcement.
 - `slack_webhook_url`: optional Slack webhook URL.
 - `slack_webhook_channel`: optional Slack channel override.
 - `slack_bot_token`: optional Slack bot token for DM sending.
@@ -76,11 +77,13 @@ Key/value settings (strings). Common keys:
 - `reservation_checkin_early_minutes`: earliest check-in window.
 - `reservation_early_start_minutes`: how early a reserved slot can start if the charger is free.
 - `reservation_late_grace_minutes`: no-show grace window.
+- `reservation_open_hour`: earliest local hour for same-day booking.
+- `reservation_open_minute`: earliest local minute for same-day booking.
 
 ## Reservation rules
 - Same-day only.
 - Max upcoming reservations per user is enforced (default 3).
-- Max reservations per day is currently enforced as 1.
+- Max reservations per day is enforced (default 1).
 - No overlapping or near-overlapping reservations on the same charger.
 - Slot length equals charger `max_minutes`.
 - Start times must match a configured slot start.
@@ -147,7 +150,7 @@ webApp --> reminders[TimeDrivenTrigger]
 4. Background trigger runs `sendReminders()` and releases no-show reservations.
 
 ## Deployment
-Apps Script web app deployed within the Google Workspace domain. The reminder trigger runs `sendReminders()` periodically.
+Apps Script web app deployed within the Google Workspace domain. The reminder trigger runs `sendReminders()` periodically (recommended every 5 minutes).
 
 ## Setup
 See `SETUP.md` for step-by-step setup and configuration.

@@ -34,6 +34,7 @@ Recommended keys:
 - `allowed_domain`: `company.com`
 - `admin_emails`: `you@company.com,ops@company.com`
 - `overdue_repeat_minutes`: `15`
+- `session_move_grace_minutes`: `10`
 - `slack_webhook_url`: webhook URL for a channel (optional)
 - `slack_webhook_channel`: channel override (optional)
 - `slack_bot_token`: Slack bot token for DMs (optional)
@@ -45,11 +46,14 @@ Recommended keys:
 - `reservation_checkin_early_minutes`: `5`
 - `reservation_early_start_minutes`: `90`
 - `reservation_late_grace_minutes`: `30`
+- `reservation_open_hour`: `6`
+- `reservation_open_minute`: `0`
 
 Script Properties equivalents:
 - `ALLOWED_DOMAIN`
 - `ADMIN_EMAILS`
 - `OVERDUE_REPEAT_MINUTES`
+- `SESSION_MOVE_GRACE_MINUTES`
 - `SLACK_WEBHOOK_URL`
 - `SLACK_WEBHOOK_CHANNEL`
 - `SLACK_BOT_TOKEN`
@@ -61,6 +65,8 @@ Script Properties equivalents:
 - `RESERVATION_CHECKIN_EARLY_MINUTES`
 - `RESERVATION_EARLY_START_MINUTES`
 - `RESERVATION_LATE_GRACE_MINUTES`
+- `RESERVATION_OPEN_HOUR`
+- `RESERVATION_OPEN_MINUTE`
 
 ## 5) Slack setup (optional)
 ### Incoming webhook (cheapest)
@@ -76,10 +82,15 @@ Script Properties equivalents:
 3. Copy the Bot User OAuth Token into `slack_bot_token`.
 
 ## 6) Add reminder trigger
+Option A (recommended): run the helper function once.
+1. In Apps Script, run `installReminderTrigger()` to install a 5-minute trigger.
+2. (Optional) Run `installReminderTriggerEveryMinute()` if you prefer 1-minute cadence.
+
+Option B (manual):
 1. In Apps Script, open **Triggers**.
 2. Add a **time-driven** trigger:
    - Function: `sendReminders`
-   - Run every minute (or every 5 minutes if you want fewer runs)
+   - Run every 5 minutes (recommended) or every minute (more immediate)
 
 ## 7) Deploy the web app
 1. Click **Deploy** -> **New deployment** -> **Web app**.
