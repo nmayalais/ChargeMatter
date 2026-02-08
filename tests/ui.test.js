@@ -313,4 +313,26 @@ describe('UI behaviors', () => {
     window.document.body.appendChild(card);
     expect(card.querySelector('.menu-trigger')).toBeNull();
   });
+
+  test('admin sees admin menu actions', () => {
+    const window = loadScriptIntoDom({ isAdmin: true });
+    activeWindow = window;
+    window.renderBoard({
+      serverTime: new Date().toISOString(),
+      user: { isAdmin: true },
+      config: {},
+      chargers: []
+    });
+    const card = window.createCard({
+      id: '1',
+      name: 'Charger 1',
+      statusKey: 'free',
+      status: 'Free',
+      maxMinutes: 60
+    });
+
+    window.document.body.appendChild(card);
+    expect(card.querySelector('.menu-trigger')).not.toBeNull();
+    expect(card.querySelector('.menu-list')).not.toBeNull();
+  });
 });
