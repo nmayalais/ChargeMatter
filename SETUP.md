@@ -123,6 +123,10 @@ Admins are defined by `admin_emails`. Admins will see:
 
 Standard users can tap **Notify owner** on in-use or overdue chargers.
 
+## Reservation session handling
+- When a user ends a charging session, the matching checked-in reservation is automatically marked `complete`.
+- If a checked-in reservation has no matching active session, the UI offers to clear the checked-in reservation.
+
 ## Reservation behavior
 - Slots are rounded **up** to 15-minute increments.
 - Reservations are currently **same-day only**.

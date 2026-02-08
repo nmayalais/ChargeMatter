@@ -90,6 +90,8 @@ Key/value settings (strings). Common keys:
 - Early start: if the charger is free, a user can start their reservation up to `reservation_early_start_minutes` early (default 90).
 - Prior reservation protection: early starts are blocked while a prior reservation is still within its no-show grace window.
 - No-show: after `reservation_late_grace_minutes` (default 30), an unused reservation is released and can receive a strike.
+- Checked-in reservations: ending a session will auto-mark the matching reservation as `complete`.
+- If a checked-in reservation has no matching active session, the UI offers to clear the checked-in reservation.
 
 ## Security and authorization
 - Deploy the Apps Script web app to **only your Workspace domain** (e.g., `example.com`).
