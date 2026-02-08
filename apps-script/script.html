@@ -878,7 +878,7 @@
     const chargers = state.board?.chargers || [];
     return chargers
       .map((charger) => ({ charger, session: charger.session }))
-      .filter((entry) => entry.session && entry.session.userEmail === APP_CONFIG.userEmail)
+      .filter((entry) => entry.session && sameUserEmail(entry.session.userEmail, getCurrentUserEmail()))
       .sort((a, b) => new Date(a.session.endTime) - new Date(b.session.endTime))[0] || null;
   }
 
@@ -891,7 +891,7 @@
     if (!charger?.session) {
       return null;
     }
-    if (charger.session.userEmail !== APP_CONFIG.userEmail) {
+    if (!sameUserEmail(charger.session.userEmail, getCurrentUserEmail())) {
       return null;
     }
     return charger.session;

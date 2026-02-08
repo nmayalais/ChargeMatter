@@ -326,6 +326,52 @@ describe('UI behaviors', () => {
     expect(endSession).toHaveBeenCalledWith('session-999');
   });
 
+  test('checked-in reservation matches session owner case-insensitively', () => {
+    const endSession = jest.fn();
+    const window = loadScriptIntoDom({
+      userEmail: 'Alex@Example.com',
+      isAdmin: false,
+      runMethods: { endSession }
+    });
+    activeWindow = window;
+    const now = new Date();
+    window.renderBoard({
+      serverTime: now.toISOString(),
+      user: {},
+      config: {},
+      reservations: [
+        {
+          reservationId: 'res-1000',
+          chargerId: '1',
+          startTime: now.toISOString(),
+          endTime: new Date(now.getTime() + 3600000).toISOString(),
+          status: 'checked_in',
+          checkedInAt: now.toISOString()
+        }
+      ],
+      chargers: [
+        {
+          id: '1',
+          name: 'Charger 1',
+          statusKey: 'in_use',
+          status: 'In use',
+          maxMinutes: 60,
+          session: {
+            sessionId: 'session-1000',
+            userEmail: 'alex@example.com',
+            endTime: new Date(now.getTime() + 3600000).toISOString()
+          }
+        }
+      ]
+    });
+
+    window.renderReservationsList(window.__state.reservations);
+    const endBtn = window.document.querySelector('.reservation-actions .btn.warn');
+    expect(endBtn).not.toBeNull();
+    endBtn.click();
+    expect(endSession).toHaveBeenCalledWith('session-1000');
+  });
+
   test('non-admin does not see admin-only actions', () => {
     const window = loadScriptIntoDom({ isAdmin: false });
     activeWindow = window;
