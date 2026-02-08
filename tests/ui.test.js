@@ -26,6 +26,13 @@ function loadScriptIntoDom(options = {}) {
   </body></html>`, { runScripts: 'dangerously', url: 'http://localhost' });
 
   const { window } = dom;
+  window.matchMedia = window.matchMedia || (() => ({
+    matches: false,
+    addEventListener() {},
+    removeEventListener() {},
+    addListener() {},
+    removeListener() {}
+  }));
   window.APP_CONFIG = {
     userEmail: options.userEmail || 'test@example.com',
     userName: options.userName || 'Test User',
@@ -263,5 +270,26 @@ describe('UI behaviors', () => {
     expect(endBtn).not.toBeNull();
     endBtn.click();
     expect(endSession).toHaveBeenCalledWith('session-999');
+  });
+
+  test('non-admin does not see admin-only actions', () => {
+    const window = loadScriptIntoDom({ isAdmin: false });
+    activeWindow = window;
+    const card = window.createCard({
+      id: '1',
+      name: 'Charger 1',
+      statusKey: 'in_use',
+      status: 'In use',
+      maxMinutes: 60,
+      session: {
+        sessionId: 'session-1',
+        userEmail: 'alex@example.com',
+        endTime: new Date().toISOString()
+      }
+    });
+
+    window.document.body.appendChild(card);
+    expect(card.querySelector('.menu-trigger')).toBeNull();
+    expect(card.querySelector('.menu-list')).toBeNull();
   });
 });
