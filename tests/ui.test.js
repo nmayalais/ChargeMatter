@@ -281,11 +281,11 @@ describe('UI behaviors', () => {
   });
 
   test('checked-in reservation shows end session action in reservation list', () => {
-    const endSession = jest.fn();
+    const endSessionForReservation = jest.fn();
     const window = loadScriptIntoDom({
       userEmail: 'alex@example.com',
       isAdmin: false,
-      runMethods: { endSession }
+      runMethods: { endSessionForReservation }
     });
     activeWindow = window;
     const now = new Date();
@@ -323,15 +323,15 @@ describe('UI behaviors', () => {
     const endBtn = window.document.querySelector('.reservation-actions .btn.warn');
     expect(endBtn).not.toBeNull();
     endBtn.click();
-    expect(endSession).toHaveBeenCalledWith('session-999');
+    expect(endSessionForReservation).toHaveBeenCalledWith('res-999');
   });
 
   test('checked-in reservation matches session owner case-insensitively', () => {
-    const endSession = jest.fn();
+    const endSessionForReservation = jest.fn();
     const window = loadScriptIntoDom({
       userEmail: 'Alex@Example.com',
       isAdmin: false,
-      runMethods: { endSession }
+      runMethods: { endSessionForReservation }
     });
     activeWindow = window;
     const now = new Date();
@@ -369,7 +369,49 @@ describe('UI behaviors', () => {
     const endBtn = window.document.querySelector('.reservation-actions .btn.warn');
     expect(endBtn).not.toBeNull();
     endBtn.click();
-    expect(endSession).toHaveBeenCalledWith('session-1000');
+    expect(endSessionForReservation).toHaveBeenCalledWith('res-1000');
+  });
+
+  test('checked-in reservation requests end by reservation id', () => {
+    const endSessionForReservation = jest.fn();
+    const window = loadScriptIntoDom({
+      userEmail: 'alex@example.com',
+      isAdmin: false,
+      runMethods: { endSessionForReservation }
+    });
+    activeWindow = window;
+    const now = new Date();
+    window.renderBoard({
+      serverTime: now.toISOString(),
+      user: {},
+      config: {},
+      reservations: [
+        {
+          reservationId: 'res-2000',
+          chargerId: '1',
+          startTime: now.toISOString(),
+          endTime: new Date(now.getTime() + 3600000).toISOString(),
+          status: 'checked_in',
+          checkedInAt: now.toISOString()
+        }
+      ],
+      chargers: [
+        {
+          id: '1',
+          name: 'Charger 1',
+          statusKey: 'in_use',
+          status: 'In use',
+          maxMinutes: 60,
+          session: null
+        }
+      ]
+    });
+
+    window.renderReservationsList(window.__state.reservations);
+    const endBtn = window.document.querySelector('.reservation-actions .btn.warn');
+    expect(endBtn).not.toBeNull();
+    endBtn.click();
+    expect(endSessionForReservation).toHaveBeenCalledWith('res-2000');
   });
 
   test('non-admin does not see admin-only actions', () => {

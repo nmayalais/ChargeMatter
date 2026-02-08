@@ -618,14 +618,10 @@
       actions.className = 'reservation-actions';
       if (reservation.checkedInAt) {
         const endBtn = createButton('End session', 'btn warn', () => {
-          const session = findSessionForReservation(reservation);
-          if (!session) {
-            setNotice('Session not found. Select the charger card to end your session.', 'error');
-            return;
-          }
-          if (confirm('End your charging session?')) {
+          const confirmMessage = 'End your charging session?';
+          if (confirm(confirmMessage)) {
             setActionFeedback(endBtn, 'Ending...');
-            callServer('endSession', [session.sessionId], {
+            callServer('endSessionForReservation', [reservation.reservationId], {
               successMessage: 'Session ended. Thanks for checking out.',
               successType: 'success'
             });

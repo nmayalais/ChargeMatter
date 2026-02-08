@@ -533,6 +533,70 @@ function endSession(sessionId) {
   }
 }
 
+function endMyActiveSession() {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    initSheets_();
+    var auth = requireAuthorizedUser_();
+    var sessionsData = getSheetData_(SHEETS.sessions, SESSIONS_HEADERS);
+    var activeSession = findActiveSessionForUser_(sessionsData.rows, auth.email);
+    if (!activeSession) {
+      throw new Error('Active session not found.');
+    }
+    endSessionInternal_(activeSession.session_id, auth, false);
+    return getBoardData();
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function endSessionForReservation(reservationId) {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    initSheets_();
+    var auth = requireAuthorizedUser_();
+    var reservationsData = getSheetData_(SHEETS.reservations, RESERVATIONS_HEADERS);
+    var sessionsData = getSheetData_(SHEETS.sessions, SESSIONS_HEADERS);
+    var reservation = findById_(reservationsData.rows, 'reservation_id', reservationId);
+    if (!reservation || isReservationCanceled_(reservation) || isReservationNoShow_(reservation)) {
+      throw new Error('Reservation not found.');
+    }
+    if (!auth.isAdmin && String(reservation.user_id).toLowerCase() !== auth.email.toLowerCase()) {
+      throw new Error('You can only end sessions for your own reservations.');
+    }
+    if (!reservation.checked_in_at) {
+      throw new Error('Reservation is not checked in.');
+    }
+    var startTime = toDate_(reservation.start_time);
+    var endTime = toDate_(reservation.end_time);
+    if (!startTime || !endTime) {
+      throw new Error('Reservation has invalid timing.');
+    }
+    var activeSession = findActiveSessionForUser_(sessionsData.rows, auth.email);
+    if (!activeSession) {
+      throw new Error('Session not found for this reservation.');
+    }
+    if (String(activeSession.charger_id) !== String(reservation.charger_id)) {
+      throw new Error('Session does not match this reservation.');
+    }
+    var sessionStart = toDate_(activeSession.start_time);
+    var sessionEnd = toDate_(activeSession.end_time);
+    if (!sessionStart || !sessionEnd) {
+      throw new Error('Session timing is invalid.');
+    }
+    var overlaps = sessionStart.getTime() < endTime.getTime() && sessionEnd.getTime() > startTime.getTime();
+    if (!overlaps) {
+      throw new Error('Session does not match this reservation.');
+    }
+    endSessionInternal_(activeSession.session_id, auth, false);
+    return getBoardData();
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 function notifyOwner(chargerId) {
   initSheets_();
   requireAuthorizedUser_();
