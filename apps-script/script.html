@@ -558,7 +558,13 @@
       })
       .withFailureHandler((err) => {
         setLoading(false);
-        setNotice(err.message || String(err), 'error');
+        let handled = false;
+        if (typeof options.onError === 'function') {
+          handled = options.onError(err) === true;
+        }
+        if (!handled) {
+          setNotice(err.message || String(err), 'error');
+        }
       });
     runner[method].apply(runner, args);
   }
@@ -623,7 +629,23 @@
             setActionFeedback(endBtn, 'Ending...');
             callServer('endSessionForReservation', [reservation.reservationId], {
               successMessage: 'Session ended. Thanks for checking out.',
-              successType: 'success'
+              successType: 'success',
+              onError: (err) => {
+                const message = err?.message || String(err || '');
+                if (!/session not found for this reservation|session does not match this reservation/i.test(message)) {
+                  return false;
+                }
+                const fallbackConfirm =
+                  'No active session was found for this reservation. Clear the checked-in reservation instead?';
+                if (!confirm(fallbackConfirm)) {
+                  return false;
+                }
+                callServer('completeCheckedInReservation', [reservation.reservationId], {
+                  successMessage: 'Reservation cleared.',
+                  successType: 'success'
+                });
+                return true;
+              }
             });
           }
         });

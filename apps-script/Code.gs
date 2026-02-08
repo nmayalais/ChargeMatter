@@ -198,7 +198,7 @@ function startSession(chargerId) {
     }
     var openAt = addMinutes_(slot.startTime, config.lateGraceMinutes);
     var slotReservation = findReservationForSlot_(reservationsData.rows, chargerId, slot.startTime);
-    if (slotReservation && (isReservationCanceled_(slotReservation) || isReservationNoShow_(slotReservation))) {
+    if (slotReservation && (isReservationCanceled_(slotReservation) || isReservationNoShow_(slotReservation) || isReservationComplete_(slotReservation))) {
       slotReservation = null;
     }
     var isReservedByUser =
@@ -321,7 +321,7 @@ function updateReservation(reservationId, chargerId, startTimeIso) {
     var chargersData = getSheetData_(SHEETS.chargers, CHARGERS_HEADERS);
     var sessionsData = getSheetData_(SHEETS.sessions, SESSIONS_HEADERS);
     var reservation = findById_(reservationsData.rows, 'reservation_id', reservationId);
-    if (!reservation || isReservationCanceled_(reservation)) {
+    if (!reservation || isReservationCanceled_(reservation) || isReservationNoShow_(reservation) || isReservationComplete_(reservation)) {
       throw new Error('Reservation not found.');
     }
     if (!auth.isAdmin && String(reservation.user_id).toLowerCase() !== auth.email.toLowerCase()) {
@@ -380,7 +380,7 @@ function cancelReservation(reservationId) {
     var auth = requireAuthorizedUser_();
     var reservationsData = getSheetData_(SHEETS.reservations, RESERVATIONS_HEADERS);
     var reservation = findById_(reservationsData.rows, 'reservation_id', reservationId);
-    if (!reservation || isReservationCanceled_(reservation)) {
+    if (!reservation || isReservationCanceled_(reservation) || isReservationNoShow_(reservation) || isReservationComplete_(reservation)) {
       return getBoardData();
     }
     if (!auth.isAdmin && String(reservation.user_id).toLowerCase() !== auth.email.toLowerCase()) {
@@ -476,7 +476,7 @@ function checkInReservation(reservationId) {
     var sessionsData = getSheetData_(SHEETS.sessions, SESSIONS_HEADERS);
     var chargersData = getSheetData_(SHEETS.chargers, CHARGERS_HEADERS);
     var reservation = findById_(reservationsData.rows, 'reservation_id', reservationId);
-    if (!reservation || isReservationCanceled_(reservation)) {
+    if (!reservation || isReservationCanceled_(reservation) || isReservationNoShow_(reservation) || isReservationComplete_(reservation)) {
       throw new Error('Reservation not found.');
     }
     if (!auth.isAdmin && String(reservation.user_id).toLowerCase() !== auth.email.toLowerCase()) {
@@ -560,7 +560,7 @@ function endSessionForReservation(reservationId) {
     var reservationsData = getSheetData_(SHEETS.reservations, RESERVATIONS_HEADERS);
     var sessionsData = getSheetData_(SHEETS.sessions, SESSIONS_HEADERS);
     var reservation = findById_(reservationsData.rows, 'reservation_id', reservationId);
-    if (!reservation || isReservationCanceled_(reservation) || isReservationNoShow_(reservation)) {
+    if (!reservation || isReservationCanceled_(reservation) || isReservationNoShow_(reservation) || isReservationComplete_(reservation)) {
       throw new Error('Reservation not found.');
     }
     if (!auth.isAdmin && String(reservation.user_id).toLowerCase() !== auth.email.toLowerCase()) {
@@ -591,6 +591,35 @@ function endSessionForReservation(reservationId) {
       throw new Error('Session does not match this reservation.');
     }
     endSessionInternal_(activeSession.session_id, auth, false);
+    return getBoardData();
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function completeCheckedInReservation(reservationId) {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    initSheets_();
+    var auth = requireAuthorizedUser_();
+    var reservationsData = getSheetData_(SHEETS.reservations, RESERVATIONS_HEADERS);
+    var reservation = findById_(reservationsData.rows, 'reservation_id', reservationId);
+    if (!reservation || isReservationCanceled_(reservation) || isReservationNoShow_(reservation) || isReservationComplete_(reservation)) {
+      throw new Error('Reservation not found.');
+    }
+    if (!auth.isAdmin && String(reservation.user_id).toLowerCase() !== auth.email.toLowerCase()) {
+      throw new Error('You can only update your own reservations.');
+    }
+    if (!reservation.checked_in_at) {
+      throw new Error('Reservation is not checked in.');
+    }
+    var now = new Date();
+    updateRow_(reservationsData.sheet, reservationsData.headerMap, reservation._row, {
+      status: 'complete',
+      end_time: now,
+      updated_at: now
+    });
     return getBoardData();
   } finally {
     lock.releaseLock();
@@ -799,7 +828,10 @@ function sendRemindersCore_() {
     });
     reservationsData.rows.forEach(function(reservation) {
       try {
-        if (!reservation.reservation_id || isReservationCanceled_(reservation) || isReservationNoShow_(reservation)) {
+        if (!reservation.reservation_id ||
+            isReservationCanceled_(reservation) ||
+            isReservationNoShow_(reservation) ||
+            isReservationComplete_(reservation)) {
           return;
         }
         if (reservation.checked_in_at) {
@@ -879,12 +911,13 @@ function endSessionInternal_(sessionId, auth, adminOverride) {
   if (!adminOverride && !auth.isAdmin && String(session.user_id).toLowerCase() !== auth.email.toLowerCase()) {
     throw new Error('You can only end your own session.');
   }
+  var now = new Date();
   updateRow_(sessionsData.sheet, sessionsData.headerMap, session._row, {
     status: 'complete',
     active: false,
     overdue: false,
     complete: true,
-    ended_at: new Date()
+    ended_at: now
   });
   var charger = findById_(chargersData.rows, 'charger_id', session.charger_id);
   if (charger && String(charger.active_session_id) === String(sessionId)) {
@@ -892,6 +925,49 @@ function endSessionInternal_(sessionId, auth, adminOverride) {
       active_session_id: ''
     });
   }
+  completeReservationForSession_(session, now);
+}
+
+function completeReservationForSession_(session, now) {
+  var reservationsData = getSheetData_(SHEETS.reservations, RESERVATIONS_HEADERS);
+  var sessionStart = toDate_(session.start_time);
+  var sessionEnd = toDate_(session.end_time);
+  if (!sessionStart || !sessionEnd) {
+    return;
+  }
+  var userEmail = String(session.user_id || '').toLowerCase();
+  var chargerId = String(session.charger_id || '');
+  reservationsData.rows.forEach(function(reservation) {
+    if (!reservation.reservation_id ||
+        isReservationCanceled_(reservation) ||
+        isReservationNoShow_(reservation) ||
+        isReservationComplete_(reservation)) {
+      return;
+    }
+    if (!reservation.checked_in_at) {
+      return;
+    }
+    if (String(reservation.user_id || '').toLowerCase() !== userEmail) {
+      return;
+    }
+    if (String(reservation.charger_id || '') !== chargerId) {
+      return;
+    }
+    var resStart = toDate_(reservation.start_time);
+    var resEnd = toDate_(reservation.end_time);
+    if (!resStart || !resEnd) {
+      return;
+    }
+    var overlaps = sessionStart.getTime() < resEnd.getTime() && sessionEnd.getTime() > resStart.getTime();
+    if (!overlaps) {
+      return;
+    }
+    updateRow_(reservationsData.sheet, reservationsData.headerMap, reservation._row, {
+      status: 'complete',
+      end_time: now,
+      updated_at: now
+    });
+  });
 }
 
 function buildBoard_(now, reservationsData) {
@@ -1246,7 +1322,7 @@ function findUserReservationAtTime_(reservations, userEmail, moment, excludeChar
     if (!reservation || !reservation.reservation_id) {
       continue;
     }
-    if (isReservationCanceled_(reservation) || isReservationNoShow_(reservation)) {
+    if (isReservationCanceled_(reservation) || isReservationNoShow_(reservation) || isReservationComplete_(reservation)) {
       continue;
     }
     if (String(reservation.user_id || '').toLowerCase() !== email) {
@@ -1474,7 +1550,10 @@ function getUpcomingReservationsForUser_(reservations, email, now) {
   var userEmail = String(email || '').toLowerCase();
   return reservations
     .filter(function(reservation) {
-      if (!reservation.reservation_id || isReservationCanceled_(reservation)) {
+      if (!reservation.reservation_id ||
+          isReservationCanceled_(reservation) ||
+          isReservationNoShow_(reservation) ||
+          isReservationComplete_(reservation)) {
         return false;
       }
       var endTime = toDate_(reservation.end_time);
@@ -1495,7 +1574,10 @@ function groupReservationsByCharger_(reservations, now) {
   var active = {};
   var next = {};
   reservations.forEach(function(reservation) {
-    if (!reservation.reservation_id || isReservationCanceled_(reservation)) {
+    if (!reservation.reservation_id ||
+        isReservationCanceled_(reservation) ||
+        isReservationNoShow_(reservation) ||
+        isReservationComplete_(reservation)) {
       return;
     }
     var startTime = toDate_(reservation.start_time);
@@ -1526,6 +1608,10 @@ function isReservationCanceled_(reservation) {
 
 function isReservationNoShow_(reservation) {
   return String(reservation.status || '').toLowerCase() === 'no_show' || reservation.no_show_at;
+}
+
+function isReservationComplete_(reservation) {
+  return String(reservation.status || '').toLowerCase() === 'complete';
 }
 
 function validateReservation_(params) {
@@ -1568,7 +1654,10 @@ function validateReservation_(params) {
   }
 
   var upcoming = reservations.filter(function(reservation) {
-    if (!reservation.reservation_id || isReservationCanceled_(reservation) || isReservationNoShow_(reservation)) {
+    if (!reservation.reservation_id ||
+        isReservationCanceled_(reservation) ||
+        isReservationNoShow_(reservation) ||
+        isReservationComplete_(reservation)) {
       return false;
     }
     if (String(reservation.reservation_id) === excludeId) {
@@ -1596,7 +1685,10 @@ function validateReservation_(params) {
 
   var gapMs = config.gapMinutes * 60000;
   reservations.forEach(function(reservation) {
-    if (!reservation.reservation_id || isReservationCanceled_(reservation) || isReservationNoShow_(reservation)) {
+    if (!reservation.reservation_id ||
+        isReservationCanceled_(reservation) ||
+        isReservationNoShow_(reservation) ||
+        isReservationComplete_(reservation)) {
       return;
     }
     if (String(reservation.reservation_id) === excludeId) {
@@ -1708,7 +1800,10 @@ function findReservationForSlot_(reservations, chargerId, slotStart) {
   var slotStartMs = slotStart.getTime();
   for (var i = 0; i < reservations.length; i++) {
     var reservation = reservations[i];
-    if (!reservation.reservation_id || isReservationCanceled_(reservation) || isReservationNoShow_(reservation)) {
+    if (!reservation.reservation_id ||
+        isReservationCanceled_(reservation) ||
+        isReservationNoShow_(reservation) ||
+        isReservationComplete_(reservation)) {
       continue;
     }
     if (String(reservation.charger_id) !== String(chargerId)) {
@@ -1726,7 +1821,10 @@ function findPreviousReservation_(reservations, chargerId, startTime) {
   var startMs = startTime.getTime();
   var previous = null;
   reservations.forEach(function(reservation) {
-    if (!reservation.reservation_id || isReservationCanceled_(reservation) || isReservationNoShow_(reservation)) {
+    if (!reservation.reservation_id ||
+        isReservationCanceled_(reservation) ||
+        isReservationNoShow_(reservation) ||
+        isReservationComplete_(reservation)) {
       return;
     }
     if (String(reservation.charger_id) !== String(chargerId)) {
@@ -1789,7 +1887,10 @@ function startSessionForReservation_(reservation, auth, now, config, chargersDat
   }
 
   var hasConflict = reservationsData.rows.some(function(other) {
-    if (!other.reservation_id || isReservationCanceled_(other) || isReservationNoShow_(other)) {
+    if (!other.reservation_id ||
+        isReservationCanceled_(other) ||
+        isReservationNoShow_(other) ||
+        isReservationComplete_(other)) {
       return false;
     }
     if (String(other.reservation_id) === String(reservation.reservation_id)) {
@@ -1862,7 +1963,10 @@ function findBlockingReservationForSession_(reservations, chargerId, startTime, 
   var user = String(userEmail || '').toLowerCase();
   for (var i = 0; i < reservations.length; i++) {
     var reservation = reservations[i];
-    if (!reservation.reservation_id || isReservationCanceled_(reservation) || isReservationNoShow_(reservation)) {
+    if (!reservation.reservation_id ||
+        isReservationCanceled_(reservation) ||
+        isReservationNoShow_(reservation) ||
+        isReservationComplete_(reservation)) {
       continue;
     }
     if (String(reservation.charger_id) !== String(chargerId)) {
@@ -2001,7 +2105,10 @@ function hasReservationConflict_(reservations, chargerId, startTime, endTime, ga
   var gapMs = Math.max(0, gapMinutes) * 60000;
   for (var i = 0; i < reservations.length; i++) {
     var reservation = reservations[i];
-    if (!reservation.reservation_id || isReservationCanceled_(reservation) || isReservationNoShow_(reservation)) {
+    if (!reservation.reservation_id ||
+        isReservationCanceled_(reservation) ||
+        isReservationNoShow_(reservation) ||
+        isReservationComplete_(reservation)) {
       continue;
     }
     if (String(reservation.charger_id) !== String(chargerId)) {
@@ -2031,7 +2138,10 @@ function markNoShowReservations_(now) {
     chargersById[String(charger.charger_id)] = charger;
   });
   reservationsData.rows.forEach(function(reservation) {
-    if (!reservation.reservation_id || isReservationCanceled_(reservation) || isReservationNoShow_(reservation)) {
+    if (!reservation.reservation_id ||
+        isReservationCanceled_(reservation) ||
+        isReservationNoShow_(reservation) ||
+        isReservationComplete_(reservation)) {
       return;
     }
     if (reservation.checked_in_at) {
