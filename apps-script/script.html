@@ -258,6 +258,7 @@
   }
 
   function createCard(charger) {
+    const isAdminUser = isAdmin();
     const card = document.createElement('div');
     card.className = `card status-${charger.statusKey}`;
     card.dataset.chargerId = charger.id;
@@ -280,7 +281,7 @@
     header.appendChild(title);
     headerRight.appendChild(status);
 
-    if (APP_CONFIG.isAdmin) {
+    if (isAdminUser) {
       const menu = document.createElement('div');
       menu.className = 'menu';
       const trigger = document.createElement('button');
@@ -466,6 +467,13 @@
       selectCharger(charger);
     });
     return card;
+  }
+
+  function isAdmin() {
+    if (state.board && state.board.user && typeof state.board.user.isAdmin !== 'undefined') {
+      return Boolean(state.board.user.isAdmin);
+    }
+    return Boolean(APP_CONFIG.isAdmin);
   }
 
   function createInfoRow(label, value, options = {}) {

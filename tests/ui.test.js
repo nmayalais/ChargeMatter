@@ -292,4 +292,25 @@ describe('UI behaviors', () => {
     expect(card.querySelector('.menu-trigger')).toBeNull();
     expect(card.querySelector('.menu-list')).toBeNull();
   });
+
+  test('board user admin flag overrides template config', () => {
+    const window = loadScriptIntoDom({ isAdmin: true });
+    activeWindow = window;
+    window.renderBoard({
+      serverTime: new Date().toISOString(),
+      user: { isAdmin: false },
+      config: {},
+      chargers: []
+    });
+    const card = window.createCard({
+      id: '1',
+      name: 'Charger 1',
+      statusKey: 'free',
+      status: 'Free',
+      maxMinutes: 60
+    });
+
+    window.document.body.appendChild(card);
+    expect(card.querySelector('.menu-trigger')).toBeNull();
+  });
 });
