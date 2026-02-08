@@ -1,9 +1,9 @@
-# ChargingMatters Setup
+# EV Charging Setup
 
 This MVP runs on Google Apps Script + Google Sheets with optional Slack notifications.
 
 ## 1) Create the Google Sheet
-1. Create a new Google Sheet named `ChargingMatters`.
+1. Create a new Google Sheet named `EV Charging`.
 2. Copy the Spreadsheet ID from the URL.
 3. In the Apps Script project, set Script Properties:
    - `SPREADSHEET_ID` = your sheet ID
@@ -31,8 +31,8 @@ This creates these tabs: `chargers`, `sessions`, `config`, `reservations`.
 Use the `config` tab (key/value pairs) or Script Properties.
 
 Recommended keys:
-- `allowed_domain`: `company.com`
-- `admin_emails`: `you@company.com,ops@company.com`
+- `allowed_domain`: `example.com`
+- `admin_emails`: `you@example.com,ops@example.com`
 - `overdue_repeat_minutes`: `15`
 - `session_move_grace_minutes`: `10`
 - `slack_webhook_url`: webhook URL for a channel (optional)

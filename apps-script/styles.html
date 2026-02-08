@@ -516,6 +516,20 @@
     color: var(--color-muted);
   }
 
+  .footer-links {
+    display: none;
+  }
+
+  .footer-link {
+    color: var(--color-muted);
+    text-decoration: none;
+  }
+
+  .footer-link:hover,
+  .footer-link:focus-visible {
+    text-decoration: underline;
+  }
+
   .mode {
     display: none;
   }
@@ -673,6 +687,11 @@
     font-size: 14px;
   }
 
+  .reservation-tip {
+    font-size: 12px;
+    color: var(--color-muted);
+  }
+
   .reservation-actions {
     display: flex;
     gap: 8px;
@@ -753,6 +772,177 @@
     border-color: rgba(var(--color-primary-rgb), 0.2);
   }
 
+  @media (max-width: 600px) {
+    :root {
+      --space-4: 12px;
+      --space-5: 16px;
+      --space-6: 20px;
+    }
+
+    .app {
+      margin: var(--space-3) auto var(--space-6);
+      padding: 0 var(--space-3) calc(var(--bottom-nav-height) + 140px + env(safe-area-inset-bottom));
+    }
+
+    body {
+      font-size: 17px;
+      line-height: 1.45;
+    }
+
+    .title {
+      font-size: 24px;
+    }
+
+    .subtitle {
+      font-size: 14px;
+    }
+
+    .helper-text {
+      font-size: 13px;
+    }
+
+    .title-group .helper-text + .helper-text {
+      display: none;
+    }
+
+    .header-actions {
+      flex-direction: column;
+      align-items: stretch;
+      gap: var(--space-2);
+    }
+
+    .user-meta {
+      max-width: 100%;
+      white-space: normal;
+    }
+
+    .summary-item {
+      min-width: 96px;
+      font-size: 13px;
+    }
+
+    .summary-item strong {
+      font-size: 20px;
+    }
+
+    .summary-item {
+      min-width: 96px;
+      padding: var(--space-2) var(--space-2);
+    }
+
+    .summary-item strong {
+      font-size: 20px;
+    }
+
+    .channel-actions {
+      display: none;
+    }
+
+    .footer-links {
+      display: block;
+    }
+
+    .card {
+      padding: var(--space-3);
+      gap: var(--space-2);
+    }
+
+    .card-title {
+      font-size: 18px;
+    }
+
+    .card-header {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+
+    .card-header-right {
+      width: 100%;
+      justify-content: space-between;
+    }
+
+    .card-actions {
+      order: 1;
+      display: none;
+    }
+
+    .card.selected .card-actions {
+      display: flex;
+    }
+
+    .card-body {
+      order: 2;
+    }
+
+    .card-hint {
+      order: 3;
+    }
+
+    .card-body {
+      font-size: 15px;
+    }
+
+    .countdown {
+      font-size: 18px;
+    }
+
+    .slot-row {
+      padding: var(--space-3);
+      font-size: 15px;
+    }
+
+    .slot-row .btn {
+      display: inline-flex;
+      width: 100%;
+      justify-content: center;
+    }
+
+    .reservations {
+      padding: var(--space-3);
+    }
+
+    .section-title {
+      font-size: 20px;
+    }
+
+    .section-subtitle,
+    .section-meta,
+    .summary-caption,
+    .mode-helper,
+    .section-hint,
+    .notice,
+    .notice-help,
+    .reservation-tip,
+    .legend-item,
+    .footer {
+      font-size: 14px;
+    }
+
+    .btn {
+      font-size: 15px;
+      padding: 12px 16px;
+      min-height: 48px;
+    }
+
+    .status-pill {
+      font-size: 12px;
+      padding: 6px 12px;
+    }
+
+    .card-body span.label {
+      font-size: 12px;
+    }
+
+    .reservation-item strong {
+      font-size: 16px;
+    }
+
+    .sticky-bar {
+      left: var(--space-3);
+      right: var(--space-3);
+    }
+  }
+
   @media (min-width: 900px) {
     .app {
       padding-bottom: var(--space-6);
@@ -822,6 +1012,184 @@
       flex-direction: row;
       justify-content: space-between;
       align-items: center;
+    }
+  }
+
+  @media (hover: none) and (pointer: coarse) {
+    :root {
+      --color-text: #0f172a;
+      --color-muted: #4b5563;
+    }
+
+    .app {
+      max-width: 100%;
+      margin: var(--space-3) auto var(--space-6);
+      padding: 0 var(--space-3) calc(var(--bottom-nav-height) + 140px + env(safe-area-inset-bottom));
+    }
+
+    body {
+      font-size: 17px;
+      line-height: 1.45;
+    }
+
+    .header {
+      flex-direction: column;
+      align-items: stretch;
+      gap: var(--space-3);
+    }
+
+    .title {
+      font-size: 24px;
+    }
+
+    .subtitle {
+      font-size: 14px;
+    }
+
+    .helper-text {
+      font-size: 13px;
+    }
+
+    .title-group .helper-text + .helper-text {
+      display: none;
+    }
+
+    .header-actions {
+      flex-direction: column;
+      align-items: stretch;
+      gap: var(--space-2);
+      width: 100%;
+    }
+
+    .user-meta {
+      max-width: 100%;
+      white-space: normal;
+    }
+
+    .mode-tabs {
+      display: none;
+    }
+
+    .mobile-tabs {
+      display: flex;
+    }
+
+    .board {
+      grid-template-columns: 1fr;
+    }
+
+    .card {
+      padding: var(--space-3);
+      gap: var(--space-2);
+    }
+
+    .card-title {
+      font-size: 18px;
+    }
+
+    .card-header {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+
+    .card-header-right {
+      width: 100%;
+      justify-content: space-between;
+    }
+
+    .card-actions {
+      display: none;
+      order: 1;
+    }
+
+    .card.selected .card-actions {
+      display: flex;
+    }
+
+    .card-body {
+      order: 2;
+      font-size: 15px;
+    }
+
+    .card-hint {
+      order: 3;
+    }
+
+    .countdown {
+      font-size: 18px;
+    }
+
+    .info-row.secondary {
+      display: none;
+    }
+
+    .card.selected .info-row.secondary {
+      display: grid;
+    }
+
+    .slot-row {
+      grid-template-columns: 1fr;
+      padding: var(--space-3);
+      font-size: 15px;
+    }
+
+    .slot-row .btn {
+      display: inline-flex;
+      width: 100%;
+      justify-content: center;
+    }
+
+    .reservations {
+      padding: var(--space-3);
+    }
+
+    .section-title {
+      font-size: 20px;
+    }
+
+    .section-subtitle,
+    .section-meta,
+    .summary-caption,
+    .mode-helper,
+    .section-hint,
+    .notice,
+    .notice-help,
+    .reservation-tip,
+    .legend-item,
+    .footer {
+      font-size: 14px;
+    }
+
+    .btn {
+      font-size: 15px;
+      padding: 12px 16px;
+      min-height: 48px;
+    }
+
+    .status-pill {
+      font-size: 12px;
+      padding: 6px 12px;
+    }
+
+    .card-body span.label {
+      font-size: 12px;
+    }
+
+    .reservation-item strong {
+      font-size: 16px;
+    }
+
+    .footer {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+
+    .channel-actions {
+      display: none;
+    }
+
+    .footer-links {
+      display: block;
     }
   }
 

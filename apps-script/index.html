@@ -9,7 +9,7 @@
     <div class="app">
       <header class="header">
         <div class="title-group">
-          <div class="title">ChargingMatters</div>
+          <div class="title">EV Charging</div>
           <div class="subtitle">EV charger status board</div>
           <div class="helper-text">Tap a charger card to view details and actions.</div>
           <div class="helper-text">One car per person at a time (one reservation per day).</div>
@@ -27,12 +27,9 @@
       <section class="suspension-banner" id="suspension-banner" aria-live="polite"></section>
 
       <div class="channel-actions" id="channel-actions">
-        <button class="btn ghost" id="post-channel-btn">Post to #ChargingMatters</button>
-      </div>
-      <div class="channel-input-row" id="channel-input-row">
-        <input type="text" id="channel-message" placeholder="Type your message..." maxlength="500">
-        <button class="btn" id="send-channel-btn">Send</button>
-        <button class="btn ghost" id="cancel-channel-btn">Cancel</button>
+        <a class="btn ghost" href="https://graymatterrobotics.slack.com/archives/C08FPH4UW2Y" target="_blank" rel="noopener">
+          Open #ev-charging in Slack
+        </a>
       </div>
 
       <section class="notice" id="notice" aria-live="polite"></section>
@@ -45,7 +42,7 @@
         </div>
         <div class="summary" id="summary"></div>
         <div class="mode-helper">
-          Select a charger to take action. On mobile, actions appear in the bottom bar.
+          Select a charger to take action. Look for the action button near your selection.
         </div>
         <main class="board" id="board"></main>
       </section>
@@ -59,7 +56,7 @@
           <div class="section-meta" id="reservation-limits"></div>
         </div>
         <div class="section-hint">
-          Select a slot below to reserve it. On mobile, the action appears in the bottom bar.
+          Select a slot below to reserve it. Look for the action button near your selection.
         </div>
         <div class="section-hint">
           One car per person at a time (one reservation per day).
@@ -88,6 +85,11 @@
           <span class="legend-item status-in_use" title="Currently charging">In use</span>
           <span class="legend-item status-reserved" title="Reserved for a future time">Reserved</span>
           <span class="legend-item status-overdue" title="Past the max session time">Overdue</span>
+        </div>
+        <div class="footer-links">
+          <a class="footer-link" href="https://graymatterrobotics.slack.com/archives/C08FPH4UW2Y" target="_blank" rel="noopener">
+            Open #ev-charging in Slack
+          </a>
         </div>
       </footer>
     </div>

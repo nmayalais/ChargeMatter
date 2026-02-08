@@ -2,3 +2,4 @@
 .clasp.json
 node_modules/
 apps-script/.DS_Store
+data/

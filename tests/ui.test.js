@@ -36,7 +36,8 @@ function loadScriptIntoDom(options = {}) {
       run: {
         withSuccessHandler() { return this; },
         withFailureHandler() { return this; },
-        getBoardData() {}
+        getBoardData() {},
+        ...(options.runMethods || {})
       }
     }
   };
@@ -162,5 +163,105 @@ describe('UI behaviors', () => {
     window.document.dispatchEvent(escEvent);
     expect(list.classList.contains('active')).toBe(false);
     expect(trigger.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  test('non-admin can end their own active session via primary action', () => {
+    const endSession = jest.fn();
+    const window = loadScriptIntoDom({
+      userEmail: 'alex@example.com',
+      isAdmin: false,
+      runMethods: { endSession }
+    });
+    activeWindow = window;
+    const charger = {
+      id: '1',
+      name: 'Charger 1',
+      statusKey: 'in_use',
+      status: 'In use',
+      maxMinutes: 60,
+      session: {
+        sessionId: 'session-123',
+        userEmail: 'alex@example.com',
+        endTime: new Date().toISOString()
+      }
+    };
+
+    const action = window.getPrimaryAction(charger);
+    expect(action.label).toBe("I've moved my car");
+    action.action();
+    expect(endSession).toHaveBeenCalledWith('session-123');
+  });
+
+  test('non-admin can cancel their own reservation via primary action', () => {
+    const cancelReservation = jest.fn();
+    const window = loadScriptIntoDom({
+      userEmail: 'alex@example.com',
+      isAdmin: false,
+      runMethods: { cancelReservation }
+    });
+    activeWindow = window;
+    const charger = {
+      id: '2',
+      name: 'Charger 2',
+      statusKey: 'reserved',
+      status: 'Reserved',
+      maxMinutes: 90,
+      reservation: {
+        reservationId: 'res-456',
+        userEmail: 'alex@example.com',
+        startTime: new Date().toISOString()
+      }
+    };
+
+    const action = window.getPrimaryAction(charger);
+    expect(action.label).toBe('Release reservation');
+    action.action();
+    expect(cancelReservation).toHaveBeenCalledWith('res-456');
+  });
+
+  test('checked-in reservation shows end session action in reservation list', () => {
+    const endSession = jest.fn();
+    const window = loadScriptIntoDom({
+      userEmail: 'alex@example.com',
+      isAdmin: false,
+      runMethods: { endSession }
+    });
+    activeWindow = window;
+    const now = new Date();
+    window.renderBoard({
+      serverTime: now.toISOString(),
+      user: {},
+      config: {},
+      reservations: [
+        {
+          reservationId: 'res-999',
+          chargerId: '1',
+          startTime: now.toISOString(),
+          endTime: new Date(now.getTime() + 3600000).toISOString(),
+          status: 'checked_in',
+          checkedInAt: now.toISOString()
+        }
+      ],
+      chargers: [
+        {
+          id: '1',
+          name: 'Charger 1',
+          statusKey: 'in_use',
+          status: 'In use',
+          maxMinutes: 60,
+          session: {
+            sessionId: 'session-999',
+            userEmail: 'alex@example.com',
+            endTime: new Date(now.getTime() + 3600000).toISOString()
+          }
+        }
+      ]
+    });
+
+    window.renderReservationsList(window.__state.reservations);
+    const endBtn = window.document.querySelector('.reservation-actions .btn.warn');
+    expect(endBtn).not.toBeNull();
+    endBtn.click();
+    expect(endSession).toHaveBeenCalledWith('session-999');
   });
 });

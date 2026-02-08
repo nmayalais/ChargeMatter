@@ -1,6 +1,6 @@
-# ChargingMatters
+# EV Charging
 
-ChargingMatters is a lightweight internal web app for managing EV charger usage and reservations at Company Name.
+EV Charging is a lightweight internal web app for managing EV charger usage and reservations at Company.
 
 ## Core user flows
 - **Charge now**: view chargers, start a session, end session.
@@ -92,7 +92,7 @@ Key/value settings (strings). Common keys:
 - No-show: after `reservation_late_grace_minutes` (default 30), an unused reservation is released and can receive a strike.
 
 ## Security and authorization
-- Deploy the Apps Script web app to **only your Workspace domain** (e.g., `company.com`).
+- Deploy the Apps Script web app to **only your Workspace domain** (e.g., `example.com`).
 - The server checks the active user’s email domain against `allowed_domain` to restrict access.
 - Admin actions are gated by `admin_emails` and hidden in the UI by default.
 
@@ -151,6 +151,46 @@ webApp --> reminders[TimeDrivenTrigger]
 
 ## Deployment
 Apps Script web app deployed within the Google Workspace domain. The reminder trigger runs `sendReminders()` periodically (recommended every 5 minutes).
+Before any recommended push to production, run routine backend logic checks using the CLI to validate core flows (sessions, reservations, reminders).
+
+## CLI (local backend mirror)
+The CLI runs the same backend rules as `apps-script/Code.gs`, backed by a local JSON store. This makes it easy to test reservation/session logic without Google Apps Script.
+
+Quick start:
+```bash
+npm run cli -- seed
+npm run cli -- board --user alice@example.com
+```
+
+Common commands:
+- `npm run cli -- init`
+- `npm run cli -- seed`
+- `npm run cli -- board`
+- `npm run cli -- start-session <chargerId>`
+- `npm run cli -- end-session <sessionId>`
+- `npm run cli -- reserve <chargerId> <startTimeIso>`
+- `npm run cli -- update-reservation <reservationId> <chargerId> <startTimeIso>`
+- `npm run cli -- cancel-reservation <reservationId>`
+- `npm run cli -- check-in <reservationId>`
+- `npm run cli -- next-slot`
+- `npm run cli -- availability`
+- `npm run cli -- timeline <chargerId> [dateIso]`
+- `npm run cli -- calendar [startDateIso] [days]`
+- `npm run cli -- send-reminders`
+
+Defaults:
+- Store path: `data/store.json` (override with `--store`).
+- User email: `user@example.com` (override with `--user`).
+
+Recommended pre‑deploy logic check:
+```bash
+npm run cli -- seed
+npm run cli -- board
+```
+Policy logic check:
+```bash
+npm run policy-check
+```
 
 ## Setup
 See `SETUP.md` for step-by-step setup and configuration.

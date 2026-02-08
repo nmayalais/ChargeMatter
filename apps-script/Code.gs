@@ -1,5 +1,5 @@
 var APP_DEFAULTS = {
-  allowedDomain: 'company.com',
+  allowedDomain: 'example.com',
   overdueRepeatMinutes: 15,
   sessionMoveGraceMinutes: 10,
   strikeThreshold: 2,
@@ -107,7 +107,7 @@ function doGet() {
   template.userEmail = auth.email;
   template.userName = auth.name;
   template.isAdmin = auth.isAdmin;
-  return template.evaluate().setTitle('ChargingMatters');
+  return template.evaluate().setTitle('EV Charging');
 }
 
 function getBoardData() {
@@ -533,8 +533,8 @@ function notifyOwner(chargerId) {
   }
   var chargerName = charger.name || ('Charger ' + charger.charger_id);
   notifyChannel_(
-    'ChargingMatters: Someone is waiting for ' + chargerName +
-      '. Please move your car and post any delays in #ChargingMatters.',
+    'EV Charging: Someone is waiting for ' + chargerName +
+      '. Please move your car and post any delays in #ev-charging.',
     session.user_id
   );
   return getBoardData();
@@ -548,9 +548,9 @@ function postChannelMessage(message) {
     throw new Error('Message cannot be empty.');
   }
   var displayName = formatUserDisplay_(auth.name, auth.email);
-  var payload = 'ChargingMatters: ' + displayName + ' says: ' + text;
+  var payload = 'EV Charging: ' + displayName + ' says: ' + text;
   if (!notifyChannel_(payload, auth.email)) {
-    throw new Error('Unable to post to the ChargingMatters channel.');
+    throw new Error('Unable to post to the EV Charging channel.');
   }
   return true;
 }
@@ -842,6 +842,7 @@ function buildBoard_(now, reservationsData) {
       var statusLabel = 'Free';
       var activeReservation = reservationsByCharger.active[String(charger.charger_id || '')] || null;
       var nextReservation = reservationsByCharger.next[String(charger.charger_id || '')] || null;
+      var walkup = null;
       if (session) {
         var endTime = toDate_(session.end_time);
         var graceCutoff = endTime ? addMinutes_(endTime, sessionMoveGraceMinutes) : null;
@@ -867,6 +868,17 @@ function buildBoard_(now, reservationsData) {
       } else if (activeReservation) {
         statusKey = 'reserved';
         statusLabel = 'Reserved';
+      } else {
+        var slot = findSlotForTime_(charger, now);
+        if (slot) {
+          var openAt = addMinutes_(slot.startTime, reservationConfig.lateGraceMinutes);
+          walkup = {
+            startTime: toIso_(slot.startTime),
+            endTime: toIso_(slot.endTime),
+            openAt: toIso_(openAt),
+            isOpen: now.getTime() >= openAt.getTime()
+          };
+        }
       }
       return {
         id: String(charger.charger_id || ''),
@@ -876,7 +888,8 @@ function buildBoard_(now, reservationsData) {
         statusKey: statusKey,
         session: session ? serializeSession_(session) : null,
         reservation: activeReservation ? serializeReservation_(activeReservation) : null,
-        nextReservation: nextReservation ? serializeReservation_(nextReservation) : null
+        nextReservation: nextReservation ? serializeReservation_(nextReservation) : null,
+        walkup: walkup
       };
     });
   return {
@@ -1279,7 +1292,7 @@ function maybeApplySuspension_(userEmail, userName, monthKey, now, strikeCount) 
     true,
     new Date()
   ]);
-  notifyChannel_('ChargingMatters: ' + formatUserDisplay_(userName, userEmail) +
+  notifyChannel_('EV Charging: ' + formatUserDisplay_(userName, userEmail) +
     ' has reached ' + required + ' strikes and is suspended until ' + formatTime_(endAt) + '.');
   return null;
 }
@@ -1959,7 +1972,7 @@ function markNoShowReservations_(now) {
       var chargerName = charger.name || ('Charger ' + reservation.charger_id);
       var releasedUser = formatUserDisplay_(reservation.user_name, reservation.user_id);
       notifyChannel_(
-        'ChargingMatters: ' + releasedUser + '\'s reservation on ' + chargerName +
+        'EV Charging: ' + releasedUser + '\'s reservation on ' + chargerName +
           ' was released (no-show after ' + config.lateGraceMinutes + ' minutes).',
         reservation.user_id
       );
@@ -1973,25 +1986,25 @@ function buildReminderText_(type, session, charger, endTime, now, graceMinutes) 
   var userName = formatUserDisplay_(session.user_name, session.user_id);
   var grace = graceMinutes || APP_DEFAULTS.sessionMoveGraceMinutes;
   if (type === 'tminus10') {
-    return 'ChargingMatters: ' + userName + '\'s session on ' + chargerName +
+    return 'EV Charging: ' + userName + '\'s session on ' + chargerName +
       ' ends in 10 minutes (ends at ' + endDisplay + '). Please move within ' + grace + ' minutes of ending.';
   }
   if (type === 'tminus5') {
-    return 'ChargingMatters: ' + userName + '\'s session on ' + chargerName +
+    return 'EV Charging: ' + userName + '\'s session on ' + chargerName +
       ' ends in 5 minutes (ends at ' + endDisplay + '). Please move within ' + grace + ' minutes of ending.';
   }
   if (type === 'expire') {
-    return 'ChargingMatters: ' + userName + '\'s session on ' + chargerName +
+    return 'EV Charging: ' + userName + '\'s session on ' + chargerName +
       ' just ended at ' + endDisplay + '. Please move within ' + grace + ' minutes.';
   }
   if (type === 'grace') {
-    return 'ChargingMatters: ' + userName + '\'s session on ' + chargerName +
-      ' is past the ' + grace + '-minute grace period. Please move now and post updates in #ChargingMatters. ' +
+    return 'EV Charging: ' + userName + '\'s session on ' + chargerName +
+      ' is past the ' + grace + '-minute grace period. Please move now and post updates in #ev-charging. ' +
       'If the cable reaches the next spot, unlock the charge port remotely.';
   }
   if (type === 'overdue') {
-    return 'ChargingMatters: ' + userName + '\'s session on ' + chargerName +
-      ' is still overdue. Please move now and post updates in #ChargingMatters.';
+    return 'EV Charging: ' + userName + '\'s session on ' + chargerName +
+      ' is still overdue. Please move now and post updates in #ev-charging.';
   }
   return '';
 }
@@ -2003,11 +2016,11 @@ function buildReservationReminderText_(type, reservation, charger, startTime, co
   var releaseDisplay = formatTime_(releaseTime);
   var userName = formatUserDisplay_(reservation.user_name, reservation.user_id);
   if (type === 'upcoming') {
-    return 'ChargingMatters: ' + userName + '\'s reservation on ' + chargerName +
+    return 'EV Charging: ' + userName + '\'s reservation on ' + chargerName +
       ' starts in 5 minutes at ' + startDisplay + '.';
   }
   if (type === 'late') {
-    return 'ChargingMatters: ' + userName + '\'s reservation on ' + chargerName +
+    return 'EV Charging: ' + userName + '\'s reservation on ' + chargerName +
       ' started at ' + startDisplay + ' and will be released at ' + releaseDisplay + ' if unused.';
   }
   return '';
@@ -2089,7 +2102,7 @@ function notifyChannel_(text, email) {
   }
   if (!sentSlack && email) {
     try {
-      MailApp.sendEmail(email, 'ChargingMatters reminder', text);
+      MailApp.sendEmail(email, 'EV Charging reminder', text);
       sentEmail = true;
     } catch (err) {
       logError_('Email notification failed', err, { email: email });
@@ -2136,7 +2149,7 @@ function notifyUser_(session, charger, text) {
   }
   if (email) {
     try {
-      MailApp.sendEmail(email, 'ChargingMatters reminder', text);
+      MailApp.sendEmail(email, 'EV Charging reminder', text);
       sentEmail = true;
     } catch (err) {
       logError_('Email notification failed', err, { email: email });

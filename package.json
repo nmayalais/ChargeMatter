@@ -4,7 +4,9 @@
   "version": "0.1.0",
   "type": "commonjs",
   "scripts": {
-    "test": "jest"
+    "test": "jest",
+    "cli": "node cli/index.js",
+    "policy-check": "jest --runTestsByPath tests/cli.policy.test.js"
   },
   "devDependencies": {
     "jest": "^29.7.0",
