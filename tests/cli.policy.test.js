@@ -112,9 +112,17 @@ function createPolicyEngine(store, options = {}) {
   });
 }
 
-function withTime(iso, fn) {
+function localDate(year, month, day, hour, minute) {
+  return new Date(year, month - 1, day, hour, minute, 0, 0);
+}
+
+function localIso(year, month, day, hour, minute) {
+  return localDate(year, month, day, hour, minute).toISOString();
+}
+
+function withLocalTime(year, month, day, hour, minute, fn) {
   jest.useFakeTimers();
-  jest.setSystemTime(new Date(iso));
+  jest.setSystemTime(localDate(year, month, day, hour, minute));
   try {
     fn();
   } finally {
@@ -140,15 +148,15 @@ describe('Policy-aligned CLI logic', () => {
     const store = buildPolicyStore();
     const engine = createPolicyEngine(store);
 
-    withTime('2026-02-09T05:59:00-08:00', () => {
+    withLocalTime(2026, 2, 9, 5, 59, () => {
       expectError(
-        () => engine.createReservation('1', '2026-02-09T09:00:00-08:00'),
+        () => engine.createReservation('1', localIso(2026, 2, 9, 9, 0)),
         'Booking opens at'
       );
     });
 
-    withTime('2026-02-09T06:01:00-08:00', () => {
-      const board = engine.createReservation('1', '2026-02-09T09:00:00-08:00');
+    withLocalTime(2026, 2, 9, 6, 1, () => {
+      const board = engine.createReservation('1', localIso(2026, 2, 9, 9, 0));
       expect(board.reservations.length).toBe(1);
     });
   });
@@ -157,9 +165,9 @@ describe('Policy-aligned CLI logic', () => {
     const store = buildPolicyStore();
     const engine = createPolicyEngine(store);
 
-    withTime('2026-02-09T08:00:00-08:00', () => {
+    withLocalTime(2026, 2, 9, 8, 0, () => {
       expectError(
-        () => engine.createReservation('1', '2026-02-10T09:00:00-08:00'),
+        () => engine.createReservation('1', localIso(2026, 2, 10, 9, 0)),
         'Reservations can only be made for today'
       );
     });
@@ -169,10 +177,10 @@ describe('Policy-aligned CLI logic', () => {
     const store = buildPolicyStore();
     const engine = createPolicyEngine(store);
 
-    withTime('2026-02-09T06:15:00-08:00', () => {
-      engine.createReservation('1', '2026-02-09T09:00:00-08:00');
+    withLocalTime(2026, 2, 9, 6, 15, () => {
+      engine.createReservation('1', localIso(2026, 2, 9, 9, 0));
       expectError(
-        () => engine.createReservation('2', '2026-02-09T12:00:00-08:00'),
+        () => engine.createReservation('2', localIso(2026, 2, 9, 12, 0)),
         'You already have a reservation for today'
       );
     });
@@ -182,14 +190,14 @@ describe('Policy-aligned CLI logic', () => {
     const store = buildPolicyStore();
     const engine = createPolicyEngine(store);
 
-    withTime('2026-02-09T06:10:00-08:00', () => {
+    withLocalTime(2026, 2, 9, 6, 10, () => {
       expectError(
         () => engine.startSession('1'),
         'opens at'
       );
     });
 
-    withTime('2026-02-09T06:31:00-08:00', () => {
+    withLocalTime(2026, 2, 9, 6, 31, () => {
       const board = engine.startSession('1');
       const charger = board.chargers.find((item) => item.id === '1');
       expect(charger.statusKey).toBe('in_use');
@@ -204,8 +212,8 @@ describe('Policy-aligned CLI logic', () => {
       '1',
       'driver@example.com',
       'Driver',
-      new Date('2026-02-09T06:00:00-08:00'),
-      new Date('2026-02-09T09:00:00-08:00'),
+      localDate(2026, 2, 9, 6, 0),
+      localDate(2026, 2, 9, 9, 0),
       'active',
       true,
       false,
@@ -222,13 +230,13 @@ describe('Policy-aligned CLI logic', () => {
 
     const engine = createPolicyEngine(store);
 
-    withTime('2026-02-09T09:05:00-08:00', () => {
+    withLocalTime(2026, 2, 9, 9, 5, () => {
       const board = engine.getBoardData();
       const charger = board.chargers.find((item) => item.id === '1');
       expect(charger.statusKey).toBe('in_use');
     });
 
-    withTime('2026-02-09T09:11:00-08:00', () => {
+    withLocalTime(2026, 2, 9, 9, 11, () => {
       const board = engine.getBoardData();
       const charger = board.chargers.find((item) => item.id === '1');
       expect(charger.statusKey).toBe('overdue');
@@ -244,16 +252,16 @@ describe('Policy-aligned CLI logic', () => {
       '1',
       'driver@example.com',
       'Driver',
-      new Date('2026-02-09T06:00:00-08:00'),
-      new Date('2026-02-09T09:00:00-08:00'),
+      localDate(2026, 2, 9, 6, 0),
+      localDate(2026, 2, 9, 9, 0),
       'active',
       '',
       '',
       '',
       '',
       '',
-      new Date('2026-02-09T05:50:00-08:00'),
-      new Date('2026-02-09T05:50:00-08:00'),
+      localDate(2026, 2, 9, 5, 50),
+      localDate(2026, 2, 9, 5, 50),
       ''
     ]);
     store.sheets.reservations.rows.push([
@@ -261,20 +269,20 @@ describe('Policy-aligned CLI logic', () => {
       '2',
       'driver@example.com',
       'Driver',
-      new Date('2026-02-09T09:00:00-08:00'),
-      new Date('2026-02-09T12:00:00-08:00'),
+      localDate(2026, 2, 9, 9, 0),
+      localDate(2026, 2, 9, 12, 0),
       'active',
       '',
       '',
       '',
       '',
       '',
-      new Date('2026-02-09T08:50:00-08:00'),
-      new Date('2026-02-09T08:50:00-08:00'),
+      localDate(2026, 2, 9, 8, 50),
+      localDate(2026, 2, 9, 8, 50),
       ''
     ]);
 
-    withTime('2026-02-09T12:45:00-08:00', () => {
+    withLocalTime(2026, 2, 9, 12, 45, () => {
       engine.sendReminders();
       const suspensions = store.sheets.suspensions.rows;
       expect(suspensions.length).toBe(1);
