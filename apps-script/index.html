@@ -9,7 +9,7 @@
     <div class="app">
       <header class="header">
         <div class="title-group">
-          <div class="title">EV Charging</div>
+          <div class="title"><?= appName ?></div>
           <div class="subtitle">EV charger status board</div>
           <div class="helper-text">Tap a charger card to view details and actions.</div>
           <div class="helper-text">One car per person at a time (one reservation per day).</div>
@@ -26,11 +26,13 @@
 
       <section class="suspension-banner" id="suspension-banner" aria-live="polite"></section>
 
-      <div class="channel-actions" id="channel-actions">
-        <a class="btn ghost" href="https://graymatterrobotics.slack.com/archives/C08FPH4UW2Y" target="_blank" rel="noopener">
-          Open #ev-charging in Slack
-        </a>
-      </div>
+      <? if (slackChannelUrl) { ?>
+        <div class="channel-actions" id="channel-actions">
+          <a class="btn ghost" href="<?= slackChannelUrl ?>" target="_blank" rel="noopener">
+            Open <?= slackChannelLabel || 'the Slack channel' ?> in Slack
+          </a>
+        </div>
+      <? } ?>
 
       <section class="notice" id="notice" aria-live="polite"></section>
       <div class="notice-help" id="notice-help"></div>
@@ -86,11 +88,13 @@
           <span class="legend-item status-reserved" title="Reserved for a future time">Reserved</span>
           <span class="legend-item status-overdue" title="Past the max session time">Overdue</span>
         </div>
-        <div class="footer-links">
-          <a class="footer-link" href="https://graymatterrobotics.slack.com/archives/C08FPH4UW2Y" target="_blank" rel="noopener">
-            Open #ev-charging in Slack
-          </a>
-        </div>
+        <? if (slackChannelUrl) { ?>
+          <div class="footer-links">
+            <a class="footer-link" href="<?= slackChannelUrl ?>" target="_blank" rel="noopener">
+              Open <?= slackChannelLabel || 'the Slack channel' ?> in Slack
+            </a>
+          </div>
+        <? } ?>
       </footer>
     </div>
 
@@ -109,7 +113,11 @@
       window.APP_CONFIG = {
         userEmail: <?= JSON.stringify(userEmail) ?>,
         userName: <?= JSON.stringify(userName) ?>,
-        isAdmin: <?= JSON.stringify(isAdmin) ?>
+        isAdmin: <?= JSON.stringify(isAdmin) ?>,
+        appName: <?= JSON.stringify(appName) ?>,
+        slackChannelName: <?= JSON.stringify(slackChannelName) ?>,
+        slackChannelUrl: <?= JSON.stringify(slackChannelUrl) ?>,
+        slackChannelLabel: <?= JSON.stringify(slackChannelLabel) ?>
       };
     </script>
     <?!= include('script'); ?>

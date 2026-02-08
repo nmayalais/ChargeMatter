@@ -81,6 +81,9 @@ function seedStore(store, options = {}) {
     headers: ['key', 'value'],
     rows: [
       ['allowed_domain', 'example.com'],
+      ['app_name', 'EV Charging'],
+      ['slack_channel_name', 'ev-charging'],
+      ['slack_channel_url', ''],
       ['admin_emails', (options.userEmail || 'admin@example.com')],
       ['reservation_open_hour', '6'],
       ['reservation_open_minute', '0']

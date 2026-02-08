@@ -1,5 +1,8 @@
 var APP_DEFAULTS = {
   allowedDomain: 'example.com',
+  appName: 'EV Charging',
+  slackChannelName: 'ev-charging',
+  slackChannelUrl: '',
   overdueRepeatMinutes: 15,
   sessionMoveGraceMinutes: 10,
   strikeThreshold: 2,
@@ -103,11 +106,20 @@ function include(filename) {
 function doGet() {
   initSheets_();
   var auth = requireAuthorizedUser_();
+  var config = getConfig_();
+  var appName = getAppName_(config);
+  var slackChannelName = String(config.slack_channel_name || '');
+  var slackChannelUrl = String(config.slack_channel_url || '');
+  var slackChannelLabel = formatSlackChannelLabel_(slackChannelName);
   var template = HtmlService.createTemplateFromFile('index');
   template.userEmail = auth.email;
   template.userName = auth.name;
   template.isAdmin = auth.isAdmin;
-  return template.evaluate().setTitle('EV Charging');
+  template.appName = appName;
+  template.slackChannelName = slackChannelName;
+  template.slackChannelUrl = slackChannelUrl;
+  template.slackChannelLabel = slackChannelLabel;
+  return template.evaluate().setTitle(appName);
 }
 
 function getBoardData() {
@@ -128,6 +140,9 @@ function getBoardData() {
     serverTime: board.serverTime,
     timezone: Session.getScriptTimeZone(),
     config: {
+      appName: board.appName,
+      slackChannelName: board.slackChannelName,
+      slackChannelUrl: board.slackChannelUrl,
       overdueRepeatMinutes: board.overdueRepeatMinutes,
       sessionMoveGraceMinutes: board.sessionMoveGraceMinutes,
       suspensionBusinessDays: board.suspensionBusinessDays,
@@ -521,6 +536,9 @@ function endSession(sessionId) {
 function notifyOwner(chargerId) {
   initSheets_();
   requireAuthorizedUser_();
+  var config = getConfig_();
+  var appName = getAppName_(config);
+  var channelMention = getSlackChannelMention_(config);
   var chargersData = getSheetData_(SHEETS.chargers, CHARGERS_HEADERS);
   var sessionsData = getSheetData_(SHEETS.sessions, SESSIONS_HEADERS);
   var charger = findById_(chargersData.rows, 'charger_id', chargerId);
@@ -533,8 +551,8 @@ function notifyOwner(chargerId) {
   }
   var chargerName = charger.name || ('Charger ' + charger.charger_id);
   notifyChannel_(
-    'EV Charging: Someone is waiting for ' + chargerName +
-      '. Please move your car and post any delays in #ev-charging.',
+    appName + ': Someone is waiting for ' + chargerName +
+      '. Please move your car and post any delays in ' + channelMention + '.',
     session.user_id
   );
   return getBoardData();
@@ -543,14 +561,17 @@ function notifyOwner(chargerId) {
 function postChannelMessage(message) {
   initSheets_();
   var auth = requireAuthorizedUser_();
+  var config = getConfig_();
+  var appName = getAppName_(config);
+  var channelMention = getSlackChannelMention_(config);
   var text = String(message || '').trim();
   if (!text) {
     throw new Error('Message cannot be empty.');
   }
   var displayName = formatUserDisplay_(auth.name, auth.email);
-  var payload = 'EV Charging: ' + displayName + ' says: ' + text;
+  var payload = appName + ': ' + displayName + ' says: ' + text;
   if (!notifyChannel_(payload, auth.email)) {
-    throw new Error('Unable to post to the EV Charging channel.');
+    throw new Error('Unable to post to ' + channelMention + '.');
   }
   return true;
 }
@@ -895,6 +916,9 @@ function buildBoard_(now, reservationsData) {
   return {
     chargers: chargersView,
     serverTime: now.toISOString(),
+    appName: getAppName_(config),
+    slackChannelName: String(config.slack_channel_name || ''),
+    slackChannelUrl: String(config.slack_channel_url || ''),
     overdueRepeatMinutes: Number(config.overdue_repeat_minutes) || APP_DEFAULTS.overdueRepeatMinutes,
     sessionMoveGraceMinutes: sessionMoveGraceMinutes,
     suspensionBusinessDays: Number(config.suspension_business_days) || APP_DEFAULTS.suspensionBusinessDays,
@@ -1007,6 +1031,9 @@ function getConfig_() {
   });
   var props = PropertiesService.getScriptProperties();
   config.allowed_domain = config.allowed_domain || props.getProperty('ALLOWED_DOMAIN') || APP_DEFAULTS.allowedDomain;
+  config.app_name = config.app_name || props.getProperty('APP_NAME') || APP_DEFAULTS.appName;
+  config.slack_channel_name = config.slack_channel_name || props.getProperty('SLACK_CHANNEL_NAME') || APP_DEFAULTS.slackChannelName;
+  config.slack_channel_url = config.slack_channel_url || props.getProperty('SLACK_CHANNEL_URL') || APP_DEFAULTS.slackChannelUrl;
   config.slack_webhook_url = config.slack_webhook_url || props.getProperty('SLACK_WEBHOOK_URL') || '';
   config.slack_webhook_channel = config.slack_webhook_channel || props.getProperty('SLACK_WEBHOOK_CHANNEL') || '';
   config.slack_bot_token = config.slack_bot_token || props.getProperty('SLACK_BOT_TOKEN') || '';
@@ -1268,6 +1295,7 @@ function recordStrike_(params) {
 
 function maybeApplySuspension_(userEmail, userName, monthKey, now, strikeCount) {
   var config = getConfig_();
+  var appName = getAppName_(config);
   var threshold = parseInt(config.strike_threshold, 10);
   var suspensionDays = parseInt(config.suspension_business_days, 10);
   var required = isNaN(threshold) ? APP_DEFAULTS.strikeThreshold : threshold;
@@ -1292,7 +1320,7 @@ function maybeApplySuspension_(userEmail, userName, monthKey, now, strikeCount) 
     true,
     new Date()
   ]);
-  notifyChannel_('EV Charging: ' + formatUserDisplay_(userName, userEmail) +
+  notifyChannel_(appName + ': ' + formatUserDisplay_(userName, userEmail) +
     ' has reached ' + required + ' strikes and is suspended until ' + formatTime_(endAt) + '.');
   return null;
 }
@@ -1932,6 +1960,7 @@ function hasReservationConflict_(reservations, chargerId, startTime, endTime, ga
 function markNoShowReservations_(now) {
   var reservationsData = getSheetData_(SHEETS.reservations, RESERVATIONS_HEADERS);
   var config = getReservationConfig_(getConfig_());
+  var appName = getAppName_(getConfig_());
   var chargersData = getSheetData_(SHEETS.chargers, CHARGERS_HEADERS);
   var chargersById = {};
   chargersData.rows.forEach(function(charger) {
@@ -1972,7 +2001,7 @@ function markNoShowReservations_(now) {
       var chargerName = charger.name || ('Charger ' + reservation.charger_id);
       var releasedUser = formatUserDisplay_(reservation.user_name, reservation.user_id);
       notifyChannel_(
-        'EV Charging: ' + releasedUser + '\'s reservation on ' + chargerName +
+        appName + ': ' + releasedUser + '\'s reservation on ' + chargerName +
           ' was released (no-show after ' + config.lateGraceMinutes + ' minutes).',
         reservation.user_id
       );
@@ -1984,27 +2013,30 @@ function buildReminderText_(type, session, charger, endTime, now, graceMinutes) 
   var chargerName = charger.name || ('Charger ' + charger.charger_id);
   var endDisplay = formatTime_(endTime);
   var userName = formatUserDisplay_(session.user_name, session.user_id);
+  var config = getConfig_();
+  var appName = getAppName_(config);
+  var channelMention = getSlackChannelMention_(config);
   var grace = graceMinutes || APP_DEFAULTS.sessionMoveGraceMinutes;
   if (type === 'tminus10') {
-    return 'EV Charging: ' + userName + '\'s session on ' + chargerName +
+    return appName + ': ' + userName + '\'s session on ' + chargerName +
       ' ends in 10 minutes (ends at ' + endDisplay + '). Please move within ' + grace + ' minutes of ending.';
   }
   if (type === 'tminus5') {
-    return 'EV Charging: ' + userName + '\'s session on ' + chargerName +
+    return appName + ': ' + userName + '\'s session on ' + chargerName +
       ' ends in 5 minutes (ends at ' + endDisplay + '). Please move within ' + grace + ' minutes of ending.';
   }
   if (type === 'expire') {
-    return 'EV Charging: ' + userName + '\'s session on ' + chargerName +
+    return appName + ': ' + userName + '\'s session on ' + chargerName +
       ' just ended at ' + endDisplay + '. Please move within ' + grace + ' minutes.';
   }
   if (type === 'grace') {
-    return 'EV Charging: ' + userName + '\'s session on ' + chargerName +
-      ' is past the ' + grace + '-minute grace period. Please move now and post updates in #ev-charging. ' +
+    return appName + ': ' + userName + '\'s session on ' + chargerName +
+      ' is past the ' + grace + '-minute grace period. Please move now and post updates in ' + channelMention + '. ' +
       'If the cable reaches the next spot, unlock the charge port remotely.';
   }
   if (type === 'overdue') {
-    return 'EV Charging: ' + userName + '\'s session on ' + chargerName +
-      ' is still overdue. Please move now and post updates in #ev-charging.';
+    return appName + ': ' + userName + '\'s session on ' + chargerName +
+      ' is still overdue. Please move now and post updates in ' + channelMention + '.';
   }
   return '';
 }
@@ -2015,12 +2047,13 @@ function buildReservationReminderText_(type, reservation, charger, startTime, co
   var releaseTime = addMinutes_(startTime, config.lateGraceMinutes);
   var releaseDisplay = formatTime_(releaseTime);
   var userName = formatUserDisplay_(reservation.user_name, reservation.user_id);
+  var appName = getAppName_(getConfig_());
   if (type === 'upcoming') {
-    return 'EV Charging: ' + userName + '\'s reservation on ' + chargerName +
+    return appName + ': ' + userName + '\'s reservation on ' + chargerName +
       ' starts in 5 minutes at ' + startDisplay + '.';
   }
   if (type === 'late') {
-    return 'EV Charging: ' + userName + '\'s reservation on ' + chargerName +
+    return appName + ': ' + userName + '\'s reservation on ' + chargerName +
       ' started at ' + startDisplay + ' and will be released at ' + releaseDisplay + ' if unused.';
   }
   return '';
@@ -2065,6 +2098,24 @@ function formatUserDisplay_(name, email) {
   return displayName;
 }
 
+function getAppName_(config) {
+  return String((config && config.app_name) || APP_DEFAULTS.appName || 'EV Charging');
+}
+
+function formatSlackChannelLabel_(name) {
+  var raw = String(name || '').trim();
+  if (!raw) {
+    return '';
+  }
+  var clean = raw.charAt(0) === '#' ? raw.slice(1) : raw;
+  return '#' + clean;
+}
+
+function getSlackChannelMention_(config) {
+  var label = formatSlackChannelLabel_(config && config.slack_channel_name);
+  return label || 'the Slack channel';
+}
+
 function notifyChannel_(text, email) {
   var config = getConfig_();
   var sentSlack = false;
@@ -2102,7 +2153,7 @@ function notifyChannel_(text, email) {
   }
   if (!sentSlack && email) {
     try {
-      MailApp.sendEmail(email, 'EV Charging reminder', text);
+      MailApp.sendEmail(email, getAppName_(config) + ' reminder', text);
       sentEmail = true;
     } catch (err) {
       logError_('Email notification failed', err, { email: email });
@@ -2149,7 +2200,7 @@ function notifyUser_(session, charger, text) {
   }
   if (email) {
     try {
-      MailApp.sendEmail(email, 'EV Charging reminder', text);
+      MailApp.sendEmail(email, getAppName_(config) + ' reminder', text);
       sentEmail = true;
     } catch (err) {
       logError_('Email notification failed', err, { email: email });

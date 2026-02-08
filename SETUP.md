@@ -32,6 +32,9 @@ Use the `config` tab (key/value pairs) or Script Properties.
 
 Recommended keys:
 - `allowed_domain`: `example.com`
+- `app_name`: `EV Charging`
+- `slack_channel_name`: `ev-charging`
+- `slack_channel_url`: `https://your-workspace.slack.com/archives/CHANNEL_ID`
 - `admin_emails`: `you@example.com,ops@example.com`
 - `overdue_repeat_minutes`: `15`
 - `session_move_grace_minutes`: `10`
@@ -51,6 +54,9 @@ Recommended keys:
 
 Script Properties equivalents:
 - `ALLOWED_DOMAIN`
+- `APP_NAME`
+- `SLACK_CHANNEL_NAME`
+- `SLACK_CHANNEL_URL`
 - `ADMIN_EMAILS`
 - `OVERDUE_REPEAT_MINUTES`
 - `SESSION_MOVE_GRACE_MINUTES`
