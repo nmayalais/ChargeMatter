@@ -226,6 +226,33 @@ describe('UI behaviors', () => {
     expect(notifyOwner).toHaveBeenCalledWith('1');
   });
 
+  test('matches session owner case-insensitively', () => {
+    const endSession = jest.fn();
+    const window = loadScriptIntoDom({
+      userEmail: 'Alex@Example.com',
+      isAdmin: false,
+      runMethods: { endSession }
+    });
+    activeWindow = window;
+    const charger = {
+      id: '1',
+      name: 'Charger 1',
+      statusKey: 'in_use',
+      status: 'In use',
+      maxMinutes: 60,
+      session: {
+        sessionId: 'session-123',
+        userEmail: 'alex@example.com',
+        endTime: new Date().toISOString()
+      }
+    };
+
+    const action = window.getPrimaryAction(charger);
+    expect(action.label).toBe("I've moved my car");
+    action.action();
+    expect(endSession).toHaveBeenCalledWith('session-123');
+  });
+
   test('non-admin can cancel their own reservation via primary action', () => {
     const cancelReservation = jest.fn();
     const window = loadScriptIntoDom({

@@ -970,7 +970,7 @@
 
   function getPrimaryAction(charger) {
     if (charger.session) {
-      if (charger.session.userEmail === APP_CONFIG.userEmail) {
+      if (sameUserEmail(charger.session.userEmail, getCurrentUserEmail())) {
         return {
           label: "I've moved my car",
           action: () =>
@@ -1001,7 +1001,7 @@
       };
     }
     if (charger.statusKey === 'reserved') {
-      if (charger.reservation && charger.reservation.userEmail === APP_CONFIG.userEmail) {
+      if (charger.reservation && sameUserEmail(charger.reservation.userEmail, getCurrentUserEmail())) {
         return {
           label: 'Release reservation',
           action: () =>
@@ -1038,6 +1038,17 @@
       loadingLabel: 'Starting...',
       helpText: helpText
     };
+  }
+
+  function getCurrentUserEmail() {
+    if (state.board && state.board.user && state.board.user.email) {
+      return state.board.user.email;
+    }
+    return APP_CONFIG.userEmail || '';
+  }
+
+  function sameUserEmail(first, second) {
+    return String(first || '').toLowerCase() === String(second || '').toLowerCase();
   }
 
   function viewReservation(charger) {
