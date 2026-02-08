@@ -199,6 +199,33 @@ describe('UI behaviors', () => {
     expect(endSession).toHaveBeenCalledWith('session-123');
   });
 
+  test('active session owned by someone else shows notify owner', () => {
+    const notifyOwner = jest.fn();
+    const window = loadScriptIntoDom({
+      userEmail: 'alex@example.com',
+      isAdmin: false,
+      runMethods: { notifyOwner }
+    });
+    activeWindow = window;
+    const charger = {
+      id: '1',
+      name: 'Charger 1',
+      statusKey: 'in_use',
+      status: 'In use',
+      maxMinutes: 60,
+      session: {
+        sessionId: 'session-123',
+        userEmail: 'someoneelse@example.com',
+        endTime: new Date().toISOString()
+      }
+    };
+
+    const action = window.getPrimaryAction(charger);
+    expect(action.label).toBe('Notify owner');
+    action.action();
+    expect(notifyOwner).toHaveBeenCalledWith('1');
+  });
+
   test('non-admin can cancel their own reservation via primary action', () => {
     const cancelReservation = jest.fn();
     const window = loadScriptIntoDom({
