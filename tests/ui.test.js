@@ -23,6 +23,15 @@ function loadScriptIntoDom(options = {}) {
     <div id="sticky-hint"></div>
     <button id="sticky-action"></button>
     <span id="last-updated"></span>
+    <div id="confirm-backdrop">
+      <div class="confirm-dialog">
+        <div id="confirm-title"></div>
+        <div id="confirm-message"></div>
+        <div id="confirm-detail"></div>
+        <button id="confirm-cancel"></button>
+        <button id="confirm-ok"></button>
+      </div>
+    </div>
   </body></html>`, { runScripts: 'dangerously', url: 'http://localhost' });
 
   const { window } = dom;

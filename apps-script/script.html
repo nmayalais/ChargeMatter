@@ -17,6 +17,13 @@
     slotsLastFetch: null
   };
 
+  const confirmState = {
+    isOpen: false,
+    resolve: null,
+    lastActive: null,
+    elements: null
+  };
+
   const SLOTS_CACHE_TTL_MS = 30000;
 
   const MOBILE_QUERY = '(max-width: 600px)';
@@ -46,7 +53,94 @@
     startCountdowns();
     setupModeTabs();
     setupGlobalHandlers();
+    setupConfirmDialog();
     setMode('now');
+  }
+
+  function setupConfirmDialog() {
+    confirmState.elements = getConfirmElements();
+    if (!confirmState.elements) {
+      return;
+    }
+    const { backdrop, cancelBtn, confirmBtn, dialog } = confirmState.elements;
+    backdrop.addEventListener('click', (event) => {
+      if (event.target === backdrop) {
+        closeConfirm(false);
+      }
+    });
+    cancelBtn.addEventListener('click', () => closeConfirm(false));
+    confirmBtn.addEventListener('click', () => closeConfirm(true));
+    dialog.addEventListener('click', (event) => event.stopPropagation());
+  }
+
+  function getConfirmElements() {
+    const backdrop = document.getElementById('confirm-backdrop');
+    const dialog = backdrop?.querySelector('.confirm-dialog');
+    const title = document.getElementById('confirm-title');
+    const message = document.getElementById('confirm-message');
+    const detail = document.getElementById('confirm-detail');
+    const cancelBtn = document.getElementById('confirm-cancel');
+    const confirmBtn = document.getElementById('confirm-ok');
+    if (!backdrop || !dialog || !title || !message || !detail || !cancelBtn || !confirmBtn) {
+      return null;
+    }
+    return { backdrop, dialog, title, message, detail, cancelBtn, confirmBtn };
+  }
+
+  function openConfirm(options = {}) {
+    if (!confirmState.elements) {
+      confirmState.elements = getConfirmElements();
+    }
+    if (!confirmState.elements) {
+      const fallback = options.message || options.title || 'Are you sure?';
+      return Promise.resolve(window.confirm(fallback));
+    }
+    if (confirmState.isOpen) {
+      closeConfirm(false);
+    }
+    const { backdrop, title, message, detail, cancelBtn, confirmBtn } = confirmState.elements;
+    title.textContent = options.title || 'Confirm action';
+    message.textContent = options.message || '';
+    detail.textContent = options.detail || '';
+    detail.style.display = options.detail ? 'block' : 'none';
+    cancelBtn.textContent = options.cancelLabel || 'Cancel';
+    confirmBtn.textContent = options.confirmLabel || 'Confirm';
+    confirmBtn.classList.remove('warn', 'secondary', 'ghost');
+    confirmBtn.classList.add(options.confirmClass || 'warn');
+    cancelBtn.classList.remove('warn', 'secondary');
+    cancelBtn.classList.add('ghost');
+
+    confirmState.lastActive = document.activeElement;
+    confirmState.isOpen = true;
+    confirmState.resolve = null;
+    backdrop.classList.add('active');
+    backdrop.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('confirm-open');
+
+    setTimeout(() => confirmBtn.focus(), 0);
+    return new Promise((resolve) => {
+      confirmState.resolve = resolve;
+    });
+  }
+
+  function closeConfirm(confirmed) {
+    if (!confirmState.isOpen || !confirmState.elements) {
+      return;
+    }
+    const { backdrop } = confirmState.elements;
+    backdrop.classList.remove('active');
+    backdrop.setAttribute('aria-hidden', 'true');
+    document.body.classList.remove('confirm-open');
+    confirmState.isOpen = false;
+    const resolve = confirmState.resolve;
+    confirmState.resolve = null;
+    if (resolve) {
+      resolve(Boolean(confirmed));
+    }
+    if (confirmState.lastActive && typeof confirmState.lastActive.focus === 'function') {
+      confirmState.lastActive.focus();
+    }
+    confirmState.lastActive = null;
   }
 
   function setUserMeta() {
@@ -307,11 +401,20 @@
       forceBtn.setAttribute('role', 'menuitem');
       forceBtn.addEventListener('click', (event) => {
         event.stopPropagation();
-        if (confirm('Force end this session?')) {
-          setActionFeedback(forceBtn, 'Ending...');
-          callServer('forceEnd', [charger.id]);
-        }
-        closeMenu(list);
+        openConfirm({
+          title: 'Force end session?',
+          message: 'End the current charging session immediately?',
+          detail: 'This will check out the driver and free the charger for the next user.',
+          confirmLabel: 'Force end',
+          cancelLabel: 'Keep session',
+          confirmClass: 'warn'
+        }).then((confirmed) => {
+          if (confirmed) {
+            setActionFeedback(forceBtn, 'Ending...');
+            callServer('forceEnd', [charger.id]);
+          }
+          closeMenu(list);
+        });
       });
       const resetBtn = document.createElement('button');
       resetBtn.className = 'menu-item';
@@ -319,11 +422,20 @@
       resetBtn.setAttribute('role', 'menuitem');
       resetBtn.addEventListener('click', (event) => {
         event.stopPropagation();
-        if (confirm('Reset this charger?')) {
-          setActionFeedback(resetBtn, 'Resetting...');
-          callServer('resetCharger', [charger.id]);
-        }
-        closeMenu(list);
+        openConfirm({
+          title: 'Reset this charger?',
+          message: 'Clear the charger status and any active session?',
+          detail: 'Use this only when the charger status is incorrect.',
+          confirmLabel: 'Reset charger',
+          cancelLabel: 'Keep status',
+          confirmClass: 'warn'
+        }).then((confirmed) => {
+          if (confirmed) {
+            setActionFeedback(resetBtn, 'Resetting...');
+            callServer('resetCharger', [charger.id]);
+          }
+          closeMenu(list);
+        });
       });
       list.appendChild(forceBtn);
       list.appendChild(resetBtn);
@@ -560,7 +672,16 @@
         setLoading(false);
         let handled = false;
         if (typeof options.onError === 'function') {
-          handled = options.onError(err) === true;
+          const result = options.onError(err);
+          if (result && typeof result.then === 'function') {
+            result.then((resolved) => {
+              if (resolved !== true) {
+                setNotice(err.message || String(err), 'error');
+              }
+            });
+            return;
+          }
+          handled = result === true;
         }
         if (!handled) {
           setNotice(err.message || String(err), 'error');
@@ -624,8 +745,17 @@
       actions.className = 'reservation-actions';
       if (reservation.checkedInAt) {
         const endBtn = createButton('End session', 'btn warn', () => {
-          const confirmMessage = 'End your charging session?';
-          if (confirm(confirmMessage)) {
+          openConfirm({
+            title: 'End charging session?',
+            message: 'Mark your session complete and free this charger?',
+            detail: 'Use this after you have moved your car.',
+            confirmLabel: 'End session',
+            cancelLabel: 'Keep charging',
+            confirmClass: 'warn'
+          }).then((confirmed) => {
+            if (!confirmed) {
+              return;
+            }
             setActionFeedback(endBtn, 'Ending...');
             callServer('endSessionForReservation', [reservation.reservationId], {
               successMessage: 'Session ended. Thanks for checking out.',
@@ -635,28 +765,44 @@
                 if (!/session not found for this reservation|session does not match this reservation/i.test(message)) {
                   return false;
                 }
-                const fallbackConfirm =
-                  'No active session was found for this reservation. Clear the checked-in reservation instead?';
-                if (!confirm(fallbackConfirm)) {
-                  return false;
-                }
-                callServer('completeCheckedInReservation', [reservation.reservationId], {
-                  successMessage: 'Reservation cleared.',
-                  successType: 'success'
+                return openConfirm({
+                  title: 'No active session found',
+                  message: 'Clear the checked-in reservation instead?',
+                  detail: 'This keeps the schedule accurate for the next driver.',
+                  confirmLabel: 'Clear reservation',
+                  cancelLabel: 'Keep checked-in',
+                  confirmClass: 'warn'
+                }).then((fallbackConfirmed) => {
+                  if (!fallbackConfirmed) {
+                    return true;
+                  }
+                  callServer('completeCheckedInReservation', [reservation.reservationId], {
+                    successMessage: 'Reservation cleared.',
+                    successType: 'success'
+                  });
+                  return true;
                 });
-                return true;
               }
             });
-          }
+          });
         });
         actions.appendChild(endBtn);
       } else {
         const editBtn = createButton('Change', 'btn ghost', () => startReservationEdit(reservation));
         const cancelBtn = createButton('Cancel', 'btn warn', () => {
-          if (confirm('Cancel this reservation?')) {
-            setActionFeedback(cancelBtn, 'Canceling...');
-            callServer('cancelReservation', [reservation.reservationId], { refreshSlots: true });
-          }
+          openConfirm({
+            title: 'Cancel reservation?',
+            message: 'Release this slot back to the schedule?',
+            detail: 'You can always book another open time.',
+            confirmLabel: 'Cancel reservation',
+            cancelLabel: 'Keep reservation',
+            confirmClass: 'warn'
+          }).then((confirmed) => {
+            if (confirmed) {
+              setActionFeedback(cancelBtn, 'Canceling...');
+              callServer('cancelReservation', [reservation.reservationId], { refreshSlots: true });
+            }
+          });
         });
         actions.appendChild(editBtn);
         actions.appendChild(cancelBtn);
@@ -957,6 +1103,10 @@
     document.addEventListener('click', () => closeAllMenus());
     document.addEventListener('keydown', (event) => {
       if (event.key === 'Escape') {
+        if (confirmState.isOpen) {
+          closeConfirm(false);
+          return;
+        }
         closeAllMenus();
       }
     });

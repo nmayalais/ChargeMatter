@@ -98,6 +98,22 @@
       </footer>
     </div>
 
+    <div class="confirm-backdrop" id="confirm-backdrop" aria-hidden="true">
+      <div class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="confirm-title" aria-describedby="confirm-message">
+        <div class="confirm-header">
+          <div class="confirm-title" id="confirm-title">Confirm action</div>
+        </div>
+        <div class="confirm-body">
+          <p class="confirm-message" id="confirm-message"></p>
+          <p class="confirm-detail" id="confirm-detail"></p>
+        </div>
+        <div class="confirm-actions">
+          <button class="btn ghost" id="confirm-cancel" type="button">Cancel</button>
+          <button class="btn warn" id="confirm-ok" type="button">Confirm</button>
+        </div>
+      </div>
+    </div>
+
     <div class="sticky-bar" id="sticky-bar" aria-live="polite">
       <div class="sticky-info" id="sticky-info">Select a charger or slot</div>
       <div class="sticky-hint" id="sticky-hint">Select a charger or slot to begin.</div>
