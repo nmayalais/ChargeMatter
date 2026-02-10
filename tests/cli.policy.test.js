@@ -186,6 +186,32 @@ describe('Policy-aligned CLI logic', () => {
     });
   });
 
+  test('completed reservation still blocks another same-day booking', () => {
+    const store = buildPolicyStore();
+    const engine = createPolicyEngine(store);
+    let reservationId = '';
+
+    withLocalTime(2026, 2, 9, 6, 15, () => {
+      const board = engine.createReservation('4', localIso(2026, 2, 9, 8, 0));
+      reservationId = board.reservations[0].reservationId;
+    });
+
+    withLocalTime(2026, 2, 9, 8, 5, () => {
+      engine.checkInReservation(reservationId);
+    });
+
+    withLocalTime(2026, 2, 9, 8, 45, () => {
+      engine.endSessionForReservation(reservationId);
+    });
+
+    withLocalTime(2026, 2, 9, 8, 50, () => {
+      expectError(
+        () => engine.createReservation('1', localIso(2026, 2, 9, 9, 0)),
+        'You already have a reservation for today'
+      );
+    });
+  });
+
   test('open slot becomes available after 30 minutes', () => {
     const store = buildPolicyStore();
     const engine = createPolicyEngine(store);

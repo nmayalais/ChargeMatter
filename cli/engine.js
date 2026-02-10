@@ -925,6 +925,7 @@ function createEngine(options) {
       throw new Error('You can only end your own session.');
     }
     var now = new Date();
+    var sessionEnd = toDate_(session.end_time);
     updateRow_(sessionsData.sheet, sessionsData.headerMap, session._row, {
       status: 'complete',
       active: false,
@@ -937,6 +938,13 @@ function createEngine(options) {
       updateRow_(chargersData.sheet, chargersData.headerMap, charger._row, {
         active_session_id: ''
       });
+    }
+    if (sessionEnd && now.getTime() < sessionEnd.getTime()) {
+      var chargerDetails = charger || { charger_id: session.charger_id };
+      var earlyText = buildEarlyEndText_(session, chargerDetails, sessionEnd, now);
+      if (earlyText) {
+        notifyChannel_(earlyText);
+      }
     }
     completeReservationForSession_(session, now);
   }
@@ -1216,14 +1224,16 @@ function createEngine(options) {
       config.reservation_rounding_minutes ||
       props.getProperty('RESERVATION_ROUNDING_MINUTES') ||
       APP_DEFAULTS.reservationRoundingMinutes;
-    config.reservation_checkin_early_minutes =
-      config.reservation_checkin_early_minutes ||
-      props.getProperty('RESERVATION_CHECKIN_EARLY_MINUTES') ||
-      APP_DEFAULTS.reservationCheckinEarlyMinutes;
-    config.reservation_early_start_minutes =
-      config.reservation_early_start_minutes ||
-      props.getProperty('RESERVATION_EARLY_START_MINUTES') ||
-      APP_DEFAULTS.reservationEarlyStartMinutes;
+    config.reservation_checkin_early_minutes = resolveConfigValue_(
+      config.reservation_checkin_early_minutes,
+      props.getProperty('RESERVATION_CHECKIN_EARLY_MINUTES'),
+      APP_DEFAULTS.reservationCheckinEarlyMinutes
+    );
+    config.reservation_early_start_minutes = resolveConfigValue_(
+      config.reservation_early_start_minutes,
+      props.getProperty('RESERVATION_EARLY_START_MINUTES'),
+      APP_DEFAULTS.reservationEarlyStartMinutes
+    );
     config.reservation_late_grace_minutes =
       config.reservation_late_grace_minutes ||
       props.getProperty('RESERVATION_LATE_GRACE_MINUTES') ||
@@ -1237,6 +1247,16 @@ function createEngine(options) {
       props.getProperty('RESERVATION_OPEN_MINUTE') ||
       APP_DEFAULTS.reservationOpenMinute;
     return config;
+  }
+
+  function resolveConfigValue_(value, fallbackValue, defaultValue) {
+    if (value !== null && value !== undefined && String(value).trim() !== '') {
+      return value;
+    }
+    if (fallbackValue !== null && fallbackValue !== undefined && String(fallbackValue).trim() !== '') {
+      return fallbackValue;
+    }
+    return defaultValue;
   }
 
   function requireAuthorizedUser_() {
@@ -1688,11 +1708,20 @@ function createEngine(options) {
     }
 
     var dayKey = dayKey_(startTime);
-    var perDayCount = upcoming.filter(function(reservation) {
+    var perDayCount = reservations.filter(function(reservation) {
+      if (!reservation.reservation_id || isReservationCanceled_(reservation)) {
+        return false;
+      }
+      if (String(reservation.reservation_id) === excludeId) {
+        return false;
+      }
+      if (String(reservation.user_id || '').toLowerCase() !== userEmail) {
+        return false;
+      }
       var resStart = toDate_(reservation.start_time);
       return resStart && dayKey_(resStart) === dayKey;
     }).length;
-    if (perDayCount >= 1) {
+    if (perDayCount >= config.maxPerDay) {
       throw new Error('You already have a reservation for today. Change or cancel it to book another.');
     }
 
@@ -2248,6 +2277,38 @@ function createEngine(options) {
 
   function formatTime_(date) {
     return Utilities.formatDate(date, Session.getScriptTimeZone(), 'h:mm a');
+  }
+
+  function formatDurationMinutes_(minutes) {
+    var total = Math.max(0, Math.round(minutes));
+    if (total === 1) {
+      return '1 minute';
+    }
+    if (total < 60) {
+      return total + ' minutes';
+    }
+    var hours = Math.floor(total / 60);
+    var remainder = total % 60;
+    var hourLabel = hours === 1 ? '1 hour' : hours + ' hours';
+    if (!remainder) {
+      return hourLabel;
+    }
+    var minuteLabel = remainder === 1 ? '1 minute' : remainder + ' minutes';
+    return hourLabel + ' ' + minuteLabel;
+  }
+
+  function buildEarlyEndText_(session, charger, sessionEnd, now) {
+    var remainingMinutes = Math.ceil((sessionEnd.getTime() - now.getTime()) / 60000);
+    if (remainingMinutes <= 0) {
+      return '';
+    }
+    var chargerName = charger.name || ('Charger ' + charger.charger_id);
+    var userName = formatUserDisplay_(session.user_name, session.user_id);
+    var remainingLabel = formatDurationMinutes_(remainingMinutes);
+    var endDisplay = formatTime_(sessionEnd);
+    var appName = getAppName_(getConfig_());
+    return appName + ': ' + userName + ' ended early on ' + chargerName +
+      '. ' + remainingLabel + ' left in the slot (until ' + endDisplay + ').';
   }
 
   function deriveFullNameFromEmail_(email) {
