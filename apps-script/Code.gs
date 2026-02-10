@@ -196,11 +196,11 @@ function startSession(chargerId) {
     if (!slot) {
       throw new Error('Charging is only available during scheduled blocks.');
     }
-    var openAt = addMinutes_(slot.startTime, config.lateGraceMinutes);
     var slotReservation = findReservationForSlot_(reservationsData.rows, chargerId, slot.startTime);
     if (slotReservation && (isReservationCanceled_(slotReservation) || isReservationNoShow_(slotReservation) || isReservationComplete_(slotReservation))) {
       slotReservation = null;
     }
+    var openAt = slotReservation ? addMinutes_(slot.startTime, config.lateGraceMinutes) : slot.startTime;
     var isReservedByUser =
       slotReservation && String(slotReservation.user_id || '').toLowerCase() === String(auth.email || '').toLowerCase();
     if (now.getTime() < openAt.getTime()) {
@@ -1040,7 +1040,11 @@ function buildBoard_(now, reservationsData) {
       } else {
         var slot = findSlotForTime_(charger, now);
         if (slot) {
-          var openAt = addMinutes_(slot.startTime, reservationConfig.lateGraceMinutes);
+          var slotReservation = findReservationForSlot_(reservations, charger.charger_id, slot.startTime);
+          if (slotReservation && (isReservationCanceled_(slotReservation) || isReservationNoShow_(slotReservation) || isReservationComplete_(slotReservation))) {
+            slotReservation = null;
+          }
+          var openAt = slotReservation ? addMinutes_(slot.startTime, reservationConfig.lateGraceMinutes) : slot.startTime;
           walkup = {
             startTime: toIso_(slot.startTime),
             endTime: toIso_(slot.endTime),

@@ -212,18 +212,47 @@ describe('Policy-aligned CLI logic', () => {
     });
   });
 
-  test('open slot becomes available after 30 minutes', () => {
+  test('open slot becomes available immediately when unreserved', () => {
     const store = buildPolicyStore();
     const engine = createPolicyEngine(store);
 
     withLocalTime(2026, 2, 9, 6, 10, () => {
+      const board = engine.startSession('1');
+      const charger = board.chargers.find((item) => item.id === '1');
+      expect(charger.statusKey).toBe('in_use');
+    });
+  });
+
+  test('reserved slot opens after grace period for walk-up', () => {
+    const store = buildPolicyStore();
+    const engine = createPolicyEngine(store);
+
+    store.sheets.reservations.rows.push([
+      'reservation-1',
+      '1',
+      'other@example.com',
+      'Other Driver',
+      localDate(2026, 2, 9, 9, 0),
+      localDate(2026, 2, 9, 12, 0),
+      'active',
+      '',
+      '',
+      '',
+      '',
+      '',
+      localDate(2026, 2, 9, 8, 0),
+      localDate(2026, 2, 9, 8, 0),
+      ''
+    ]);
+
+    withLocalTime(2026, 2, 9, 9, 10, () => {
       expectError(
         () => engine.startSession('1'),
-        'opens at'
+        'Charger is reserved by'
       );
     });
 
-    withLocalTime(2026, 2, 9, 6, 31, () => {
+    withLocalTime(2026, 2, 9, 9, 31, () => {
       const board = engine.startSession('1');
       const charger = board.chargers.find((item) => item.id === '1');
       expect(charger.statusKey).toBe('in_use');

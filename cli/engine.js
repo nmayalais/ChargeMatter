@@ -207,11 +207,11 @@ function createEngine(options) {
       if (!slot) {
         throw new Error('Charging is only available during scheduled blocks.');
       }
-      var openAt = addMinutes_(slot.startTime, config.lateGraceMinutes);
       var slotReservation = findReservationForSlot_(reservationsData.rows, chargerId, slot.startTime);
-      if (slotReservation && (isReservationCanceled_(slotReservation) || isReservationNoShow_(slotReservation))) {
+      if (slotReservation && (isReservationCanceled_(slotReservation) || isReservationNoShow_(slotReservation) || isReservationComplete_(slotReservation))) {
         slotReservation = null;
       }
+      var openAt = slotReservation ? addMinutes_(slot.startTime, config.lateGraceMinutes) : slot.startTime;
       var isReservedByUser =
         slotReservation && String(slotReservation.user_id || '').toLowerCase() === String(auth.email || '').toLowerCase();
       if (now.getTime() < openAt.getTime()) {
@@ -1051,17 +1051,21 @@ function createEngine(options) {
           statusKey = 'reserved';
           statusLabel = 'Reserved';
         } else {
-          var slot = findSlotForTime_(charger, now);
-          if (slot) {
-            var openAt = addMinutes_(slot.startTime, reservationConfig.lateGraceMinutes);
-            walkup = {
-              startTime: toIso_(slot.startTime),
-              endTime: toIso_(slot.endTime),
-              openAt: toIso_(openAt),
-              isOpen: now.getTime() >= openAt.getTime()
-            };
+        var slot = findSlotForTime_(charger, now);
+        if (slot) {
+          var slotReservation = findReservationForSlot_(reservations, charger.charger_id, slot.startTime);
+          if (slotReservation && (isReservationCanceled_(slotReservation) || isReservationNoShow_(slotReservation) || isReservationComplete_(slotReservation))) {
+            slotReservation = null;
           }
+          var openAt = slotReservation ? addMinutes_(slot.startTime, reservationConfig.lateGraceMinutes) : slot.startTime;
+          walkup = {
+            startTime: toIso_(slot.startTime),
+            endTime: toIso_(slot.endTime),
+            openAt: toIso_(openAt),
+            isOpen: now.getTime() >= openAt.getTime()
+          };
         }
+      }
         return {
           id: String(charger.charger_id || ''),
           name: charger.name || ('Charger ' + charger.charger_id),
