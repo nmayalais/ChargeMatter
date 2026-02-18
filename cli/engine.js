@@ -33,16 +33,17 @@ function createEngine(options) {
     sessionMoveGraceMinutes: 10,
     strikeThreshold: 2,
     suspensionBusinessDays: 2,
-    reservationAdvanceDays: 7,
-    reservationMaxUpcoming: 3,
+    reservationAdvanceDays: 0,
+    reservationMaxUpcoming: 1,
     reservationMaxPerDay: 1,
     reservationGapMinutes: 1,
     reservationRoundingMinutes: 15,
-    reservationCheckinEarlyMinutes: 5,
-    reservationEarlyStartMinutes: 90,
+    reservationCheckinEarlyMinutes: 0,
+    reservationEarlyStartMinutes: 15,
     reservationLateGraceMinutes: 30,
-    reservationOpenHour: 6,
-    reservationOpenMinute: 0
+    reservationOpenHour: 5,
+    reservationOpenMinute: 45,
+    walkupNetNewWindowMinutes: 10
   };
 
   var SHEETS = {
@@ -138,12 +139,14 @@ function createEngine(options) {
     var auth = requireAuthorizedUser_();
     var now = new Date();
     var reservationsData = getSheetData_(SHEETS.reservations, RESERVATIONS_HEADERS);
+    var sessionsData = getSheetData_(SHEETS.sessions, SESSIONS_HEADERS);
     var board = buildBoard_(now, reservationsData);
     var userReservations = getUpcomingReservationsForUser_(reservationsData.rows, auth.email, now);
     var suspension = getActiveSuspensionForUser_(auth.email);
     if (suspension) {
       auth.suspension = serializeSuspension_(suspension);
     }
+    auth.isNetNew = isNetNewUser_(auth.email, sessionsData.rows, reservationsData.rows, now);
     return {
       user: auth,
       chargers: board.chargers,
@@ -166,7 +169,8 @@ function createEngine(options) {
         reservationEarlyStartMinutes: board.reservationEarlyStartMinutes,
         reservationLateGraceMinutes: board.reservationLateGraceMinutes,
         reservationOpenHour: board.reservationOpenHour,
-        reservationOpenMinute: board.reservationOpenMinute
+        reservationOpenMinute: board.reservationOpenMinute,
+        walkupNetNewWindowMinutes: board.walkupNetNewWindowMinutes
       }
     };
   }
@@ -212,6 +216,7 @@ function createEngine(options) {
         slotReservation = null;
       }
       var openAt = slotReservation ? addMinutes_(slot.startTime, config.lateGraceMinutes) : slot.startTime;
+      var allUsersOpenAt = addMinutes_(openAt, config.netNewWindowMinutes);
       var isReservedByUser =
         slotReservation && String(slotReservation.user_id || '').toLowerCase() === String(auth.email || '').toLowerCase();
       if (now.getTime() < openAt.getTime()) {
@@ -221,6 +226,13 @@ function createEngine(options) {
         if (!isReservedByUser) {
           var reservedBy = formatUserDisplay_(slotReservation.user_name, slotReservation.user_id);
           throw new Error('Charger is reserved by ' + reservedBy + ' until ' + formatTime_(openAt) + '.');
+        }
+      }
+      // Option A: net-new users get priority for the first netNewWindowMinutes after the slot opens.
+      if (now.getTime() >= openAt.getTime() && now.getTime() < allUsersOpenAt.getTime() && !isReservedByUser) {
+        var userIsNetNew = isNetNewUser_(auth.email, sessionsData.rows, reservationsData.rows, now);
+        if (!userIsNetNew) {
+          throw new Error('This slot is currently reserved for drivers who have not charged today. Available to everyone at ' + formatTime_(allUsersOpenAt) + '.');
         }
       }
       if (charger.active_session_id) {
@@ -500,11 +512,11 @@ function createEngine(options) {
       if (!startTime) {
         throw new Error('Invalid reservation start time.');
       }
-      var earlyWindowMinutes = Math.max(config.checkinEarlyMinutes, config.earlyStartMinutes);
+      var earlyWindowMinutes = config.earlyStartMinutes;
       var earliest = new Date(startTime.getTime() - earlyWindowMinutes * 60000);
       var latest = new Date(startTime.getTime() + config.lateGraceMinutes * 60000);
       if (now.getTime() < earliest.getTime()) {
-        throw new Error('Check-in is available within ' + earlyWindowMinutes + ' minutes of start time.');
+        throw new Error('Check-in opens at ' + formatTime_(earliest) + '.');
       }
       if (now.getTime() > latest.getTime()) {
         throw new Error('This reservation is too late to check in.');
@@ -1058,11 +1070,14 @@ function createEngine(options) {
             slotReservation = null;
           }
           var openAt = slotReservation ? addMinutes_(slot.startTime, reservationConfig.lateGraceMinutes) : slot.startTime;
+          var allUsersOpenAt = addMinutes_(openAt, reservationConfig.netNewWindowMinutes);
           walkup = {
             startTime: toIso_(slot.startTime),
             endTime: toIso_(slot.endTime),
             openAt: toIso_(openAt),
-            isOpen: now.getTime() >= openAt.getTime()
+            allUsersOpenAt: toIso_(allUsersOpenAt),
+            isOpen: now.getTime() >= openAt.getTime(),
+            isOpenToAll: now.getTime() >= allUsersOpenAt.getTime()
           };
         }
       }
@@ -1096,7 +1111,8 @@ function createEngine(options) {
       reservationEarlyStartMinutes: reservationConfig.earlyStartMinutes,
       reservationLateGraceMinutes: reservationConfig.lateGraceMinutes,
       reservationOpenHour: reservationConfig.openHour,
-      reservationOpenMinute: reservationConfig.openMinute
+      reservationOpenMinute: reservationConfig.openMinute,
+      walkupNetNewWindowMinutes: reservationConfig.netNewWindowMinutes
     };
   }
 
@@ -1250,6 +1266,11 @@ function createEngine(options) {
       config.reservation_open_minute ||
       props.getProperty('RESERVATION_OPEN_MINUTE') ||
       APP_DEFAULTS.reservationOpenMinute;
+    config.walkup_net_new_window_minutes = resolveConfigValue_(
+      config.walkup_net_new_window_minutes,
+      props.getProperty('WALKUP_NET_NEW_WINDOW_MINUTES'),
+      APP_DEFAULTS.walkupNetNewWindowMinutes
+    );
     return config;
   }
 
@@ -1332,6 +1353,40 @@ function createEngine(options) {
 
   function isComplete_(session) {
     return isTrue_(session.complete) || String(session.status).toLowerCase() === 'complete';
+  }
+
+  // Returns true if the user has not charged today and has no active reservation today.
+  // Used to grant net-new priority during the walk-up window (Option A).
+  function isNetNewUser_(userEmail, sessions, reservations, now) {
+    var email = String(userEmail || '').toLowerCase();
+    var todayKey = dayKey_(now);
+    var hasTodaySession = sessions.some(function(session) {
+      if (!session || !session.session_id) {
+        return false;
+      }
+      if (String(session.user_id || '').toLowerCase() !== email) {
+        return false;
+      }
+      var start = toDate_(session.start_time);
+      return start && dayKey_(start) === todayKey;
+    });
+    if (hasTodaySession) {
+      return false;
+    }
+    var hasTodayReservation = reservations.some(function(reservation) {
+      if (!reservation || !reservation.reservation_id) {
+        return false;
+      }
+      if (isReservationCanceled_(reservation) || isReservationNoShow_(reservation) || isReservationComplete_(reservation)) {
+        return false;
+      }
+      if (String(reservation.user_id || '').toLowerCase() !== email) {
+        return false;
+      }
+      var start = toDate_(reservation.start_time);
+      return start && dayKey_(start) === todayKey;
+    });
+    return !hasTodayReservation;
   }
 
   function findActiveSessionForUser_(sessions, userEmail) {
@@ -1565,8 +1620,18 @@ function createEngine(options) {
     var checkinEarlyMinutes = parseInt(config.reservation_checkin_early_minutes, 10);
     var earlyStartMinutes = parseInt(config.reservation_early_start_minutes, 10);
     var lateGraceMinutes = parseInt(config.reservation_late_grace_minutes, 10);
-    var openHour = parseInt(config.reservation_open_hour, 10);
-    var openMinute = parseInt(config.reservation_open_minute, 10);
+    var netNewWindowMinutes = parseInt(config.walkup_net_new_window_minutes, 10);
+    // Support "H:MM" format in reservation_open_hour (e.g. "5:45" sets hour=5, minute=45)
+    var openHour, openMinute;
+    var openHourStr = String(config.reservation_open_hour || '');
+    if (openHourStr.indexOf(':') !== -1) {
+      var parts = openHourStr.split(':');
+      openHour = parseInt(parts[0], 10);
+      openMinute = parseInt(parts[1], 10);
+    } else {
+      openHour = parseInt(openHourStr, 10);
+      openMinute = parseInt(config.reservation_open_minute, 10);
+    }
     var resolvedMaxPerDay = isNaN(maxPerDay) ? APP_DEFAULTS.reservationMaxPerDay : maxPerDay;
     resolvedMaxPerDay = Math.max(1, resolvedMaxPerDay);
     return {
@@ -1578,6 +1643,7 @@ function createEngine(options) {
       checkinEarlyMinutes: isNaN(checkinEarlyMinutes) ? APP_DEFAULTS.reservationCheckinEarlyMinutes : checkinEarlyMinutes,
       earlyStartMinutes: isNaN(earlyStartMinutes) ? APP_DEFAULTS.reservationEarlyStartMinutes : earlyStartMinutes,
       lateGraceMinutes: isNaN(lateGraceMinutes) ? APP_DEFAULTS.reservationLateGraceMinutes : lateGraceMinutes,
+      netNewWindowMinutes: isNaN(netNewWindowMinutes) ? APP_DEFAULTS.walkupNetNewWindowMinutes : netNewWindowMinutes,
       openHour: isNaN(openHour) ? APP_DEFAULTS.reservationOpenHour : openHour,
       openMinute: isNaN(openMinute) ? APP_DEFAULTS.reservationOpenMinute : openMinute
     };
@@ -1690,6 +1756,24 @@ function createEngine(options) {
       }
     }
 
+    var dayKey = dayKey_(startTime);
+    var perDayCount = reservations.filter(function(reservation) {
+      if (!reservation.reservation_id || isReservationCanceled_(reservation)) {
+        return false;
+      }
+      if (String(reservation.reservation_id) === excludeId) {
+        return false;
+      }
+      if (String(reservation.user_id || '').toLowerCase() !== userEmail) {
+        return false;
+      }
+      var resStart = toDate_(reservation.start_time);
+      return resStart && dayKey_(resStart) === dayKey;
+    }).length;
+    if (perDayCount >= config.maxPerDay) {
+      throw new Error('You already have a reservation for today. Change or cancel it to book another.');
+    }
+
     var upcoming = reservations.filter(function(reservation) {
       if (!reservation.reservation_id ||
           isReservationCanceled_(reservation) ||
@@ -1709,24 +1793,6 @@ function createEngine(options) {
 
     if (upcoming.length >= config.maxUpcoming) {
       throw new Error('You can only have ' + config.maxUpcoming + ' upcoming reservations.');
-    }
-
-    var dayKey = dayKey_(startTime);
-    var perDayCount = reservations.filter(function(reservation) {
-      if (!reservation.reservation_id || isReservationCanceled_(reservation)) {
-        return false;
-      }
-      if (String(reservation.reservation_id) === excludeId) {
-        return false;
-      }
-      if (String(reservation.user_id || '').toLowerCase() !== userEmail) {
-        return false;
-      }
-      var resStart = toDate_(reservation.start_time);
-      return resStart && dayKey_(resStart) === dayKey;
-    }).length;
-    if (perDayCount >= config.maxPerDay) {
-      throw new Error('You already have a reservation for today. Change or cancel it to book another.');
     }
 
     var gapMs = config.gapMinutes * 60000;
