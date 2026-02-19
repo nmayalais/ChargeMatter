@@ -2652,7 +2652,8 @@ function createEngine(options) {
       normalized.indexOf('internal error') !== -1 ||
       normalized.indexOf('backenderror') !== -1 ||
       normalized.indexOf('socketexception') !== -1 ||
-      normalized.indexOf('timeout') !== -1
+      normalized.indexOf('timeout') !== -1 ||
+      normalized.indexOf('service spreadsheets failed') !== -1
     );
   }
 
