@@ -17,7 +17,8 @@ var APP_DEFAULTS = {
   reservationLateGraceMinutes: 30,
   reservationOpenHour: 5,
   reservationOpenMinute: 45,
-  walkupNetNewWindowMinutes: 10
+  walkupNetNewWindowMinutes: 10,
+  walkupReturningWindowMinutes: 10
 };
 
 var SHEETS = {
@@ -136,6 +137,7 @@ function getBoardData() {
     auth.suspension = serializeSuspension_(suspension);
   }
   auth.isNetNew = isNetNewUser_(auth.email, sessionsData.rows, reservationsData.rows, now);
+  auth.isReturning = isReturningUser_(auth.email, sessionsData.rows, reservationsData.rows, now);
   return {
     user: auth,
     chargers: board.chargers,
@@ -159,7 +161,8 @@ function getBoardData() {
       reservationLateGraceMinutes: board.reservationLateGraceMinutes,
       reservationOpenHour: board.reservationOpenHour,
       reservationOpenMinute: board.reservationOpenMinute,
-      walkupNetNewWindowMinutes: board.walkupNetNewWindowMinutes
+      walkupNetNewWindowMinutes: board.walkupNetNewWindowMinutes,
+      walkupReturningWindowMinutes: board.walkupReturningWindowMinutes
     }
   };
 }
@@ -206,6 +209,7 @@ function startSession(chargerId) {
     }
     var openAt = slotReservation ? addMinutes_(slot.startTime, config.lateGraceMinutes) : slot.startTime;
     var allUsersOpenAt = addMinutes_(openAt, config.netNewWindowMinutes);
+    var returningUsersOpenAt = addMinutes_(allUsersOpenAt, config.returningWindowMinutes);
     var isReservedByUser =
       slotReservation && String(slotReservation.user_id || '').toLowerCase() === String(auth.email || '').toLowerCase();
     if (now.getTime() < openAt.getTime()) {
@@ -217,11 +221,17 @@ function startSession(chargerId) {
         throw new Error('Charger is reserved by ' + reservedBy + ' until ' + formatTime_(openAt) + '.');
       }
     }
-    // Option A: net-new users get priority for the first netNewWindowMinutes after the slot opens.
+    // Tier 1: net-new users only
     if (now.getTime() >= openAt.getTime() && now.getTime() < allUsersOpenAt.getTime() && !isReservedByUser) {
-      var userIsNetNew = isNetNewUser_(auth.email, sessionsData.rows, reservationsData.rows, now);
-      if (!userIsNetNew) {
-        throw new Error('This slot is currently reserved for drivers who have not charged today. Available to everyone at ' + formatTime_(allUsersOpenAt) + '.');
+      if (!isNetNewUser_(auth.email, sessionsData.rows, reservationsData.rows, now)) {
+        throw new Error('This slot is currently reserved for first-time drivers today. Available to returning drivers at ' + formatTime_(allUsersOpenAt) + '.');
+      }
+    }
+    // Tier 2: returning users (+ net-new)
+    if (now.getTime() >= allUsersOpenAt.getTime() && now.getTime() < returningUsersOpenAt.getTime() && !isReservedByUser) {
+      if (!isNetNewUser_(auth.email, sessionsData.rows, reservationsData.rows, now) &&
+          !isReturningUser_(auth.email, sessionsData.rows, reservationsData.rows, now)) {
+        throw new Error('This slot is currently reserved for drivers who have charged or reserved today. Available to everyone at ' + formatTime_(returningUsersOpenAt) + '.');
       }
     }
     if (charger.active_session_id) {
@@ -735,7 +745,17 @@ function resetCharger(chargerId) {
 }
 
 function sendReminders() {
-  runWithRetries_(sendRemindersCore_, 'sendReminders');
+  try {
+    runWithRetries_(sendRemindersCore_, 'sendReminders');
+  } catch (err) {
+    if (isTransientError_(err)) {
+      // All retries exhausted for a transient Google infrastructure error.
+      // Log but don't re-throw — avoids spurious failure email notifications.
+      logError_('sendReminders: all retries exhausted for transient error', err, {});
+      return;
+    }
+    throw err;
+  }
 }
 
 function sendRemindersCore_() {
@@ -1058,13 +1078,16 @@ function buildBoard_(now, reservationsData) {
           }
           var openAt = slotReservation ? addMinutes_(slot.startTime, reservationConfig.lateGraceMinutes) : slot.startTime;
           var allUsersOpenAt = addMinutes_(openAt, reservationConfig.netNewWindowMinutes);
+          var returningUsersOpenAt = addMinutes_(allUsersOpenAt, reservationConfig.returningWindowMinutes);
           walkup = {
             startTime: toIso_(slot.startTime),
             endTime: toIso_(slot.endTime),
             openAt: toIso_(openAt),
             allUsersOpenAt: toIso_(allUsersOpenAt),
+            returningUsersOpenAt: toIso_(returningUsersOpenAt),
             isOpen: now.getTime() >= openAt.getTime(),
-            isOpenToAll: now.getTime() >= allUsersOpenAt.getTime()
+            isOpenToReturning: now.getTime() >= allUsersOpenAt.getTime(),
+            isOpenToAll: now.getTime() >= returningUsersOpenAt.getTime()
           };
         }
       }
@@ -1099,7 +1122,8 @@ function buildBoard_(now, reservationsData) {
     reservationLateGraceMinutes: reservationConfig.lateGraceMinutes,
     reservationOpenHour: reservationConfig.openHour,
     reservationOpenMinute: reservationConfig.openMinute,
-    walkupNetNewWindowMinutes: reservationConfig.netNewWindowMinutes
+    walkupNetNewWindowMinutes: reservationConfig.netNewWindowMinutes,
+    walkupReturningWindowMinutes: reservationConfig.returningWindowMinutes
   };
 }
 
@@ -1344,6 +1368,9 @@ function isComplete_(session) {
 
 // Returns true if the user has not charged today and has no active reservation today.
 // Used to grant net-new priority during the walk-up window (Option A).
+// Returns true if the user has not charged today and has no disqualifying reservation today.
+// Early-canceled reservations (before halfway) do not disqualify. No-shows, completions,
+// active reservations, and late cancellations all disqualify net-new status.
 function isNetNewUser_(userEmail, sessions, reservations, now) {
   var email = String(userEmail || '').toLowerCase();
   var todayKey = dayKey_(now);
@@ -1364,16 +1391,58 @@ function isNetNewUser_(userEmail, sessions, reservations, now) {
     if (!reservation || !reservation.reservation_id) {
       return false;
     }
-    if (isReservationCanceled_(reservation) || isReservationNoShow_(reservation) || isReservationComplete_(reservation)) {
-      return false;
-    }
     if (String(reservation.user_id || '').toLowerCase() !== email) {
       return false;
     }
     var start = toDate_(reservation.start_time);
-    return start && dayKey_(start) === todayKey;
+    if (!start || dayKey_(start) !== todayKey) {
+      return false;
+    }
+    if (isReservationCanceled_(reservation)) {
+      var end = toDate_(reservation.end_time);
+      var canceledAt = toDate_(reservation.canceled_at);
+      if (end && canceledAt) {
+        var halfwayTime = new Date(start.getTime() + (end.getTime() - start.getTime()) / 2);
+        if (canceledAt.getTime() < halfwayTime.getTime()) {
+          return false; // early cancellation — still net-new
+        }
+      }
+      return true; // late cancellation — disqualified
+    }
+    return true; // no-show, complete, and active all disqualify
   });
   return !hasTodayReservation;
+}
+
+// Returns true if the user had prior charged/reserved activity today but is not currently
+// holding an active reservation or session. Used to grant returning-user second priority
+// during the walk-up window.
+function isReturningUser_(userEmail, sessions, reservations, now) {
+  var email = String(userEmail || '').toLowerCase();
+  var todayKey = dayKey_(now);
+  var hasSession = sessions.some(function(session) {
+    if (!session || !session.session_id) { return false; }
+    if (String(session.user_id || '').toLowerCase() !== email) { return false; }
+    var start = toDate_(session.start_time);
+    return start && dayKey_(start) === todayKey;
+  });
+  if (hasSession) { return true; }
+  return reservations.some(function(reservation) {
+    if (!reservation || !reservation.reservation_id) { return false; }
+    if (String(reservation.user_id || '').toLowerCase() !== email) { return false; }
+    var start = toDate_(reservation.start_time);
+    if (!start || dayKey_(start) !== todayKey) { return false; }
+    if (isReservationNoShow_(reservation) || isReservationComplete_(reservation)) { return true; }
+    if (isReservationCanceled_(reservation)) {
+      var end = toDate_(reservation.end_time);
+      var canceledAt = toDate_(reservation.canceled_at);
+      if (end && canceledAt) {
+        var halfwayTime = new Date(start.getTime() + (end.getTime() - start.getTime()) / 2);
+        return canceledAt.getTime() >= halfwayTime.getTime();
+      }
+    }
+    return false;
+  });
 }
 
 function findActiveSessionForUser_(sessions, userEmail) {
@@ -1608,6 +1677,7 @@ function getReservationConfig_(config) {
   var earlyStartMinutes = parseInt(config.reservation_early_start_minutes, 10);
   var lateGraceMinutes = parseInt(config.reservation_late_grace_minutes, 10);
   var netNewWindowMinutes = parseInt(config.walkup_net_new_window_minutes, 10);
+  var returningWindowMinutes = parseInt(config.walkup_returning_window_minutes, 10);
   // Support "H:MM" format in reservation_open_hour (e.g. "5:45" sets hour=5, minute=45)
   var openHour, openMinute;
   var openHourStr = String(config.reservation_open_hour || '');
@@ -1631,6 +1701,7 @@ function getReservationConfig_(config) {
     earlyStartMinutes: isNaN(earlyStartMinutes) ? APP_DEFAULTS.reservationEarlyStartMinutes : earlyStartMinutes,
     lateGraceMinutes: isNaN(lateGraceMinutes) ? APP_DEFAULTS.reservationLateGraceMinutes : lateGraceMinutes,
     netNewWindowMinutes: isNaN(netNewWindowMinutes) ? APP_DEFAULTS.walkupNetNewWindowMinutes : netNewWindowMinutes,
+    returningWindowMinutes: isNaN(returningWindowMinutes) ? APP_DEFAULTS.walkupReturningWindowMinutes : returningWindowMinutes,
     openHour: isNaN(openHour) ? APP_DEFAULTS.reservationOpenHour : openHour,
     openMinute: isNaN(openMinute) ? APP_DEFAULTS.reservationOpenMinute : openMinute
   };

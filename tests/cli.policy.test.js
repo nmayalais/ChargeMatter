@@ -86,6 +86,8 @@ function buildPolicyStore(overrides = {}) {
           ['reservation_open_minute', '0'],
           ['reservation_max_per_day', '1'],
           ['reservation_late_grace_minutes', '30'],
+          ['walkup_net_new_window_minutes', '10'],
+          ['walkup_returning_window_minutes', '10'],
           ['session_move_grace_minutes', '10'],
           ['strike_threshold', '2'],
           ['suspension_business_days', '2']
@@ -295,6 +297,239 @@ describe('Policy-aligned CLI logic', () => {
       const board = engine.getBoardData();
       const charger = board.chargers.find((item) => item.id === '1');
       expect(charger.statusKey).toBe('overdue');
+    });
+  });
+
+  describe('Option A three-tier walk-up priority', () => {
+    // Charger 1 slots start at 06:00. Walk-up opens at 06:00 (no reservation).
+    // Tier 1 (net-new only): 06:00–06:10
+    // Tier 2 (returning + net-new): 06:10–06:20
+    // Tier 3 (everyone): 06:20+
+
+    test('net-new user can walk up during Tier 1 window', () => {
+      const store = buildPolicyStore();
+      const engine = createPolicyEngine(store);
+
+      withLocalTime(2026, 2, 9, 6, 5, () => {
+        const board = engine.startSession('1');
+        const charger = board.chargers.find((item) => item.id === '1');
+        expect(charger.statusKey).toBe('in_use');
+      });
+    });
+
+    test('returning user (no-show) is blocked during Tier 1, succeeds during Tier 2', () => {
+      const store = buildPolicyStore();
+      store.sheets.reservations.rows.push([
+        'res-noshow',
+        '2',
+        'driver@example.com',
+        'Driver',
+        localDate(2026, 2, 9, 6, 0),
+        localDate(2026, 2, 9, 9, 0),
+        'no_show',
+        '',
+        localDate(2026, 2, 9, 6, 35),
+        '',
+        '',
+        '',
+        localDate(2026, 2, 9, 5, 50),
+        localDate(2026, 2, 9, 6, 35),
+        ''
+      ]);
+      const engine = createPolicyEngine(store);
+
+      withLocalTime(2026, 2, 9, 6, 5, () => {
+        expectError(() => engine.startSession('1'), 'first-time drivers today');
+      });
+
+      withLocalTime(2026, 2, 9, 6, 15, () => {
+        const board = engine.startSession('1');
+        const charger = board.chargers.find((item) => item.id === '1');
+        expect(charger.statusKey).toBe('in_use');
+      });
+    });
+
+    test('returning user (completed session) is blocked during Tier 1, succeeds during Tier 2', () => {
+      const store = buildPolicyStore();
+      store.sheets.sessions.rows.push([
+        'sess-done',
+        '2',
+        'driver@example.com',
+        'Driver',
+        localDate(2026, 2, 9, 6, 0),
+        localDate(2026, 2, 9, 9, 0),
+        'complete',
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        '',
+        '',
+        '',
+        localDate(2026, 2, 9, 8, 30)
+      ]);
+      const engine = createPolicyEngine(store);
+
+      withLocalTime(2026, 2, 9, 6, 5, () => {
+        expectError(() => engine.startSession('1'), 'first-time drivers today');
+      });
+
+      withLocalTime(2026, 2, 9, 6, 15, () => {
+        const board = engine.startSession('1');
+        const charger = board.chargers.find((item) => item.id === '1');
+        expect(charger.statusKey).toBe('in_use');
+      });
+    });
+
+    test('returning user (late-canceled reservation) is blocked during Tier 1, succeeds during Tier 2', () => {
+      const store = buildPolicyStore();
+      // Reservation 06:00–09:00, canceled at 07:30 (after halfway at 07:30 = exactly halfway, use 07:31 to be safe)
+      store.sheets.reservations.rows.push([
+        'res-latecancel',
+        '2',
+        'driver@example.com',
+        'Driver',
+        localDate(2026, 2, 9, 6, 0),
+        localDate(2026, 2, 9, 9, 0),
+        'canceled',
+        '',
+        '',
+        '',
+        '',
+        '',
+        localDate(2026, 2, 9, 5, 50),
+        localDate(2026, 2, 9, 7, 31),
+        localDate(2026, 2, 9, 7, 31)
+      ]);
+      const engine = createPolicyEngine(store);
+
+      withLocalTime(2026, 2, 9, 6, 5, () => {
+        expectError(() => engine.startSession('1'), 'first-time drivers today');
+      });
+
+      withLocalTime(2026, 2, 9, 6, 15, () => {
+        const board = engine.startSession('1');
+        const charger = board.chargers.find((item) => item.id === '1');
+        expect(charger.statusKey).toBe('in_use');
+      });
+    });
+
+    test('net-new user with early-canceled reservation can still walk up during Tier 1', () => {
+      const store = buildPolicyStore();
+      // Reservation 06:00–09:00, canceled at 06:30 (before halfway at 07:30)
+      store.sheets.reservations.rows.push([
+        'res-earlycancel',
+        '2',
+        'driver@example.com',
+        'Driver',
+        localDate(2026, 2, 9, 6, 0),
+        localDate(2026, 2, 9, 9, 0),
+        'canceled',
+        '',
+        '',
+        '',
+        '',
+        '',
+        localDate(2026, 2, 9, 5, 50),
+        localDate(2026, 2, 9, 6, 30),
+        localDate(2026, 2, 9, 6, 30)
+      ]);
+      const engine = createPolicyEngine(store);
+
+      withLocalTime(2026, 2, 9, 6, 5, () => {
+        const board = engine.startSession('1');
+        const charger = board.chargers.find((item) => item.id === '1');
+        expect(charger.statusKey).toBe('in_use');
+      });
+    });
+
+    test('user with active reservation is blocked from walk-up on another charger', () => {
+      const store = buildPolicyStore();
+      store.sheets.reservations.rows.push([
+        'res-active',
+        '2',
+        'driver@example.com',
+        'Driver',
+        localDate(2026, 2, 9, 6, 0),
+        localDate(2026, 2, 9, 9, 0),
+        'active',
+        '',
+        '',
+        '',
+        '',
+        '',
+        localDate(2026, 2, 9, 5, 50),
+        localDate(2026, 2, 9, 5, 50),
+        ''
+      ]);
+      const engine = createPolicyEngine(store);
+
+      withLocalTime(2026, 2, 9, 6, 5, () => {
+        expectError(() => engine.startSession('1'), 'You already have a reservation');
+      });
+    });
+
+    test('after Tier 2 window, everyone including strangers can walk up', () => {
+      const store = buildPolicyStore();
+      // Add a no-show for another user to make charger 2's slot occupied history
+      // But the test user (driver@example.com) is a complete stranger — no history
+      const engine = createPolicyEngine(store);
+
+      withLocalTime(2026, 2, 9, 6, 25, () => {
+        const board = engine.startSession('1');
+        const charger = board.chargers.find((item) => item.id === '1');
+        expect(charger.statusKey).toBe('in_use');
+      });
+    });
+  });
+
+  describe('Walk-up timing fields on board data', () => {
+    test('within a slot, walk-up window boundaries are computed from slot start', () => {
+      const store = buildPolicyStore();
+      const engine = createPolicyEngine(store);
+
+      withLocalTime(2026, 2, 9, 6, 5, () => {
+        const board = engine.getBoardData();
+        const charger = board.chargers.find((item) => item.id === '1');
+        expect(charger.walkup).toBeTruthy();
+        expect(new Date(charger.walkup.startTime).toISOString()).toBe(localIso(2026, 2, 9, 6, 0));
+        expect(new Date(charger.walkup.endTime).toISOString()).toBe(localIso(2026, 2, 9, 9, 0));
+        expect(new Date(charger.walkup.openAt).toISOString()).toBe(localIso(2026, 2, 9, 6, 0));
+        expect(new Date(charger.walkup.allUsersOpenAt).toISOString()).toBe(localIso(2026, 2, 9, 6, 10));
+        expect(new Date(charger.walkup.returningUsersOpenAt).toISOString()).toBe(localIso(2026, 2, 9, 6, 20));
+        expect(charger.walkup.isOpen).toBe(true);
+        expect(charger.walkup.isOpenToReturning).toBe(false);
+        expect(charger.walkup.isOpenToAll).toBe(false);
+      });
+
+      withLocalTime(2026, 2, 9, 6, 15, () => {
+        const board = engine.getBoardData();
+        const charger = board.chargers.find((item) => item.id === '1');
+        expect(charger.walkup.isOpen).toBe(true);
+        expect(charger.walkup.isOpenToReturning).toBe(true);
+        expect(charger.walkup.isOpenToAll).toBe(false);
+      });
+
+      withLocalTime(2026, 2, 9, 6, 25, () => {
+        const board = engine.getBoardData();
+        const charger = board.chargers.find((item) => item.id === '1');
+        expect(charger.walkup.isOpen).toBe(true);
+        expect(charger.walkup.isOpenToReturning).toBe(true);
+        expect(charger.walkup.isOpenToAll).toBe(true);
+      });
+    });
+
+    test('outside of a slot, walk-up is not returned', () => {
+      const store = buildPolicyStore();
+      const engine = createPolicyEngine(store);
+
+      withLocalTime(2026, 2, 9, 5, 50, () => {
+        const board = engine.getBoardData();
+        const charger = board.chargers.find((item) => item.id === '1');
+        expect(charger.walkup).toBeNull();
+      });
     });
   });
 

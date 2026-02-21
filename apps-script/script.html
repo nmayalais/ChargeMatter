@@ -581,6 +581,21 @@
           value.classList.add('walkup-remaining');
           value.dataset.endTime = charger.walkup.endTime;
           body.appendChild(remaining);
+          if (!charger.walkup.isOpenToAll) {
+            if (!charger.walkup.isOpenToReturning) {
+              body.appendChild(
+                createInfoRow('Priority', 'Net-new only until ' + formatTime(charger.walkup.allUsersOpenAt), {
+                  hint: 'First-time drivers today get priority during this window.'
+                })
+              );
+            } else {
+              body.appendChild(
+                createInfoRow('Priority', 'Returning drivers until ' + formatTime(charger.walkup.returningUsersOpenAt), {
+                  hint: 'Drivers who have charged or reserved today may walk up during this window.'
+                })
+              );
+            }
+          }
         } else {
           body.appendChild(
             createInfoRow('Walk-up opens at', formatTime(charger.walkup.openAt), {
@@ -622,6 +637,45 @@
         helpText.textContent = primary.helpText;
         actions.appendChild(helpText);
       }
+    }
+
+    if (
+      charger.statusKey === 'reserved' &&
+      charger.reservation &&
+      !charger.reservation.checkedInAt &&
+      sameUserEmail(charger.reservation.userEmail, getCurrentUserEmail())
+    ) {
+      const secondaryRow = document.createElement('div');
+      secondaryRow.className = 'card-secondary-actions';
+
+      const changeBtn = createButton('Change', 'btn ghost', () => {
+        selectCharger(charger);
+        startReservationEdit(charger.reservation);
+      });
+      secondaryRow.appendChild(changeBtn);
+
+      // Show Cancel alongside Check in (when Release reservation is not the primary button).
+      if (shouldShowCheckIn(charger.reservation)) {
+        const cancelBtn = createButton('Cancel', 'btn warn', () => {
+          selectCharger(charger);
+          openConfirm({
+            title: 'Cancel reservation?',
+            message: 'Release this slot back to the schedule?',
+            detail: 'You can always book another open time.',
+            confirmLabel: 'Cancel reservation',
+            cancelLabel: 'Keep reservation',
+            confirmClass: 'warn'
+          }).then((confirmed) => {
+            if (confirmed) {
+              setActionFeedback(cancelBtn, 'Canceling...');
+              callServer('cancelReservation', [charger.reservation.reservationId], { refreshSlots: true });
+            }
+          });
+        });
+        secondaryRow.appendChild(cancelBtn);
+      }
+
+      actions.appendChild(secondaryRow);
     }
 
     card.appendChild(header);
@@ -1235,18 +1289,30 @@
     }
     if (charger.statusKey === 'reserved') {
       if (charger.reservation && sameUserEmail(charger.reservation.userEmail, getCurrentUserEmail())) {
-        return {
-          label: 'Release reservation',
-          action: () =>
-            callServer('cancelReservation', [charger.reservation.reservationId], {
-              successMessage: 'Reservation released.',
-              successType: 'success',
-              refreshSlots: true
-            }),
-          needsServer: true,
-          loadingLabel: 'Releasing...',
-          helpText: 'Releases your reservation and frees this charger.'
-        };
+        if (!charger.reservation.checkedInAt && shouldShowCheckIn(charger.reservation)) {
+          return {
+            label: 'Check in',
+            action: () => callServer('checkInReservation', [charger.reservation.reservationId]),
+            needsServer: true,
+            loadingLabel: 'Checking in...',
+            helpText: 'Confirms your arrival and starts your charging session.'
+          };
+        }
+        if (!charger.reservation.checkedInAt) {
+          return {
+            label: 'Release reservation',
+            action: () =>
+              callServer('cancelReservation', [charger.reservation.reservationId], {
+                successMessage: 'Reservation released.',
+                successType: 'success',
+                refreshSlots: true
+              }),
+            needsServer: true,
+            loadingLabel: 'Releasing...',
+            helpText: 'Releases your reservation and frees this charger.'
+          };
+        }
+        return null;
       }
       return {
         label: 'View reservation',

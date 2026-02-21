@@ -51,6 +51,8 @@ Recommended keys:
 - `reservation_late_grace_minutes`: `30`
 - `reservation_open_hour`: `6`
 - `reservation_open_minute`: `0`
+- `walkup_net_new_window_minutes`: `10`
+- `walkup_returning_window_minutes`: `10`
 
 Script Properties equivalents:
 - `ALLOWED_DOMAIN`
@@ -73,6 +75,8 @@ Script Properties equivalents:
 - `RESERVATION_LATE_GRACE_MINUTES`
 - `RESERVATION_OPEN_HOUR`
 - `RESERVATION_OPEN_MINUTE`
+- `WALKUP_NET_NEW_WINDOW_MINUTES`
+- `WALKUP_RETURNING_WINDOW_MINUTES`
 
 ## 5) Slack setup (optional)
 ### Incoming webhook (cheapest)
