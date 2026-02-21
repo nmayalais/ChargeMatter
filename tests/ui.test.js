@@ -3,6 +3,15 @@ const path = require('path');
 const { JSDOM } = require('jsdom');
 
 function loadScriptIntoDom(options = {}) {
+  const now = new Date();
+  const defaultBoard = options.boardData || {
+    serverTime: now.toISOString(),
+    user: {},
+    config: {},
+    reservations: [],
+    chargers: []
+  };
+  const runState = { success: null, failure: null };
   const dom = new JSDOM(`<!doctype html><html><body>
     <button id="refresh-btn">Refresh</button>
     <div id="user-meta"></div>
@@ -50,13 +59,19 @@ function loadScriptIntoDom(options = {}) {
   window.google = {
     script: {
       run: {
-        withSuccessHandler() { return this; },
-        withFailureHandler() { return this; },
-        getBoardData() {},
+        withSuccessHandler(fn) { runState.success = fn; return this; },
+        withFailureHandler(fn) { runState.failure = fn; return this; },
         ...(options.runMethods || {})
       }
     }
   };
+  if (!window.google.script.run.getBoardData) {
+    window.google.script.run.getBoardData = () => {
+      if (runState.success) {
+        runState.success(defaultBoard);
+      }
+    };
+  }
   window.confirm = () => true;
 
   const scriptHtml = fs.readFileSync(path.join(__dirname, '..', 'apps-script', 'script.html'), 'utf8');
@@ -134,6 +149,81 @@ describe('UI behaviors', () => {
     window.renderSlotsList(slots);
     const slotRows = window.document.querySelectorAll('.slot-row');
     expect(slotRows.length).toBe(2);
+  });
+
+  test('renders walk-up timing when open', () => {
+    const window = loadScriptIntoDom();
+    activeWindow = window;
+    const now = new Date();
+    const endTime = new Date(now.getTime() + 30 * 60000).toISOString();
+    window.renderBoard({
+      serverTime: now.toISOString(),
+      user: {},
+      config: {},
+      reservations: [],
+      chargers: [
+        {
+          id: '1',
+          name: 'Charger 1',
+          statusKey: 'free',
+          status: 'Open',
+          maxMinutes: 60,
+          walkup: {
+            startTime: now.toISOString(),
+            endTime,
+            openAt: now.toISOString(),
+            allUsersOpenAt: now.toISOString(),
+            returningUsersOpenAt: now.toISOString(),
+            isOpen: true,
+            isOpenToReturning: true,
+            isOpenToAll: true
+          }
+        }
+      ]
+    });
+
+    const labels = Array.from(window.document.querySelectorAll('.info-row .label')).map((el) => el.textContent);
+    expect(labels).toContain('Walk-up ends at');
+    expect(labels).toContain('Time left');
+    const remaining = window.document.querySelector('.walkup-remaining');
+    expect(remaining).not.toBeNull();
+    window.updateCountdowns();
+    expect(remaining.textContent).toMatch(/minutes|hours/);
+  });
+
+  test('walk-up closed hides start charging action', () => {
+    const window = loadScriptIntoDom();
+    activeWindow = window;
+    const now = new Date();
+    const charger = {
+      id: '1',
+      name: 'Charger 1',
+      statusKey: 'free',
+      status: 'Open',
+      maxMinutes: 60,
+      walkup: {
+        startTime: now.toISOString(),
+        endTime: new Date(now.getTime() + 60 * 60000).toISOString(),
+        openAt: new Date(now.getTime() + 15 * 60000).toISOString(),
+        allUsersOpenAt: new Date(now.getTime() + 25 * 60000).toISOString(),
+        returningUsersOpenAt: new Date(now.getTime() + 35 * 60000).toISOString(),
+        isOpen: false,
+        isOpenToReturning: false,
+        isOpenToAll: false
+      }
+    };
+    window.renderBoard({
+      serverTime: now.toISOString(),
+      user: {},
+      config: {},
+      reservations: [],
+      chargers: [charger]
+    });
+
+    const labels = Array.from(window.document.querySelectorAll('.info-row .label')).map((el) => el.textContent);
+    expect(labels).toContain('Walk-up opens at');
+    const action = window.getPrimaryAction(charger);
+    expect(action).toBeNull();
   });
 
   test('shows and clears slot loading state', () => {
@@ -262,7 +352,7 @@ describe('UI behaviors', () => {
     expect(endSession).toHaveBeenCalledWith('session-123');
   });
 
-  test('non-admin can cancel their own reservation via primary action', () => {
+  test('own reserved charger outside check-in window shows Release reservation as primary', () => {
     const cancelReservation = jest.fn();
     const window = loadScriptIntoDom({
       userEmail: 'alex@example.com',
@@ -279,7 +369,7 @@ describe('UI behaviors', () => {
       reservation: {
         reservationId: 'res-456',
         userEmail: 'alex@example.com',
-        startTime: new Date().toISOString()
+        startTime: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString()
       }
     };
 
@@ -289,7 +379,34 @@ describe('UI behaviors', () => {
     expect(cancelReservation).toHaveBeenCalledWith('res-456');
   });
 
-  test('checked-in reservation shows end session action in reservation list', () => {
+  test('own reserved charger in check-in window shows Check in as primary action', () => {
+    const checkInReservation = jest.fn();
+    const window = loadScriptIntoDom({
+      userEmail: 'alex@example.com',
+      isAdmin: false,
+      runMethods: { checkInReservation }
+    });
+    activeWindow = window;
+    const charger = {
+      id: '2',
+      name: 'Charger 2',
+      statusKey: 'reserved',
+      status: 'Reserved',
+      maxMinutes: 90,
+      reservation: {
+        reservationId: 'res-456',
+        userEmail: 'alex@example.com',
+        startTime: new Date().toISOString()
+      }
+    };
+
+    const action = window.getPrimaryAction(charger);
+    expect(action.label).toBe('Check in');
+    action.action();
+    expect(checkInReservation).toHaveBeenCalledWith('res-456');
+  });
+
+  test('checked-in reservation shows end session action in reservation list', async () => {
     const endSessionForReservation = jest.fn();
     const window = loadScriptIntoDom({
       userEmail: 'alex@example.com',
@@ -332,10 +449,16 @@ describe('UI behaviors', () => {
     const endBtn = window.document.querySelector('.reservation-actions .btn.warn');
     expect(endBtn).not.toBeNull();
     endBtn.click();
+    // openConfirm() returns a Promise resolved by closeConfirm. setupConfirmDialog() is
+    // never called in jsdom (DOMContentLoaded fires before eval), so no listener is attached
+    // to #confirm-ok. Use window.eval to call closeConfirm in the jsdom realm so its
+    // microtask is queued correctly and flushed by await Promise.resolve().
+    window.eval('closeConfirm(true)');
+    await Promise.resolve();
     expect(endSessionForReservation).toHaveBeenCalledWith('res-999');
   });
 
-  test('checked-in reservation matches session owner case-insensitively', () => {
+  test('checked-in reservation matches session owner case-insensitively', async () => {
     const endSessionForReservation = jest.fn();
     const window = loadScriptIntoDom({
       userEmail: 'Alex@Example.com',
@@ -378,10 +501,12 @@ describe('UI behaviors', () => {
     const endBtn = window.document.querySelector('.reservation-actions .btn.warn');
     expect(endBtn).not.toBeNull();
     endBtn.click();
+    window.eval('closeConfirm(true)');
+    await Promise.resolve();
     expect(endSessionForReservation).toHaveBeenCalledWith('res-1000');
   });
 
-  test('checked-in reservation requests end by reservation id', () => {
+  test('checked-in reservation requests end by reservation id', async () => {
     const endSessionForReservation = jest.fn();
     const window = loadScriptIntoDom({
       userEmail: 'alex@example.com',
@@ -420,6 +545,8 @@ describe('UI behaviors', () => {
     const endBtn = window.document.querySelector('.reservation-actions .btn.warn');
     expect(endBtn).not.toBeNull();
     endBtn.click();
+    window.eval('closeConfirm(true)');
+    await Promise.resolve();
     expect(endSessionForReservation).toHaveBeenCalledWith('res-2000');
   });
 

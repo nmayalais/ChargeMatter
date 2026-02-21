@@ -79,6 +79,8 @@ Key/value settings (strings). Common keys:
 - `reservation_late_grace_minutes`: no-show grace window.
 - `reservation_open_hour`: earliest local hour for same-day booking.
 - `reservation_open_minute`: earliest local minute for same-day booking.
+- `walkup_net_new_window_minutes`: walk-up priority window for net-new users after a slot opens.
+- `walkup_returning_window_minutes`: additional walk-up window for returning users before full open access.
 
 ## Reservation rules
 - Same-day only.
@@ -92,6 +94,13 @@ Key/value settings (strings). Common keys:
 - No-show: after `reservation_late_grace_minutes` (default 30), an unused reservation is released and can receive a strike.
 - Checked-in reservations: ending a session will auto-mark the matching reservation as `complete`.
 - If a checked-in reservation has no matching active session, the UI offers to clear the checked-in reservation.
+
+## Walk-up behavior
+- Walk-up sessions are limited by **slot boundaries** (not just the next reservation time).
+- If a reservation exists for the current slot, walk-up opens after `reservation_late_grace_minutes`.
+- Priority windows after a slot opens: net-new only for `walkup_net_new_window_minutes`.
+- Then returning users for `walkup_returning_window_minutes`.
+- Everyone after both windows elapse.
 
 ## Security and authorization
 - Deploy the Apps Script web app to **only your Workspace domain** (e.g., `example.com`).
