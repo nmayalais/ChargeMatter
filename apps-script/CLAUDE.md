@@ -33,6 +33,38 @@ Production Google Apps Script code. No build step — files are deployed directl
 - Mobile-optimized: bottom tab bar switches between Now/Reserve modes; sticky action bar holds primary CTA.
 - Admin actions are hidden under overflow menus and gated by `admin_emails` config.
 
+## Mobile UI features (script.html / styles.html)
+
+### My Status Banner (`#my-status-banner`)
+`renderMyStatusBanner()` is called inside `renderBoard()` immediately after `renderSuspensionBanner()`. It shows the current user's status at the top of the board with one of three states:
+
+| State | Eyebrow | Inline button |
+|---|---|---|
+| Active session | "Your session" | "I've moved my car" → `endSession` |
+| Reservation in check-in window | "Your reservation" | "Check in" → `checkInReservation` |
+| Upcoming reservation (outside window) | "Upcoming reservation" | none |
+| No activity | (banner hidden via `is-hidden`) | — |
+
+The banner's `.my-status-banner__countdown[data-session-end]` element is updated by the existing `updateCountdowns()` ticker every second. Reuses `getCurrentUserSession()`, `shouldShowCheckIn()`, `formatTime()`.
+
+### Notice auto-dismiss
+`setNotice(message, type)` auto-clears notices after 4 seconds when `type` is `'success'` or `'info'`. Error notices persist until overwritten. The dismiss timer is stored in `state._noticeDismissTimer` and reset on every `setNotice()` call.
+
+### Skeleton loading
+`loadBoard()` injects four `.skeleton-card` placeholder elements into `#board` when `state.board === null` (first load only). They are replaced when `renderBoard()` calls `board.innerHTML = ''`.
+
+### Auto-refresh on visibility restore
+`handleVisibilityChange()` records `state.hiddenAt` when the tab goes hidden and triggers `loadBoard()` on return if the tab was hidden for more than 60 seconds. Short background trips (< 60 s) only resume the countdown timer.
+
+### Walk-up priority labels
+Walk-up rows use user-outcome language instead of internal system vocabulary. The text is derived from `state.board.user.isNetNew` and `state.board.user.isReturning` (both sent by `getBoardData()`):
+
+- **Tier 1 (net-new only)**: `isNetNew` → `"You're eligible · Ends at [time]"` / else → `"Priority window · Opens to all at [time]"`
+- **Tier 2 (returning)**: `isReturning` → `"You're eligible · Ends at [time]"` / else → `"Opens to all at [time]"`
+
+### Card hint text
+`createCard()` sets `.card-hint` to `"Tap to [action label]"` using the result of `getPrimaryAction()` (already computed in scope). The hint element is hidden via `is-hidden` when there is no primary action.
+
 ## Deployment
 
 Uses [clasp](https://github.com/google/clasp). Config is in `.clasp.json` (git-ignored). See `SETUP.md` for full steps.

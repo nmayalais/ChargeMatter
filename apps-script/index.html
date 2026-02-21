@@ -10,21 +10,25 @@
       <header class="header">
         <div class="title-group">
           <div class="title"><?= appName ?></div>
-          <div class="subtitle">EV charger status board</div>
           <div class="helper-text">Tap a charger card to view details and actions.</div>
-          <div class="helper-text">One car per person at a time (one reservation per day).</div>
         </div>
         <nav class="mode-tabs" id="mode-tabs">
           <button class="mode-tab active" data-mode="now">Now</button>
           <button class="mode-tab" data-mode="reserve">Reserve</button>
         </nav>
         <div class="header-actions">
-          <div class="user-meta" id="user-meta"></div>
-          <button class="btn ghost" id="refresh-btn">Refresh</button>
+          <button class="btn ghost" id="refresh-btn" aria-label="Refresh">↻</button>
         </div>
       </header>
 
       <section class="suspension-banner" id="suspension-banner" aria-live="polite"></section>
+
+      <div id="my-status-banner" class="my-status-banner is-hidden" aria-live="polite">
+        <div class="my-status-banner__eyebrow"></div>
+        <div class="my-status-banner__detail"></div>
+        <div class="my-status-banner__sub"></div>
+        <div class="my-status-banner__countdown" data-session-end=""></div>
+      </div>
 
       <? if (slackChannelUrl) { ?>
         <div class="channel-actions" id="channel-actions">
@@ -64,7 +68,6 @@
           One car per person at a time (one reservation per day).
         </div>
         <div class="edit-banner" id="edit-banner"></div>
-        <div id="slots-list"></div>
 
         <div class="reservations">
           <div class="section-header">
@@ -78,10 +81,13 @@
             <div id="reservations-list"></div>
           </div>
         </div>
+
+        <div id="slots-list"></div>
       </section>
 
       <footer class="footer">
         <div>Last updated: <span id="last-updated">--</span></div>
+        <div class="user-meta" id="user-meta"></div>
         <div class="legend">
           <span class="legend-item status-free" title="Available now">Free</span>
           <span class="legend-item status-in_use" title="Currently charging">In use</span>

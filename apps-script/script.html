@@ -14,7 +14,9 @@
     countdownIntervalId: null,
     slotsLoading: false,
     slotsCache: null,
-    slotsLastFetch: null
+    slotsLastFetch: null,
+    _noticeDismissTimer: null,
+    hiddenAt: null
   };
 
   const confirmState = {
@@ -210,6 +212,10 @@
     const noticeHelp = document.getElementById('notice-help');
     const variants = ['notice--error', 'notice--success', 'notice--info'];
     variants.forEach((variant) => notice.classList.remove(variant));
+    if (state._noticeDismissTimer) {
+      clearTimeout(state._noticeDismissTimer);
+      state._noticeDismissTimer = null;
+    }
     if (!message) {
       notice.textContent = '';
       if (noticeHelp) {
@@ -226,6 +232,9 @@
       } else {
         noticeHelp.textContent = '';
       }
+    }
+    if (variant === 'success' || variant === 'info') {
+      state._noticeDismissTimer = setTimeout(() => setNotice(''), 4000);
     }
   }
 
@@ -294,6 +303,10 @@
       return;
     }
     setNotice('');
+    if (state.board === null) {
+      document.getElementById('board').innerHTML =
+        '<div class="skeleton-card"></div>'.repeat(4);
+    }
     setLoading(true);
     google.script.run
       .withSuccessHandler((data) => {
@@ -315,6 +328,7 @@
     const board = document.getElementById('board');
     board.innerHTML = '';
     renderSuspensionBanner(data.user);
+    renderMyStatusBanner();
     renderSummary(data);
 
     if (!data.chargers.length) {
@@ -361,6 +375,79 @@
       'You cannot start sessions or make reservations until ' + endLabel + '. ' +
       'Please contact Facilities if you have questions.';
     banner.classList.add('active');
+  }
+
+  function renderMyStatusBanner() {
+    const banner = document.getElementById('my-status-banner');
+    if (!banner) {
+      return;
+    }
+    const eyebrow = banner.querySelector('.my-status-banner__eyebrow');
+    const detail = banner.querySelector('.my-status-banner__detail');
+    const sub = banner.querySelector('.my-status-banner__sub');
+    const countdown = banner.querySelector('.my-status-banner__countdown');
+    // Remove any previously rendered action button
+    const existing = banner.querySelector('.btn');
+    if (existing) {
+      existing.remove();
+    }
+    if (countdown) {
+      countdown.dataset.sessionEnd = '';
+      countdown.textContent = '';
+    }
+
+    // 1. Active session?
+    const sessionEntry = getCurrentUserSession();
+    if (sessionEntry) {
+      const { charger, session } = sessionEntry;
+      eyebrow.textContent = 'Your session';
+      detail.textContent = charger.name + ' · ends at ' + formatTime(session.endTime);
+      sub.textContent = '';
+      if (countdown) {
+        countdown.dataset.sessionEnd = session.endTime;
+      }
+      const endBtn = createButton("I've moved my car", 'btn', () => {
+        setActionFeedback(endBtn, 'Ending...');
+        callServer('endSession', [session.sessionId], {
+          successMessage: 'Session ended. Thanks for checking out.',
+          successType: 'success'
+        });
+      }, { showLoading: true, loadingLabel: 'Ending...' });
+      banner.appendChild(endBtn);
+      banner.classList.remove('is-hidden');
+      return;
+    }
+
+    // 2. Upcoming reservation not yet checked in?
+    const reservations = state.reservations || [];
+    const userReservation = reservations.find(
+      (r) => !r.checkedInAt && r.status !== 'no_show' && r.status !== 'canceled'
+    );
+    if (userReservation) {
+      const charger = state.board?.chargers?.find((c) => String(c.id) === String(userReservation.chargerId));
+      const chargerName = charger ? charger.name : `Charger ${userReservation.chargerId}`;
+      if (shouldShowCheckIn(userReservation)) {
+        eyebrow.textContent = 'Your reservation';
+        detail.textContent = chargerName + ' · starts at ' + formatTime(userReservation.startTime);
+        sub.textContent = '';
+        const checkInBtn = createButton('Check in', 'btn', () => {
+          setActionFeedback(checkInBtn, 'Checking in...');
+          callServer('checkInReservation', [userReservation.reservationId]);
+        }, { showLoading: true, loadingLabel: 'Checking in...' });
+        banner.appendChild(checkInBtn);
+        banner.classList.remove('is-hidden');
+        return;
+      }
+      // Not yet in check-in window
+      eyebrow.textContent = 'Upcoming reservation';
+      detail.textContent = chargerName + ' · starts at ' + formatTime(userReservation.startTime);
+      sub.textContent = '';
+      banner.classList.remove('is-hidden');
+      return;
+    }
+
+    // 3. Nothing active — hide banner
+    banner.classList.add('is-hidden');
   }
 
   function renderSummary(data) {
@@ -583,14 +670,20 @@
           body.appendChild(remaining);
           if (!charger.walkup.isOpenToAll) {
             if (!charger.walkup.isOpenToReturning) {
+              const isNetNew = state.board?.user?.isNetNew === true;
               body.appendChild(
-                createInfoRow('Priority', 'Net-new only until ' + formatTime(charger.walkup.allUsersOpenAt), {
+                createInfoRow('Priority', isNetNew
+                  ? "You're eligible · Ends at " + formatTime(charger.walkup.allUsersOpenAt)
+                  : 'Priority window · Opens to all at ' + formatTime(charger.walkup.allUsersOpenAt), {
                   hint: 'First-time drivers today get priority during this window.'
                 })
               );
             } else {
+              const isReturning = state.board?.user?.isReturning === true;
               body.appendChild(
-                createInfoRow('Priority', 'Returning drivers until ' + formatTime(charger.walkup.returningUsersOpenAt), {
+                createInfoRow('Priority', isReturning
+                  ? "You're eligible · Ends at " + formatTime(charger.walkup.returningUsersOpenAt)
+                  : 'Opens to all at ' + formatTime(charger.walkup.returningUsersOpenAt), {
                   hint: 'Drivers who have charged or reserved today may walk up during this window.'
                 })
               );
@@ -683,7 +776,11 @@
     card.appendChild(actions);
     const hint = document.createElement('div');
     hint.className = 'card-hint';
-    hint.textContent = 'Tap to select';
+    if (primary) {
+      hint.textContent = `Tap to ${primary.label.toLowerCase()}`;
+    } else {
+      hint.classList.add('is-hidden');
+    }
     card.appendChild(hint);
     card.addEventListener('click', (event) => {
       if (event.target.closest('button')) {
@@ -985,6 +1082,24 @@
         el.textContent = formatDuration(mins);
       } else {
         el.textContent = 'Ended';
+      }
+    });
+    document.querySelectorAll('.my-status-banner__countdown[data-session-end]').forEach((el) => {
+      if (!el.dataset.sessionEnd) {
+        return;
+      }
+      const endTime = new Date(el.dataset.sessionEnd);
+      if (Number.isNaN(endTime.getTime())) {
+        return;
+      }
+      const diffMs = endTime.getTime() - now.getTime();
+      if (diffMs >= 0) {
+        const mins = Math.floor(diffMs / 60000);
+        const secs = Math.floor((diffMs % 60000) / 1000);
+        el.textContent = formatCountdown(mins, secs);
+      } else {
+        const overdueMinutes = Math.max(1, Math.ceil(Math.abs(diffMs) / 60000));
+        el.textContent = `Overdue by ${overdueMinutes}m`;
       }
     });
     updateCheckoutReminder(now);
@@ -1602,11 +1717,17 @@
 
   function handleVisibilityChange() {
     if (document.hidden) {
+      state.hiddenAt = Date.now();
       stopCountdowns();
       return;
     }
+    const hiddenMs = state.hiddenAt ? Date.now() - state.hiddenAt : 0;
+    state.hiddenAt = null;
     startCountdowns();
     updateCountdowns();
+    if (hiddenMs > 60000 && !state.isLoading) {
+      loadBoard();
+    }
   }
 
   function setSlotsLoading(isLoading) {

@@ -15,6 +15,12 @@ function loadScriptIntoDom(options = {}) {
   const dom = new JSDOM(`<!doctype html><html><body>
     <button id="refresh-btn">Refresh</button>
     <div id="user-meta"></div>
+    <div id="my-status-banner" class="my-status-banner is-hidden">
+      <div class="my-status-banner__eyebrow"></div>
+      <div class="my-status-banner__detail"></div>
+      <div class="my-status-banner__sub"></div>
+      <div class="my-status-banner__countdown" data-session-end=""></div>
+    </div>
     <section id="notice"></section>
     <div id="notice-help"></div>
     <section id="checkout-reminder"></section>
@@ -612,5 +618,394 @@ describe('UI behaviors', () => {
     window.document.body.appendChild(card);
     expect(card.querySelector('.menu-trigger')).not.toBeNull();
     expect(card.querySelector('.menu-list')).not.toBeNull();
+  });
+
+  // ─── My Status Banner ────────────────────────────────────────────────────────
+
+  describe('My Status Banner', () => {
+    test('shows active session with eyebrow, detail text, and end-session button', () => {
+      const endSession = jest.fn();
+      const now = new Date();
+      const endTime = new Date(now.getTime() + 30 * 60000).toISOString();
+      const window = loadScriptIntoDom({
+        userEmail: 'alex@example.com',
+        runMethods: { endSession }
+      });
+      activeWindow = window;
+
+      window.renderBoard({
+        serverTime: now.toISOString(),
+        user: {},
+        config: {},
+        reservations: [],
+        chargers: [{
+          id: '1', name: 'Charger 1', statusKey: 'in_use', status: 'In use', maxMinutes: 60,
+          session: { sessionId: 's1', userEmail: 'alex@example.com', endTime }
+        }]
+      });
+
+      const banner = window.document.getElementById('my-status-banner');
+      expect(banner.classList.contains('is-hidden')).toBe(false);
+      expect(banner.querySelector('.my-status-banner__eyebrow').textContent).toBe('Your session');
+      expect(banner.querySelector('.my-status-banner__detail').textContent).toContain('Charger 1');
+      const btn = banner.querySelector('.btn');
+      expect(btn).not.toBeNull();
+      expect(btn.textContent).toContain("I've moved my car");
+    });
+
+    test('shows check-in button when reservation is in the check-in window', () => {
+      const checkInReservation = jest.fn();
+      const now = new Date();
+      const window = loadScriptIntoDom({
+        userEmail: 'alex@example.com',
+        runMethods: { checkInReservation }
+      });
+      activeWindow = window;
+
+      window.renderBoard({
+        serverTime: now.toISOString(),
+        user: {},
+        config: {},
+        reservations: [{
+          reservationId: 'res-1',
+          chargerId: '1',
+          startTime: now.toISOString(),
+          endTime: new Date(now.getTime() + 3600000).toISOString(),
+          status: 'active'
+        }],
+        chargers: [{ id: '1', name: 'Charger 1', statusKey: 'reserved', status: 'Reserved', maxMinutes: 60 }]
+      });
+
+      const banner = window.document.getElementById('my-status-banner');
+      expect(banner.classList.contains('is-hidden')).toBe(false);
+      expect(banner.querySelector('.my-status-banner__eyebrow').textContent).toBe('Your reservation');
+      const btn = banner.querySelector('.btn');
+      expect(btn).not.toBeNull();
+      expect(btn.textContent).toBe('Check in');
+    });
+
+    test('shows upcoming reservation without action button when outside check-in window', () => {
+      const now = new Date();
+      const futureStart = new Date(now.getTime() + 2 * 60 * 60000).toISOString();
+      const window = loadScriptIntoDom({ userEmail: 'alex@example.com' });
+      activeWindow = window;
+
+      window.renderBoard({
+        serverTime: now.toISOString(),
+        user: {},
+        config: {},
+        reservations: [{
+          reservationId: 'res-future',
+          chargerId: '1',
+          startTime: futureStart,
+          endTime: new Date(now.getTime() + 3 * 60 * 60000).toISOString(),
+          status: 'active'
+        }],
+        chargers: [{ id: '1', name: 'Charger 1', statusKey: 'reserved', status: 'Reserved', maxMinutes: 60 }]
+      });
+
+      const banner = window.document.getElementById('my-status-banner');
+      expect(banner.classList.contains('is-hidden')).toBe(false);
+      expect(banner.querySelector('.my-status-banner__eyebrow').textContent).toBe('Upcoming reservation');
+      expect(banner.querySelector('.btn')).toBeNull();
+    });
+
+    test('is hidden when user has no active session or reservation', () => {
+      const now = new Date();
+      const window = loadScriptIntoDom({ userEmail: 'alex@example.com' });
+      activeWindow = window;
+
+      window.renderBoard({
+        serverTime: now.toISOString(),
+        user: {},
+        config: {},
+        reservations: [],
+        chargers: [{ id: '1', name: 'Charger 1', statusKey: 'free', status: 'Free', maxMinutes: 60 }]
+      });
+
+      expect(window.document.getElementById('my-status-banner').classList.contains('is-hidden')).toBe(true);
+    });
+
+    test('banner countdown is populated and updated by updateCountdowns()', () => {
+      const now = new Date();
+      const endTime = new Date(now.getTime() + 30 * 60000).toISOString();
+      const window = loadScriptIntoDom({ userEmail: 'alex@example.com' });
+      activeWindow = window;
+
+      window.renderBoard({
+        serverTime: now.toISOString(),
+        user: {},
+        config: {},
+        reservations: [],
+        chargers: [{
+          id: '1', name: 'Charger 1', statusKey: 'in_use', status: 'In use', maxMinutes: 60,
+          session: { sessionId: 's1', userEmail: 'alex@example.com', endTime }
+        }]
+      });
+
+      const countdown = window.document.querySelector('.my-status-banner__countdown');
+      expect(countdown.dataset.sessionEnd).toBe(endTime);
+      window.updateCountdowns();
+      expect(countdown.textContent).toMatch(/\d+m \d+s/);
+    });
+  });
+
+  // ─── Notice auto-dismiss ─────────────────────────────────────────────────────
+
+  describe('notice auto-dismiss', () => {
+    afterEach(() => jest.useRealTimers());
+
+    test('success notice auto-dismisses after 4 seconds', () => {
+      jest.useFakeTimers();
+      const window = loadScriptIntoDom();
+      activeWindow = window;
+
+      window.setNotice('Session started.', 'success');
+      const notice = window.document.getElementById('notice');
+      expect(notice.textContent).toBe('Session started.');
+
+      jest.advanceTimersByTime(4000);
+      expect(notice.textContent).toBe('');
+    });
+
+    test('info notice auto-dismisses after 4 seconds', () => {
+      jest.useFakeTimers();
+      const window = loadScriptIntoDom();
+      activeWindow = window;
+
+      window.setNotice('Select a new slot.', 'info');
+      const notice = window.document.getElementById('notice');
+      expect(notice.textContent).toBe('Select a new slot.');
+
+      jest.advanceTimersByTime(4000);
+      expect(notice.textContent).toBe('');
+    });
+
+    test('error notice does not auto-dismiss', () => {
+      jest.useFakeTimers();
+      const window = loadScriptIntoDom();
+      activeWindow = window;
+
+      window.setNotice('Something went wrong.', 'error');
+      const notice = window.document.getElementById('notice');
+
+      jest.advanceTimersByTime(5000);
+      expect(notice.textContent).toBe('Something went wrong.');
+    });
+
+    test('new notice call resets the auto-dismiss timer', () => {
+      jest.useFakeTimers();
+      const window = loadScriptIntoDom();
+      activeWindow = window;
+      const notice = window.document.getElementById('notice');
+
+      window.setNotice('First.', 'success');        // timer T1 fires at t=4000
+      jest.advanceTimersByTime(3000);               // t=3000, T1 not fired
+      window.setNotice('Second.', 'success');       // T1 cancelled, T2 fires at t=7000
+      jest.advanceTimersByTime(2000);               // t=5000, T2 not fired
+      expect(notice.textContent).toBe('Second.');  // first timer was cancelled
+
+      jest.advanceTimersByTime(2000);               // t=7000, T2 fires
+      expect(notice.textContent).toBe('');
+    });
+  });
+
+  // ─── Skeleton loading ────────────────────────────────────────────────────────
+
+  describe('skeleton loading', () => {
+    test('renders 4 skeleton cards on first load before server responds', () => {
+      const window = loadScriptIntoDom({
+        runMethods: { getBoardData: jest.fn() } // never calls success/failure
+      });
+      activeWindow = window;
+
+      window.loadBoard(); // state.board is null → skeletons injected before request
+      expect(window.document.querySelectorAll('.skeleton-card').length).toBe(4);
+    });
+
+    test('does not render skeleton cards on reload when board is already populated', () => {
+      const now = new Date();
+      const window = loadScriptIntoDom({
+        runMethods: { getBoardData: jest.fn() }
+      });
+      activeWindow = window;
+
+      window.renderBoard({
+        serverTime: now.toISOString(), user: {}, config: {}, reservations: [], chargers: []
+      });
+      window.__state.isLoading = false;
+
+      window.loadBoard(); // state.board is set → no skeletons
+      expect(window.document.querySelectorAll('.skeleton-card').length).toBe(0);
+    });
+  });
+
+  // ─── Auto-refresh on visibility restore ──────────────────────────────────────
+
+  describe('auto-refresh on visibility restore', () => {
+    test('records hiddenAt timestamp when tab goes hidden', () => {
+      const window = loadScriptIntoDom();
+      activeWindow = window;
+
+      Object.defineProperty(window.document, 'hidden', { value: true, configurable: true });
+      window.handleVisibilityChange();
+
+      expect(window.__state.hiddenAt).toBeGreaterThan(0);
+    });
+
+    test('triggers loadBoard when tab was hidden for more than 60 seconds', () => {
+      const getBoardData = jest.fn();
+      const now = new Date();
+      const window = loadScriptIntoDom({ runMethods: { getBoardData } });
+      activeWindow = window;
+
+      window.renderBoard({
+        serverTime: now.toISOString(), user: {}, config: {}, reservations: [], chargers: []
+      });
+      window.__state.isLoading = false;
+      window.__state.hiddenAt = Date.now() - 61000; // simulate 61 s hidden
+
+      Object.defineProperty(window.document, 'hidden', { value: false, configurable: true });
+      window.handleVisibilityChange();
+
+      expect(getBoardData).toHaveBeenCalled();
+    });
+
+    test('does not trigger loadBoard when tab was hidden for less than 60 seconds', () => {
+      const getBoardData = jest.fn();
+      const now = new Date();
+      const window = loadScriptIntoDom({ runMethods: { getBoardData } });
+      activeWindow = window;
+
+      window.renderBoard({
+        serverTime: now.toISOString(), user: {}, config: {}, reservations: [], chargers: []
+      });
+      window.__state.isLoading = false;
+      window.__state.hiddenAt = Date.now() - 30000; // simulate 30 s hidden
+
+      Object.defineProperty(window.document, 'hidden', { value: false, configurable: true });
+      window.handleVisibilityChange();
+
+      expect(getBoardData).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─── Walk-up priority labels ──────────────────────────────────────────────────
+
+  describe('walk-up priority labels', () => {
+    function buildWalkupBoard(userOverrides, walkupOverrides) {
+      const now = new Date();
+      return {
+        serverTime: now.toISOString(),
+        user: { ...userOverrides },
+        config: {},
+        reservations: [],
+        chargers: [{
+          id: '1', name: 'Charger 1', statusKey: 'free', status: 'Free', maxMinutes: 60,
+          walkup: {
+            isOpen: true,
+            isOpenToAll: false,
+            endTime: new Date(now.getTime() + 60 * 60000).toISOString(),
+            allUsersOpenAt: new Date(now.getTime() + 15 * 60000).toISOString(),
+            returningUsersOpenAt: new Date(now.getTime() + 10 * 60000).toISOString(),
+            ...walkupOverrides
+          }
+        }]
+      };
+    }
+
+    function getPriorityValue(window) {
+      return Array.from(window.document.querySelectorAll('.info-row'))
+        .filter((row) => row.querySelector('.label')?.textContent === 'Priority')
+        .map((row) => row.querySelector('.value')?.textContent)
+        .join('');
+    }
+
+    test('net-new user in Tier 1 window sees eligible message', () => {
+      const window = loadScriptIntoDom({ userEmail: 'alex@example.com' });
+      activeWindow = window;
+      window.renderBoard(buildWalkupBoard({ isNetNew: true }, { isOpenToReturning: false }));
+      expect(getPriorityValue(window)).toContain("You're eligible");
+    });
+
+    test('non-net-new user in Tier 1 window sees priority-window message', () => {
+      const window = loadScriptIntoDom({ userEmail: 'alex@example.com' });
+      activeWindow = window;
+      window.renderBoard(buildWalkupBoard({ isNetNew: false }, { isOpenToReturning: false }));
+      expect(getPriorityValue(window)).toContain('Priority window');
+    });
+
+    test('returning user in Tier 2 window sees eligible message', () => {
+      const window = loadScriptIntoDom({ userEmail: 'alex@example.com' });
+      activeWindow = window;
+      window.renderBoard(buildWalkupBoard({ isReturning: true }, { isOpenToReturning: true }));
+      expect(getPriorityValue(window)).toContain("You're eligible");
+    });
+
+    test('non-returning user in Tier 2 window sees opens-to-all message', () => {
+      const window = loadScriptIntoDom({ userEmail: 'alex@example.com' });
+      activeWindow = window;
+      window.renderBoard(buildWalkupBoard({ isReturning: false }, { isOpenToReturning: true }));
+      expect(getPriorityValue(window)).toContain('Opens to all at');
+    });
+  });
+
+  // ─── Card hint text ───────────────────────────────────────────────────────────
+
+  describe('card hint text', () => {
+    test('shows action-preview hint for a charger with a primary action', () => {
+      const now = new Date();
+      const window = loadScriptIntoDom({ userEmail: 'alex@example.com' });
+      activeWindow = window;
+
+      window.renderBoard({
+        serverTime: now.toISOString(), user: {}, config: {}, reservations: [],
+        chargers: [{ id: '1', name: 'Charger 1', statusKey: 'free', status: 'Free', maxMinutes: 60 }]
+      });
+
+      const hint = window.document.querySelector('.card-hint');
+      expect(hint.textContent).toMatch(/tap to start charging/i);
+      expect(hint.classList.contains('is-hidden')).toBe(false);
+    });
+
+    test("shows own-session action text on user's active charger", () => {
+      const now = new Date();
+      const window = loadScriptIntoDom({ userEmail: 'alex@example.com' });
+      activeWindow = window;
+
+      window.renderBoard({
+        serverTime: now.toISOString(), user: {}, config: {}, reservations: [],
+        chargers: [{
+          id: '1', name: 'Charger 1', statusKey: 'in_use', status: 'In use', maxMinutes: 60,
+          session: {
+            sessionId: 's1', userEmail: 'alex@example.com',
+            endTime: new Date(now.getTime() + 3600000).toISOString()
+          }
+        }]
+      });
+
+      const hint = window.document.querySelector('.card-hint');
+      expect(hint.textContent).toMatch(/tap to i've moved my car/i);
+    });
+
+    test('hint is hidden when charger has no primary action', () => {
+      const now = new Date();
+      const window = loadScriptIntoDom({ userEmail: 'alex@example.com' });
+      activeWindow = window;
+
+      window.renderBoard({
+        serverTime: now.toISOString(), user: {}, config: {}, reservations: [],
+        chargers: [{
+          id: '1', name: 'Charger 1', statusKey: 'free', status: 'Free', maxMinutes: 60,
+          walkup: {
+            isOpen: false,
+            openAt: new Date(now.getTime() + 15 * 60000).toISOString()
+          }
+        }]
+      });
+
+      const hint = window.document.querySelector('.card-hint');
+      expect(hint.classList.contains('is-hidden')).toBe(true);
+    });
   });
 });
