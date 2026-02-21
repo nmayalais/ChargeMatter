@@ -9,9 +9,16 @@ EV Charging is a lightweight internal web app for managing EV charger usage and 
 
 ## UI modes
 - **Now** (default): operational view for starting a session immediately.
-- **Reserve**: shows next available slots and the user’s reservations.
+- **Reserve**: shows next available slots and the user’s reservations (listed above available slots for faster access).
 
-Mobile uses a bottom tab bar and a sticky action bar for primary actions.
+Mobile (90%+ of users) uses a bottom tab bar and a sticky action bar for primary actions. Additional mobile features:
+- **My Status Banner**: always-visible strip above the board showing the user’s active session (with "I’ve moved my car"), check-in-eligible reservation (with "Check in"), or upcoming reservation.
+- **Compact header**: single-line title + refresh icon; subtitle/helper text hidden to save vertical space.
+- **Bottom-sheet confirm dialog**: action confirmations slide up from the bottom on touch devices.
+- **Skeleton loading**: placeholder cards shown on first load before data arrives.
+- **Auto-refresh**: board reloads automatically if the tab was backgrounded for more than 60 seconds.
+- **Notice auto-dismiss**: success and info toasts clear after 4 seconds; errors persist.
+- **Walk-up priority labels**: user-outcome language ("You’re eligible" / "Opens to all at…") replaces internal vocabulary.
 
 ## Data model (Google Sheets)
 Tabs created by `initSheets()`:
