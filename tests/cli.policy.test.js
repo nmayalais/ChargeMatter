@@ -188,7 +188,37 @@ describe('Policy-aligned CLI logic', () => {
     });
   });
 
-  test('completed reservation still blocks another same-day booking', () => {
+  test('late-released reservation (past halfway) still blocks same-day re-booking', () => {
+    // Charger 4: 120-min slot at 08:00–10:00, halfway = 09:00
+    // Session ends at 09:15 (after halfway) → late release → allotment consumed
+    const store = buildPolicyStore();
+    const engine = createPolicyEngine(store);
+    let reservationId = '';
+
+    withLocalTime(2026, 2, 9, 6, 15, () => {
+      const board = engine.createReservation('4', localIso(2026, 2, 9, 8, 0));
+      reservationId = board.reservations[0].reservationId;
+    });
+
+    withLocalTime(2026, 2, 9, 8, 5, () => {
+      engine.checkInReservation(reservationId);
+    });
+
+    withLocalTime(2026, 2, 9, 9, 15, () => {
+      engine.endSessionForReservation(reservationId);
+    });
+
+    withLocalTime(2026, 2, 9, 9, 20, () => {
+      expectError(
+        () => engine.createReservation('1', localIso(2026, 2, 9, 12, 0)),
+        'You already have a reservation for today'
+      );
+    });
+  });
+
+  test('early-released reservation (before halfway) allows same-day re-booking', () => {
+    // Charger 4: 120-min slot at 08:00–10:00, halfway = 09:00
+    // Session ends at 08:45 (before halfway) → early release → still net-new, no allotment consumed
     const store = buildPolicyStore();
     const engine = createPolicyEngine(store);
     let reservationId = '';
@@ -207,10 +237,35 @@ describe('Policy-aligned CLI logic', () => {
     });
 
     withLocalTime(2026, 2, 9, 8, 50, () => {
-      expectError(
-        () => engine.createReservation('1', localIso(2026, 2, 9, 9, 0)),
-        'You already have a reservation for today'
-      );
+      // Should succeed — early release does not consume the day's allotment
+      expect(() => engine.createReservation('1', localIso(2026, 2, 9, 9, 0))).not.toThrow();
+    });
+  });
+
+  test('early-released reservation preserves net-new walk-up access (Tier 1)', () => {
+    // Charger 4: 120-min slot 08:00–10:00, halfway = 09:00
+    // User checks in at 08:05, ends at 08:45 → early release → still net-new
+    // At 09:05, charger 2's 09:00 slot is in Tier 1 (first 10 min), only net-new may walk up
+    const store = buildPolicyStore();
+    const engine = createPolicyEngine(store);
+    let reservationId = '';
+
+    withLocalTime(2026, 2, 9, 6, 15, () => {
+      const board = engine.createReservation('4', localIso(2026, 2, 9, 8, 0));
+      reservationId = board.reservations[0].reservationId;
+    });
+
+    withLocalTime(2026, 2, 9, 8, 5, () => {
+      engine.checkInReservation(reservationId);
+    });
+
+    withLocalTime(2026, 2, 9, 8, 45, () => {
+      engine.endSessionForReservation(reservationId);
+    });
+
+    withLocalTime(2026, 2, 9, 9, 5, () => {
+      // Net-new Tier 1 window: 09:00–09:10. User is still net-new after early release.
+      expect(() => engine.startSession('2')).not.toThrow();
     });
   });
 

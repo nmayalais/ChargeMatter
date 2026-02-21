@@ -20,7 +20,9 @@ Production Google Apps Script code. No build step — files are deployed directl
 
 ## Key helpers
 
-- `isNetNewUser_(userEmail, sessions, reservations, now)` — returns true if the user has no sessions and no active reservations today. Drives Option A walk-up priority.
+- `isNetNewUser_(userEmail, sessions, reservations, now)` — returns true if the user has no disqualifying activity today. Early-released sessions/reservations (ended before the halfway point of the reservation window) do not disqualify. Drives Option A walk-up priority.
+- `isReturningUser_(userEmail, sessions, reservations, now)` — returns true if the user charged or made a qualifying reservation today. Early-released sessions/reservations do not count.
+- `completeReservationForSession_(session, now)` — called on session end; stamps `released_early: true` on the reservation if `now` is before the reservation's halfway point (using the original planned `end_time` before it is overwritten).
 - `getReservationConfig_(config)` — parses all reservation settings. Supports `"H:MM"` format in `reservation_open_hour` (e.g. `"5:45"` correctly sets 5:45 AM).
 - `checkInReservation()` — early-check-in window uses `earlyStartMinutes` only (not the old `Math.max` conflation with `checkinEarlyMinutes`).
 - `validateReservation_()` — per-day check runs before upcoming-count check so users get the clearer error message first.

@@ -4,7 +4,7 @@ Jest test suite targeting `cli/engine.js`. Tests use an in-memory store (not the
 
 ## Test files
 
-- **cli.policy.test.js** — reservation limits (max upcoming, per-day), no-show strikes, suspensions, early-start rules, prior reservation protection.
+- **cli.policy.test.js** — reservation limits (max upcoming, per-day), no-show strikes, suspensions, early-start rules, prior reservation protection, early/late session-release halfway rule.
 - **cli.admin.test.js** — admin force-end sessions, reset charger.
 - **cli.reservation-session.test.js** — check-in lifecycle, session auto-start on check-in, matching reservations to sessions.
 - **ui.test.js** — DOM rendering via jsdom, board data display, action handler behavior.

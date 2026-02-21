@@ -99,7 +99,8 @@ function createEngine(options) {
     'reminder_5_after_sent',
     'created_at',
     'updated_at',
-    'canceled_at'
+    'canceled_at',
+    'released_early'
   ];
 
   var STRIKES_HEADERS = [
@@ -1015,9 +1016,12 @@ function createEngine(options) {
       if (!overlaps) {
         return;
       }
+      var halfwayTime = new Date(resStart.getTime() + (resEnd.getTime() - resStart.getTime()) / 2);
+      var releasedEarly = now.getTime() < halfwayTime.getTime();
       updateRow_(reservationsData.sheet, reservationsData.headerMap, reservation._row, {
         status: 'complete',
         end_time: now,
+        released_early: releasedEarly,
         updated_at: now
       });
     });
@@ -1385,17 +1389,44 @@ function createEngine(options) {
   function isNetNewUser_(userEmail, sessions, reservations, now) {
     var email = String(userEmail || '').toLowerCase();
     var todayKey = dayKey_(now);
-    var hasTodaySession = sessions.some(function(session) {
+    var hasDisqualifyingSession = sessions.some(function(session) {
       if (!session || !session.session_id) {
         return false;
       }
       if (String(session.user_id || '').toLowerCase() !== email) {
         return false;
       }
-      var start = toDate_(session.start_time);
-      return start && dayKey_(start) === todayKey;
+      var sessionStart = toDate_(session.start_time);
+      if (!sessionStart || dayKey_(sessionStart) !== todayKey) {
+        return false;
+      }
+      // A session from an early-released reservation does not disqualify.
+      var sessionChargerId = String(session.charger_id || '');
+      var sessionEnd = toDate_(session.end_time);
+      var hasMatchingEarlyRelease = reservations.some(function(reservation) {
+        if (!isReservationComplete_(reservation)) {
+          return false;
+        }
+        if (!reservation.released_early) {
+          return false;
+        }
+        if (String(reservation.user_id || '').toLowerCase() !== email) {
+          return false;
+        }
+        if (String(reservation.charger_id || '') !== sessionChargerId) {
+          return false;
+        }
+        var resStart = toDate_(reservation.start_time);
+        var resEnd = toDate_(reservation.end_time);
+        if (!resStart || !resEnd) {
+          return false;
+        }
+        var sEnd = sessionEnd || new Date(sessionStart.getTime() + 1);
+        return sessionStart.getTime() < resEnd.getTime() && sEnd.getTime() > resStart.getTime();
+      });
+      return !hasMatchingEarlyRelease;
     });
-    if (hasTodaySession) {
+    if (hasDisqualifyingSession) {
       return false;
     }
     var hasTodayReservation = reservations.some(function(reservation) {
@@ -1420,7 +1451,10 @@ function createEngine(options) {
         }
         return true; // late cancellation — disqualified
       }
-      return true; // no-show, complete, and active all disqualify
+      if (isReservationComplete_(reservation) && reservation.released_early) {
+        return false; // early-released — still net-new
+      }
+      return true; // no-show, late-complete, and active all disqualify
     });
     return !hasTodayReservation;
   }
@@ -1431,19 +1465,37 @@ function createEngine(options) {
   function isReturningUser_(userEmail, sessions, reservations, now) {
     var email = String(userEmail || '').toLowerCase();
     var todayKey = dayKey_(now);
-    var hasSession = sessions.some(function(session) {
+    var hasQualifyingSession = sessions.some(function(session) {
       if (!session || !session.session_id) { return false; }
       if (String(session.user_id || '').toLowerCase() !== email) { return false; }
-      var start = toDate_(session.start_time);
-      return start && dayKey_(start) === todayKey;
+      var sessionStart = toDate_(session.start_time);
+      if (!sessionStart || dayKey_(sessionStart) !== todayKey) { return false; }
+      // A session from an early-released reservation does not count as returning.
+      var sessionChargerId = String(session.charger_id || '');
+      var sessionEnd = toDate_(session.end_time);
+      var hasMatchingEarlyRelease = reservations.some(function(reservation) {
+        if (!isReservationComplete_(reservation)) { return false; }
+        if (!reservation.released_early) { return false; }
+        if (String(reservation.user_id || '').toLowerCase() !== email) { return false; }
+        if (String(reservation.charger_id || '') !== sessionChargerId) { return false; }
+        var resStart = toDate_(reservation.start_time);
+        var resEnd = toDate_(reservation.end_time);
+        if (!resStart || !resEnd) { return false; }
+        var sEnd = sessionEnd || new Date(sessionStart.getTime() + 1);
+        return sessionStart.getTime() < resEnd.getTime() && sEnd.getTime() > resStart.getTime();
+      });
+      return !hasMatchingEarlyRelease;
     });
-    if (hasSession) { return true; }
+    if (hasQualifyingSession) { return true; }
     return reservations.some(function(reservation) {
       if (!reservation || !reservation.reservation_id) { return false; }
       if (String(reservation.user_id || '').toLowerCase() !== email) { return false; }
       var start = toDate_(reservation.start_time);
       if (!start || dayKey_(start) !== todayKey) { return false; }
-      if (isReservationNoShow_(reservation) || isReservationComplete_(reservation)) { return true; }
+      if (isReservationNoShow_(reservation)) { return true; }
+      if (isReservationComplete_(reservation)) {
+        return !reservation.released_early; // early-released = not returning
+      }
       if (isReservationCanceled_(reservation)) {
         var end = toDate_(reservation.end_time);
         var canceledAt = toDate_(reservation.canceled_at);
@@ -1829,6 +1881,9 @@ function createEngine(options) {
     var perDayCount = reservations.filter(function(reservation) {
       if (!reservation.reservation_id || isReservationCanceled_(reservation)) {
         return false;
+      }
+      if (isReservationComplete_(reservation) && reservation.released_early) {
+        return false; // early-released — doesn't count against daily limit
       }
       if (String(reservation.reservation_id) === excludeId) {
         return false;
