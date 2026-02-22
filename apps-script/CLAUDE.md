@@ -59,11 +59,45 @@ The banner's `.my-status-banner__countdown[data-session-end]` element is updated
 ### Walk-up priority labels
 Walk-up rows use user-outcome language instead of internal system vocabulary. The text is derived from `state.board.user.isNetNew` and `state.board.user.isReturning` (both sent by `getBoardData()`):
 
-- **Tier 1 (net-new only)**: `isNetNew` → `"You're eligible · Ends at [time]"` / else → `"Priority window · Opens to all at [time]"`
-- **Tier 2 (returning)**: `isReturning` → `"You're eligible · Ends at [time]"` / else → `"Opens to all at [time]"`
+- **Tier 1 (net-new only)**: `isNetNew` → `"You're eligible · Ends at [time]"` / else → `"First-time drivers only · Opens wider at [time]"`
+- **Tier 2 (net-new OR returning)**: `isNetNew || isReturning` → `"You're eligible · Ends at [time]"` / else → `"Returning drivers priority · Opens to all at [time]"`
+
+Note: Tier 2 checks **both** `isNetNew` and `isReturning` because the backend (`startSession()`) allows either group during this window. A net-new user who didn't claim the spot during Tier 1 remains eligible in Tier 2.
 
 ### Card hint text
 `createCard()` sets `.card-hint` to `"Tap to [action label]"` using the result of `getPrimaryAction()` (already computed in scope). The hint element is hidden via `is-hidden` when there is no primary action.
+
+## UI design system (styles.html)
+
+### CSS custom properties (`:root`)
+Key tokens to be aware of when making visual changes:
+
+| Token | Value | Notes |
+|---|---|---|
+| `--color-bg` | `#e8edf3` | Page background — intentionally deeper than surface so white cards lift off |
+| `--color-surface` | `#ffffff` | Card/panel background |
+| `--color-border` | `#ced3dc` | Default border — strong enough to read on both bg and surface |
+| `--color-muted` | `#4b5563` | Secondary text — passes WCAG AA at all used sizes |
+| `--color-primary` | `#f15a22` | Orange accent: buttons, selected state, active tab |
+| `--bottom-nav-height` | `80px` | Height of the mobile bottom tab bar (excluding safe-area inset). Cascades to `.app` padding-bottom and `.sticky-bar` bottom offset automatically. |
+
+### Status color system
+Each status has three tokens: `-bg` (fill), `-text` (foreground), `-border` (pill/chip border). All three are used consistently on status pills, summary chips, notice banners, and legend items. Do not hardcode hex values for status colors — always reference the variables.
+
+| Status | bg token | text token | border token |
+|---|---|---|---|
+| free | `--status-free-bg` | `--status-free-text` | `--status-free-border` |
+| in_use | `--status-in_use-bg` | `--status-in_use-text` | `--status-in_use-border` |
+| reserved | `--status-reserved-bg` | `--status-reserved-text` | `--status-reserved-border` |
+| overdue | `--status-overdue-bg` | `--status-overdue-text` | `--status-overdue-border` |
+
+### Refresh button (`#refresh-btn`)
+Styled via ID selector (overrides `.btn.ghost`): dark charcoal background `#1d2939`, white text. This ensures it remains visible regardless of header background. Do not revert to ghost styling.
+
+### Mobile bottom tab bar (`.mobile-tabs` / `.mobile-tab`)
+- Active tab: solid `--color-primary` fill, white text — unambiguous selection state
+- Inactive tab: `#f3f4f6` background, `--color-border` border, `#374151` text — always visible
+- Bar has `box-shadow: 0 -4px 16px …` projecting upward to visually separate it from scrolling content below
 
 ## Deployment
 
