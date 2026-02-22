@@ -2,18 +2,18 @@
   :root {
     color-scheme: light;
     font-family: "Inter", "Segoe UI", Roboto, Arial, sans-serif;
-    --color-bg: #f5f6f8;
+    --color-bg: #e8edf3;
     --color-surface: #ffffff;
     --color-text: #111827;
-    --color-muted: #6b7280;
-    --color-border: #e5e7eb;
+    --color-muted: #4b5563;
+    --color-border: #ced3dc;
     --color-primary: #f15a22;
     --color-primary-dark: #d9480f;
     --color-primary-soft: #fff1e8;
     --color-primary-rgb: 241, 90, 34;
     --color-danger: #dc2626;
     --color-danger-soft: #fef2f2;
-    --shadow-soft: 0 8px 20px rgba(15, 23, 42, 0.08);
+    --shadow-soft: 0 8px 20px rgba(15, 23, 42, 0.1);
     --radius-lg: 16px;
     --radius-md: 12px;
     --radius-sm: 10px;
@@ -24,17 +24,20 @@
     --space-5: 20px;
     --space-6: 24px;
     --tap-target: 44px;
-    --bottom-nav-height: 60px;
-    --status-free-bg: #ecfdf3;
-    --status-free-text: #027a48;
-    --status-in_use-bg: #eef4ff;
-    --status-in_use-text: #3538cd;
-    --status-reserved-bg: #f4f3ff;
-    --status-reserved-text: #5925dc;
-    --status-overdue-bg: #fef3f2;
-    --status-overdue-text: #b42318;
-    --status-overdue-border: #fecdca;
-    --status-reserved-border: #d9d6fe;
+    --bottom-nav-height: 80px;
+    /* Status colors — more saturated for clear visual distinction */
+    --status-free-bg: #d1fae5;
+    --status-free-text: #065f46;
+    --status-free-border: #6ee7b7;
+    --status-in_use-bg: #dbeafe;
+    --status-in_use-text: #1e40af;
+    --status-in_use-border: #93c5fd;
+    --status-reserved-bg: #ede9fe;
+    --status-reserved-text: #5b21b6;
+    --status-reserved-border: #a78bfa;
+    --status-overdue-bg: #fee2e2;
+    --status-overdue-text: #991b1b;
+    --status-overdue-border: #f87171;
   }
 
   * {
@@ -201,7 +204,7 @@
     padding: var(--space-2) var(--space-3);
     border-radius: var(--radius-md);
     background: var(--status-free-bg);
-    border: 1px solid #b7ebd0;
+    border: 1px solid var(--status-free-border);
     color: var(--status-free-text);
   }
 
@@ -209,7 +212,7 @@
     padding: var(--space-2) var(--space-3);
     border-radius: var(--radius-md);
     background: var(--status-in_use-bg);
-    border: 1px solid #d3dafe;
+    border: 1px solid var(--status-in_use-border);
     color: var(--status-in_use-text);
   }
 
@@ -244,13 +247,13 @@
   .summary-item.status-free {
     background: var(--status-free-bg);
     color: var(--status-free-text);
-    border-color: #b7ebd0;
+    border-color: var(--status-free-border);
   }
 
   .summary-item.status-in_use {
     background: var(--status-in_use-bg);
     color: var(--status-in_use-text);
-    border-color: #d3dafe;
+    border-color: var(--status-in_use-border);
   }
 
   .summary-item.status-reserved {
@@ -283,9 +286,15 @@
     cursor: pointer;
   }
 
+  .card:hover:not(.selected) {
+    box-shadow: 0 12px 28px rgba(15, 23, 42, 0.13);
+    border-color: #b8c0cc;
+  }
+
   .card.selected {
     border-color: var(--color-primary);
-    box-shadow: 0 0 0 2px rgba(var(--color-primary-rgb), 0.2), var(--shadow-soft);
+    border-width: 2px;
+    box-shadow: 0 0 0 3px rgba(var(--color-primary-rgb), 0.25), var(--shadow-soft);
   }
 
   .card-header {
@@ -310,37 +319,48 @@
     padding: 4px 10px;
     border-radius: 999px;
     font-size: 11px;
-    font-weight: 600;
+    font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.04em;
+    border: 1.5px solid transparent;
   }
 
   .status-free .status-pill {
     background: var(--status-free-bg);
     color: var(--status-free-text);
+    border-color: var(--status-free-border);
   }
 
   .status-in_use .status-pill {
     background: var(--status-in_use-bg);
     color: var(--status-in_use-text);
+    border-color: var(--status-in_use-border);
   }
 
   .status-overdue .status-pill {
     background: var(--status-overdue-bg);
     color: var(--status-overdue-text);
+    border-color: var(--status-overdue-border);
   }
 
   .status-reserved .status-pill {
     background: var(--status-reserved-bg);
     color: var(--status-reserved-text);
+    border-color: var(--status-reserved-border);
   }
 
   .status-overdue {
+    background: #fff6f6;
     border-color: var(--status-overdue-border);
   }
 
   .status-reserved {
+    background: #faf8ff;
     border-color: var(--status-reserved-border);
+  }
+
+  .status-in_use {
+    background: #f6f9ff;
   }
 
   .card-body {
@@ -499,6 +519,34 @@
   .btn:disabled {
     opacity: 0.6;
     cursor: not-allowed;
+  }
+
+  .btn:hover:not(:disabled) {
+    filter: brightness(1.1);
+  }
+
+  .btn.ghost:hover:not(:disabled) {
+    background: rgba(0, 0, 0, 0.05);
+    filter: none;
+  }
+
+  /* Refresh button — high-visibility, distinct from ghost actions */
+  #refresh-btn {
+    background: #1d2939;
+    color: #ffffff;
+    border: none;
+    font-size: 14px;
+    padding: 8px 14px;
+    min-height: 40px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    letter-spacing: 0.01em;
+  }
+
+  #refresh-btn:hover:not(:disabled) {
+    background: #2d3b4f;
+    filter: none;
   }
 
   body.confirm-open {
@@ -815,28 +863,30 @@
     bottom: 0;
     height: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom));
     background: var(--color-surface);
-    border-top: 1px solid var(--color-border);
-    padding: 8px 16px calc(env(safe-area-inset-bottom) + 4px);
-    gap: var(--space-2);
+    border-top: 2px solid var(--color-border);
+    box-shadow: 0 -4px 16px rgba(15, 23, 42, 0.12);
+    padding: 10px 16px calc(env(safe-area-inset-bottom) + 8px);
+    gap: var(--space-3);
     justify-content: space-around;
     z-index: 15;
   }
 
   .mobile-tab {
-    border: 1px solid transparent;
-    background: transparent;
-    font-size: 14px;
-    font-weight: 600;
-    color: var(--color-muted);
+    border: 1.5px solid var(--color-border);
+    background: #f3f4f6;
+    font-size: 16px;
+    font-weight: 700;
+    color: #374151;
     flex: 1;
-    min-height: var(--tap-target);
+    min-height: 52px;
     border-radius: var(--radius-md);
+    letter-spacing: 0.01em;
   }
 
   .mobile-tab.active {
-    color: var(--color-primary);
-    background: var(--color-primary-soft);
-    border-color: rgba(var(--color-primary-rgb), 0.2);
+    color: #ffffff;
+    background: var(--color-primary);
+    border-color: var(--color-primary-dark);
   }
 
   @media (max-width: 600px) {
@@ -1401,29 +1451,34 @@
     padding: 4px 10px;
     border-radius: 999px;
     font-size: 12px;
-    font-weight: 600;
+    font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.04em;
+    border: 1.5px solid transparent;
   }
 
   .legend-item.status-free {
     background: var(--status-free-bg);
     color: var(--status-free-text);
+    border-color: var(--status-free-border);
   }
 
   .legend-item.status-in_use {
     background: var(--status-in_use-bg);
     color: var(--status-in_use-text);
+    border-color: var(--status-in_use-border);
   }
 
   .legend-item.status-reserved {
     background: var(--status-reserved-bg);
     color: var(--status-reserved-text);
+    border-color: var(--status-reserved-border);
   }
 
   .legend-item.status-overdue {
     background: var(--status-overdue-bg);
     color: var(--status-overdue-text);
+    border-color: var(--status-overdue-border);
   }
 
   .suspension-banner {

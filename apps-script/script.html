@@ -670,21 +670,25 @@
           body.appendChild(remaining);
           if (!charger.walkup.isOpenToAll) {
             if (!charger.walkup.isOpenToReturning) {
+              // Tier 1: net-new users only (no charges or reservations today).
               const isNetNew = state.board?.user?.isNetNew === true;
               body.appendChild(
                 createInfoRow('Priority', isNetNew
                   ? "You're eligible · Ends at " + formatTime(charger.walkup.allUsersOpenAt)
-                  : 'Priority window · Opens to all at ' + formatTime(charger.walkup.allUsersOpenAt), {
-                  hint: 'First-time drivers today get priority during this window.'
+                  : 'First-time drivers only · Opens wider at ' + formatTime(charger.walkup.allUsersOpenAt), {
+                  hint: 'Priority access is reserved for first-time drivers today — someone who has not charged or made a reservation yet. Returning drivers get priority next; everyone else after that.'
                 })
               );
             } else {
+              // Tier 2: net-new OR returning users (charged or reserved today).
+              // Both groups are eligible — only truly "other" users are gated.
+              const isNetNew = state.board?.user?.isNetNew === true;
               const isReturning = state.board?.user?.isReturning === true;
               body.appendChild(
-                createInfoRow('Priority', isReturning
+                createInfoRow('Priority', (isNetNew || isReturning)
                   ? "You're eligible · Ends at " + formatTime(charger.walkup.returningUsersOpenAt)
-                  : 'Opens to all at ' + formatTime(charger.walkup.returningUsersOpenAt), {
-                  hint: 'Drivers who have charged or reserved today may walk up during this window.'
+                  : 'Returning drivers priority · Opens to all at ' + formatTime(charger.walkup.returningUsersOpenAt), {
+                  hint: 'Priority access is open to returning drivers (charged or reserved today) and first-time drivers. Opens to everyone at ' + formatTime(charger.walkup.returningUsersOpenAt) + '.'
                 })
               );
             }
