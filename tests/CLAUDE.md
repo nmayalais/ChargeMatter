@@ -46,3 +46,4 @@ npx jest --runInBand                             # Serial (used in CI)
 | **Auto-refresh on visibility restore** | `hiddenAt` recorded on hide; `loadBoard()` triggered after >60 s; not triggered after <60 s |
 | **Walk-up priority labels** | Net-new user sees "You're eligible" (Tier 1); non-net-new sees "Priority window"; returning user sees "You're eligible" (Tier 2); non-returning sees "Opens to all at" |
 | **Card hint text** | Free charger shows `"Tap to start charging"`; own-session charger shows own-session label; hint hidden when no primary action |
+| **Show More pagination** | Button shown when `slotsAllLoaded = false`; hidden when `slotsAllLoaded = true`; absent when slot list is empty |

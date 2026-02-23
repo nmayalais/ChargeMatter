@@ -244,6 +244,38 @@ describe('UI behaviors', () => {
     expect(window.document.querySelector('.loading-state')).toBeNull();
   });
 
+  test('renders Show More button when more slots may be available', () => {
+    const window = loadScriptIntoDom();
+    activeWindow = window;
+    const slots = Array.from({ length: 10 }, (_, i) => ({
+      chargerId: '1',
+      startTime: new Date(Date.now() + i * 3600000).toISOString(),
+      endTime: new Date(Date.now() + (i + 1) * 3600000).toISOString()
+    }));
+    window.__state.slotsAllLoaded = false;
+    window.renderSlotsList(slots);
+    expect(window.document.querySelector('.show-more-btn')).not.toBeNull();
+  });
+
+  test('hides Show More button when all slots are loaded', () => {
+    const window = loadScriptIntoDom();
+    activeWindow = window;
+    const slots = [
+      { chargerId: '1', startTime: new Date().toISOString(), endTime: new Date(Date.now() + 3600000).toISOString() }
+    ];
+    window.__state.slotsAllLoaded = true;
+    window.renderSlotsList(slots);
+    expect(window.document.querySelector('.show-more-btn')).toBeNull();
+  });
+
+  test('does not render Show More button when slot list is empty', () => {
+    const window = loadScriptIntoDom();
+    activeWindow = window;
+    window.__state.slotsAllLoaded = false;
+    window.renderSlotsList([]);
+    expect(window.document.querySelector('.show-more-btn')).toBeNull();
+  });
+
   test('adds accessibility attributes and keyboard behavior for admin menu', () => {
     const window = loadScriptIntoDom({ isAdmin: true });
     activeWindow = window;
