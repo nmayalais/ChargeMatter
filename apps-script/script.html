@@ -15,6 +15,8 @@
     slotsLoading: false,
     slotsCache: null,
     slotsLastFetch: null,
+    slotsOffset: 0,
+    slotsAllLoaded: false,
     _noticeDismissTimer: null,
     hiddenAt: null
   };
@@ -1561,14 +1563,23 @@
     bar.classList.remove('active');
   }
 
-  function loadSlots() {
+  function loadSlots({ loadMore = false } = {}) {
     if (state.slotsLoading) {
       return;
     }
     setSlotsLoading(true);
+    const offset = loadMore ? state.slotsOffset : 0;
     google.script.run
       .withSuccessHandler((slots) => {
-        state.slotsCache = slots || [];
+        const PAGE_SIZE = 10;
+        if (!loadMore) {
+          state.slotsCache = slots || [];
+          state.slotsOffset = 0;
+        } else {
+          state.slotsCache = (state.slotsCache || []).concat(slots || []);
+        }
+        state.slotsOffset = offset + PAGE_SIZE;
+        state.slotsAllLoaded = (slots || []).length < PAGE_SIZE;
         state.slotsLastFetch = Date.now();
         setSlotsLoading(false);
         renderSlotsList(state.slotsCache);
@@ -1577,7 +1588,7 @@
         setSlotsLoading(false);
         setNotice(err.message || String(err), 'error');
       })
-      .getAvailabilitySummary();
+      .getAvailabilitySummary(offset);
   }
 
   function refreshSlotsIfNeeded({ force }) {
@@ -1587,8 +1598,7 @@
     if (state.slotsLoading) {
       return;
     }
-    const lastFetch = state.slotsLastFetch || 0;
-    const cacheFresh = state.slotsCache && (Date.now() - lastFetch) < SLOTS_CACHE_TTL_MS;
+    const cacheFresh = state.slotsCache && (Date.now() - (state.slotsLastFetch || 0)) < SLOTS_CACHE_TTL_MS;
     if (!force && cacheFresh) {
       renderSlotsList(state.slotsCache);
       return;
@@ -1640,6 +1650,17 @@
       fragment.appendChild(groupEl);
     });
     container.appendChild(fragment);
+    if (!state.slotsAllLoaded) {
+      const moreBtn = createButton(
+        'Show More',
+        'btn btn-secondary show-more-btn',
+        () => {
+          loadSlots({ loadMore: true });
+        },
+        { showLoading: true, loadingLabel: 'Loading...' }
+      );
+      container.appendChild(moreBtn);
+    }
     updateSelectionUI();
   }
 

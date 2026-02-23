@@ -436,13 +436,13 @@ function getNextAvailableSlot() {
   };
 }
 
-function getAvailabilitySummary(startDateIso, days) {
+function getAvailabilitySummary(offset) {
   initSheets_();
   requireAuthorizedUser_();
   var now = new Date();
   var chargersData = getSheetData_(SHEETS.chargers, CHARGERS_HEADERS);
   var reservationsData = getSheetData_(SHEETS.reservations, RESERVATIONS_HEADERS);
-  var slots = getNextAvailableSlots_(now, chargersData.rows, reservationsData.rows, 1, 10);
+  var slots = getNextAvailableSlots_(now, chargersData.rows, reservationsData.rows, 1, 10, offset || 0);
   return slots.map(function(slot) {
     return {
       chargerId: String(slot.charger_id),
@@ -2226,7 +2226,7 @@ function getNextAvailableSlot_(now, chargers, reservations) {
   return slots.length ? slots[0] : null;
 }
 
-function getNextAvailableSlots_(now, chargers, reservations, rangeDays, limit) {
+function getNextAvailableSlots_(now, chargers, reservations, rangeDays, limit, offset) {
   var config = getReservationConfig_(getConfig_());
   var openTime = getReservationOpenTime_(now, config);
   if (now.getTime() < openTime.getTime()) {
@@ -2263,7 +2263,9 @@ function getNextAvailableSlots_(now, chargers, reservations, rangeDays, limit) {
   slots.sort(function(a, b) {
     return a.start_time.getTime() - b.start_time.getTime();
   });
-  return slots.slice(0, limit || 10);
+  var pageSize = limit || 10;
+  var start = offset || 0;
+  return slots.slice(start, start + pageSize);
 }
 
 function buildTimelineForCharger_(charger, day, reservations) {

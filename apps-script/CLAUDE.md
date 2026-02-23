@@ -67,6 +67,14 @@ Note: Tier 2 checks **both** `isNetNew` and `isReturning` because the backend (`
 ### Card hint text
 `createCard()` sets `.card-hint` to `"Tap to [action label]"` using the result of `getPrimaryAction()` (already computed in scope). The hint element is hidden via `is-hidden` when there is no primary action.
 
+### Slot pagination ("Show More")
+`getAvailabilitySummary(offset)` accepts an optional `offset` (default `0`) and returns a page of 10 slots starting at that position. The UI tracks pagination in `state.slotsOffset` and `state.slotsAllLoaded`.
+
+- `loadSlots({ loadMore: true })` appends the next page to `state.slotsCache` and advances `state.slotsOffset` by 10.
+- `loadSlots()` (no args) resets offset and cache (used on initial load and force-refresh).
+- `renderSlotsList()` appends a `.show-more-btn` button at the bottom when `!state.slotsAllLoaded` and the list is non-empty.
+- `state.slotsAllLoaded` is set `true` when a page returns fewer than 10 slots.
+
 ## UI design system (styles.html)
 
 ### CSS custom properties (`:root`)
