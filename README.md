@@ -35,6 +35,8 @@ Use this after pushing v2 UI changes.
 4. On mobile width, verify:
    - Buttons are easy to tap (≥ 48px height).
    - Card content is legible without zoom.
+   - Bottom nav bar background is white; the **active tab is dark charcoal** (not orange). Orange is reserved for action buttons only.
+   - Inactive tabs are light gray with dark text — visually distinct from both the active tab and action buttons.
 5. Verify walk‑up countdown updates for free chargers.
 6. Confirm selecting a card still highlights it and reveals details.
 
@@ -46,7 +48,7 @@ Use this after pushing v2 UI changes.
 5. On mobile width, ensure panels stack in a single column (no side-by-side shrinking).
 6. On mobile width, ensure the reserve action is full-width and easy to tap.
 
-Mobile (90%+ of users) uses a bottom tab bar and a sticky action bar for primary actions. Additional mobile features:
+Mobile (90%+ of users) uses a bottom tab bar and a sticky action bar for primary actions. The bottom tab bar uses a **dark charcoal active state** (`#1d2939`) to visually separate navigation from the orange CTA buttons used throughout the content. Additional mobile features:
 - **My Status Banner**: always-visible strip above the board showing the user’s active session (with "I’ve moved my car"), check-in-eligible reservation (with "Check in"), or upcoming reservation.
 - **Compact header**: single-line title + refresh icon; subtitle/helper text hidden to save vertical space.
 - **Bottom-sheet confirm dialog**: action confirmations slide up from the bottom on touch devices.

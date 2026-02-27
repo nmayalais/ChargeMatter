@@ -103,9 +103,10 @@ Each status has three tokens: `-bg` (fill), `-text` (foreground), `-border` (pil
 Styled via ID selector (overrides `.btn.ghost`): dark charcoal background `#1d2939`, white text. This ensures it remains visible regardless of header background. Do not revert to ghost styling.
 
 ### Mobile bottom tab bar (`.mobile-tabs` / `.mobile-tab`)
-- Active tab: solid `--color-primary` fill, white text — unambiguous selection state
-- Inactive tab: `#f3f4f6` background, `--color-border` border, `#374151` text — always visible
-- Bar has `box-shadow: 0 -4px 16px …` projecting upward to visually separate it from scrolling content below
+- Active tab: dark charcoal `#1d2939` background, white text — intentionally distinct from the orange CTA buttons in the main content. Do NOT revert to `--color-primary` (orange); orange is reserved for action buttons only.
+- Inactive tab: `#f3f4f6` background, `--color-border` border, `#4b5563` text — always visible
+- Bar has `box-shadow: 0 -6px 20px …` projecting upward to visually separate it from scrolling content below
+- `--bottom-nav-height` is `64px` (excl. safe area); this cascades to `.app` padding-bottom and `.sticky-bar` bottom offset automatically
 
 ## Deployment
 
