@@ -765,6 +765,10 @@
     box-shadow: var(--shadow-soft);
   }
 
+  .reserve-panel.is-hidden {
+    display: none;
+  }
+
   .panel-header {
     display: flex;
     flex-direction: column;
@@ -1121,6 +1125,25 @@
       gap: var(--space-2);
     }
 
+    .reserve-header {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+
+    .reserve-panel {
+      padding: var(--space-3);
+      box-shadow: none;
+      background: #ffffff;
+    }
+
+    .panel-title {
+      font-size: 17px;
+    }
+
+    .panel-subtitle {
+      font-size: 12px;
+    }
+
     .user-meta {
       max-width: 100%;
       white-space: normal;
@@ -1204,10 +1227,6 @@
     .slot-row .btn {
       width: 100%;
       justify-content: center;
-    }
-
-    .reserve-panel {
-      padding: var(--space-3);
     }
 
     .reservations {
