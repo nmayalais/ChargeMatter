@@ -990,7 +990,7 @@
     list.innerHTML = '';
     if (!reservations.length) {
       if (panel) {
-        panel.classList.add('is-hidden');
+        panel.classList.remove('is-hidden');
       }
       const empty = document.createElement('div');
       empty.className = 'empty-state';
