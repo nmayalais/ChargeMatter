@@ -11,6 +11,19 @@ EV Charging is a lightweight internal web app for managing EV charger usage and 
 - **Now** (default): operational view for starting a session immediately.
 - **Reserve**: shows next available slots and the user’s reservations (listed above available slots for faster access).
 
+## UI versioning (feature flags)
+The web app can serve multiple UI versions from the same Apps Script project.
+
+Routing order (first match wins):
+1. URL override: `?v=2` loads v2.
+2. Allowlist: `ui_v2_allowlist` contains the user email.
+3. Global default: `ui_version` is `v2`.
+4. Fallback: v1.
+
+Config keys (set in the `config` sheet):
+- `ui_version`: `v1` or `v2`.
+- `ui_v2_allowlist`: comma-separated emails.
+
 Mobile (90%+ of users) uses a bottom tab bar and a sticky action bar for primary actions. Additional mobile features:
 - **My Status Banner**: always-visible strip above the board showing the user’s active session (with "I’ve moved my car"), check-in-eligible reservation (with "Check in"), or upcoming reservation.
 - **Compact header**: single-line title + refresh icon; subtitle/helper text hidden to save vertical space.

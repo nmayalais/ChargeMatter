@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <?!= include('styles_v2'); ?>
+  </head>
+  <body>
+    <div class="app">
+      <header class="header">
+        <div class="title-group">
+          <div class="title"><?= appName ?></div>
+          <div class="helper-text">Tap a charger card to view details and actions.</div>
+        </div>
+        <nav class="mode-tabs" id="mode-tabs">
+          <button class="mode-tab active" data-mode="now">Now</button>
+          <button class="mode-tab" data-mode="reserve">Reserve</button>
+        </nav>
+        <div class="header-actions">
+          <button class="btn ghost" id="refresh-btn" aria-label="Refresh">↻ Refresh</button>
+        </div>
+      </header>
+
+      <section class="suspension-banner" id="suspension-banner" aria-live="polite"></section>
+
+      <div id="my-status-banner" class="my-status-banner is-hidden" aria-live="polite">
+        <div class="my-status-banner__eyebrow"></div>
+        <div class="my-status-banner__detail"></div>
+        <div class="my-status-banner__sub"></div>
+        <div class="my-status-banner__countdown" data-session-end=""></div>
+      </div>
+
+      <? if (slackChannelUrl) { ?>
+        <div class="channel-actions" id="channel-actions">
+          <a class="btn ghost" href="<?= slackChannelUrl ?>" target="_blank" rel="noopener">
+            Open <?= slackChannelLabel || 'the Slack channel' ?> in Slack
+          </a>
+        </div>
+      <? } ?>
+
+      <section class="notice" id="notice" aria-live="polite"></section>
+      <div class="notice-help" id="notice-help"></div>
+      <section class="notice notice--info" id="checkout-reminder" aria-live="polite"></section>
+
+      <section class="mode mode-now active" id="mode-now">
+        <div class="summary-caption" id="summary-caption">
+          Status totals across all chargers. Overdue means a session passed its max time.
+        </div>
+        <div class="summary" id="summary"></div>
+        <div class="mode-helper">
+          Select a charger to take action. Look for the action button near your selection.
+        </div>
+        <main class="board" id="board"></main>
+      </section>
+
+      <section class="mode mode-reserve" id="mode-reserve">
+        <div class="section-header">
+          <div>
+            <div class="section-title">Next available slots</div>
+            <div class="section-subtitle">Book the soonest open charger.</div>
+          </div>
+          <div class="section-meta" id="reservation-limits"></div>
+        </div>
+        <div class="section-hint">
+          Select a slot below to reserve it. Look for the action button near your selection.
+        </div>
+        <div class="section-hint">
+          One car per person at a time (one reservation per day).
+        </div>
+        <div class="edit-banner" id="edit-banner"></div>
+
+        <div class="reservations">
+          <div class="section-header">
+            <div>
+              <div class="section-title">My reservations</div>
+              <div class="section-subtitle">Edit or cancel upcoming slots.</div>
+            </div>
+          </div>
+          <div class="section-hint">Tip: Change picks a new time. Cancel frees the slot.</div>
+          <div class="reservation-list">
+            <div id="reservations-list"></div>
+          </div>
+        </div>
+
+        <div id="slots-list"></div>
+      </section>
+
+      <footer class="footer">
+        <div>Last updated: <span id="last-updated">--</span></div>
+        <div class="user-meta" id="user-meta"></div>
+        <div class="legend">
+          <span class="legend-item status-free" title="Available now">Free</span>
+          <span class="legend-item status-in_use" title="Currently charging">In use</span>
+          <span class="legend-item status-reserved" title="Reserved for a future time">Reserved</span>
+          <span class="legend-item status-overdue" title="Past the max session time">Overdue</span>
+        </div>
+        <? if (slackChannelUrl) { ?>
+          <div class="footer-links">
+            <a class="footer-link" href="<?= slackChannelUrl ?>" target="_blank" rel="noopener">
+              Open <?= slackChannelLabel || 'the Slack channel' ?> in Slack
+            </a>
+          </div>
+        <? } ?>
+      </footer>
+    </div>
+
+    <div class="confirm-backdrop" id="confirm-backdrop" aria-hidden="true">
+      <div class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="confirm-title" aria-describedby="confirm-message">
+        <div class="confirm-header">
+          <div class="confirm-title" id="confirm-title">Confirm action</div>
+        </div>
+        <div class="confirm-body">
+          <p class="confirm-message" id="confirm-message"></p>
+          <p class="confirm-detail" id="confirm-detail"></p>
+        </div>
+        <div class="confirm-actions">
+          <button class="btn ghost" id="confirm-cancel" type="button">Cancel</button>
+          <button class="btn warn" id="confirm-ok" type="button">Confirm</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="sticky-bar" id="sticky-bar" aria-live="polite">
+      <div class="sticky-info" id="sticky-info">Select a charger or slot</div>
+      <div class="sticky-hint" id="sticky-hint">Select a charger or slot to begin.</div>
+      <button class="btn" id="sticky-action" disabled>Action</button>
+    </div>
+
+    <nav class="mobile-tabs" id="mobile-tabs">
+      <button class="mobile-tab active" data-mode="now">Now</button>
+      <button class="mobile-tab" data-mode="reserve">Reserve</button>
+    </nav>
+
+    <script>
+      window.APP_CONFIG = {
+        userEmail: <?= JSON.stringify(userEmail) ?>,
+        userName: <?= JSON.stringify(userName) ?>,
+        isAdmin: <?= JSON.stringify(isAdmin) ?>,
+        appName: <?= JSON.stringify(appName) ?>,
+        slackChannelName: <?= JSON.stringify(slackChannelName) ?>,
+        slackChannelUrl: <?= JSON.stringify(slackChannelUrl) ?>,
+        slackChannelLabel: <?= JSON.stringify(slackChannelLabel) ?>
+      };
+    </script>
+    <?!= include('script_v2'); ?>
+  </body>
+</html>

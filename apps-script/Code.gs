@@ -106,7 +106,7 @@ function include(filename) {
   return HtmlService.createHtmlOutputFromFile(filename).getContent();
 }
 
-function doGet() {
+function doGet(e) {
   initSheets_();
   var auth = requireAuthorizedUser_();
   var config = getConfig_();
@@ -114,7 +114,9 @@ function doGet() {
   var slackChannelName = String(config.slack_channel_name || '');
   var slackChannelUrl = String(config.slack_channel_url || '');
   var slackChannelLabel = formatSlackChannelLabel_(slackChannelName);
-  var template = HtmlService.createTemplateFromFile('index');
+  var uiVersion = selectUiVersion_(auth, config, e);
+  var templateName = uiVersion === 'v2' ? 'index_v2' : 'index';
+  var template = HtmlService.createTemplateFromFile(templateName);
   template.userEmail = auth.email;
   template.userName = auth.name;
   template.isAdmin = auth.isAdmin;
@@ -1234,6 +1236,8 @@ function getConfig_() {
   config.slack_webhook_channel = config.slack_webhook_channel || props.getProperty('SLACK_WEBHOOK_CHANNEL') || '';
   config.slack_bot_token = config.slack_bot_token || props.getProperty('SLACK_BOT_TOKEN') || '';
   config.admin_emails = config.admin_emails || props.getProperty('ADMIN_EMAILS') || '';
+  config.ui_version = config.ui_version || props.getProperty('UI_VERSION') || 'v1';
+  config.ui_v2_allowlist = config.ui_v2_allowlist || props.getProperty('UI_V2_ALLOWLIST') || '';
   config.overdue_repeat_minutes = config.overdue_repeat_minutes || props.getProperty('OVERDUE_REPEAT_MINUTES') || APP_DEFAULTS.overdueRepeatMinutes;
   config.session_move_grace_minutes =
     config.session_move_grace_minutes ||
@@ -1339,6 +1343,35 @@ function getAdminEmails_(config) {
       return item;
     });
   return list;
+}
+
+function getUiV2Allowlist_(config) {
+  var list = String(config.ui_v2_allowlist || '')
+    .split(',')
+    .map(function(item) {
+      return item.trim().toLowerCase();
+    })
+    .filter(function(item) {
+      return item;
+    });
+  return list;
+}
+
+function selectUiVersion_(auth, config, e) {
+  var params = (e && e.parameter) || {};
+  var requested = String(params.v || '').trim().toLowerCase();
+  if (requested === '2' || requested === 'v2') {
+    return 'v2';
+  }
+  var allowlist = getUiV2Allowlist_(config);
+  if (allowlist.indexOf(String(auth.email || '').toLowerCase()) !== -1) {
+    return 'v2';
+  }
+  var configured = String(config.ui_version || '').trim().toLowerCase();
+  if (configured === '2' || configured === 'v2') {
+    return 'v2';
+  }
+  return 'v1';
 }
 
 function nameFromEmail_(email) {
