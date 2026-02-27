@@ -504,22 +504,30 @@
     card.dataset.chargerId = charger.id;
 
     const header = document.createElement('div');
-    header.className = 'card-header';
+    header.className = 'card-top';
 
-    const title = document.createElement('div');
-    title.className = 'card-title';
-    title.textContent = charger.name;
-
-    const headerRight = document.createElement('div');
-    headerRight.className = 'card-header-right';
+    const titleGroup = document.createElement('div');
+    titleGroup.className = 'card-title-group';
 
     const status = document.createElement('div');
     status.className = 'status-pill';
     status.textContent = charger.status;
     status.title = getStatusHint(charger.statusKey);
 
-    header.appendChild(title);
-    headerRight.appendChild(status);
+    const title = document.createElement('div');
+    title.className = 'card-title';
+    title.textContent = charger.name;
+
+    titleGroup.appendChild(status);
+    titleGroup.appendChild(title);
+
+    const headerRight = document.createElement('div');
+    headerRight.className = 'card-header-right';
+
+    const duration = document.createElement('div');
+    duration.className = 'card-duration';
+    duration.textContent = `Max ${formatDuration(charger.maxMinutes)}`;
+    headerRight.appendChild(duration);
 
     if (isAdminUser) {
       const menu = document.createElement('div');
@@ -605,60 +613,77 @@
       headerRight.appendChild(menu);
     }
 
+    header.appendChild(titleGroup);
     header.appendChild(headerRight);
 
-    const body = document.createElement('div');
-    body.className = 'card-body';
+    const availability = document.createElement('div');
+    availability.className = 'card-availability';
+
+    const availabilityPrimary = document.createElement('div');
+    availabilityPrimary.className = 'availability-primary';
+    availabilityPrimary.textContent = getAvailabilityPrimary(charger);
+    availability.appendChild(availabilityPrimary);
+
+    const availabilitySecondary = document.createElement('div');
+    availabilitySecondary.className = 'availability-secondary';
+    const secondaryText = getAvailabilitySecondary(charger);
+    if (secondaryText) {
+      availabilitySecondary.textContent = secondaryText;
+    } else {
+      availabilitySecondary.classList.add('is-hidden');
+    }
+    availability.appendChild(availabilitySecondary);
+
+    const availabilityCountdown = document.createElement('div');
+    availabilityCountdown.className = 'availability-countdown';
+    if (charger.walkup && charger.walkup.isOpen) {
+      const label = document.createElement('span');
+      label.className = 'availability-countdown-label';
+      label.textContent = 'Time left';
+      const value = document.createElement('span');
+      value.className = 'availability-countdown-value walkup-remaining';
+      value.dataset.endTime = charger.walkup.endTime;
+      value.textContent = '--';
+      availabilityCountdown.appendChild(label);
+      availabilityCountdown.appendChild(value);
+    } else {
+      availabilityCountdown.classList.add('is-hidden');
+    }
+    availability.appendChild(availabilityCountdown);
+
+    const details = document.createElement('div');
+    details.className = 'card-details';
 
     if (charger.session) {
-      body.appendChild(
-        createInfoRow('Max time', formatDuration(charger.maxMinutes), {
-          secondary: true,
-          hint: 'Max time before a session is marked overdue.'
-        })
-      );
-      body.appendChild(createInfoRow('In use by', formatUserLabel(charger.session.userName, charger.session.userEmail)));
-      body.appendChild(createInfoRow('Ends at', formatTime(charger.session.endTime)));
+      details.appendChild(createInfoRow('In use by', formatUserLabel(charger.session.userName, charger.session.userEmail)));
+      details.appendChild(createInfoRow('Ends at', formatTime(charger.session.endTime)));
       const countdown = createInfoRow('Countdown', '--', { hint: 'Time remaining in the current session.' });
       countdown.querySelector('.value').classList.add('countdown');
       countdown.querySelector('.value').dataset.endTime = charger.session.endTime;
-      body.appendChild(countdown);
+      details.appendChild(countdown);
       if (charger.nextReservation) {
-        body.appendChild(
+        details.appendChild(
           createInfoRow('Next reservation', formatReservationSummary(charger.nextReservation), {
             secondary: true
           })
         );
       }
     } else if (charger.reservation) {
-      body.appendChild(
-        createInfoRow('Max time', formatDuration(charger.maxMinutes), {
-          secondary: true,
-          hint: 'Max time before a session is marked overdue.'
-        })
-      );
-      body.appendChild(
+      details.appendChild(
         createInfoRow('Reserved for', formatUserLabel(charger.reservation.userName, charger.reservation.userEmail))
       );
-      body.appendChild(createInfoRow('Reserved at', formatTime(charger.reservation.startTime)));
+      details.appendChild(createInfoRow('Reserved at', formatTime(charger.reservation.startTime)));
       if (charger.nextReservation) {
-        body.appendChild(
+        details.appendChild(
           createInfoRow('Next reservation', formatReservationSummary(charger.nextReservation), {
             secondary: true
           })
         );
       }
     } else {
-      body.appendChild(
-        createInfoRow('Max time', formatDuration(charger.maxMinutes), {
-          secondary: true,
-          hint: 'Max time before a session is marked overdue.'
-        })
-      );
-      body.appendChild(createInfoRow('Status', 'Available now', { hint: 'Current availability.' }));
       if (charger.walkup) {
         if (charger.walkup.isOpen) {
-          body.appendChild(
+          details.appendChild(
             createInfoRow('Walk-up ends at', formatTime(charger.walkup.endTime), {
               hint: 'Walk-up sessions end at the slot boundary.'
             })
@@ -669,12 +694,12 @@
           const value = remaining.querySelector('.value');
           value.classList.add('walkup-remaining');
           value.dataset.endTime = charger.walkup.endTime;
-          body.appendChild(remaining);
+          details.appendChild(remaining);
           if (!charger.walkup.isOpenToAll) {
             if (!charger.walkup.isOpenToReturning) {
               // Tier 1: net-new users only (no charges or reservations today).
               const isNetNew = state.board?.user?.isNetNew === true;
-              body.appendChild(
+              details.appendChild(
                 createInfoRow('Priority', isNetNew
                   ? "You're eligible · Ends at " + formatTime(charger.walkup.allUsersOpenAt)
                   : 'First-time drivers only · Opens wider at ' + formatTime(charger.walkup.allUsersOpenAt), {
@@ -686,7 +711,7 @@
               // Both groups are eligible — only truly "other" users are gated.
               const isNetNew = state.board?.user?.isNetNew === true;
               const isReturning = state.board?.user?.isReturning === true;
-              body.appendChild(
+              details.appendChild(
                 createInfoRow('Priority', (isNetNew || isReturning)
                   ? "You're eligible · Ends at " + formatTime(charger.walkup.returningUsersOpenAt)
                   : 'Returning drivers priority · Opens to all at ' + formatTime(charger.walkup.returningUsersOpenAt), {
@@ -704,7 +729,7 @@
         }
       }
       if (charger.nextReservation) {
-        body.appendChild(
+        details.appendChild(
           createInfoRow('Next reservation', formatReservationSummary(charger.nextReservation), {
             secondary: true
           })
@@ -778,8 +803,9 @@
     }
 
     card.appendChild(header);
-    card.appendChild(body);
+    card.appendChild(availability);
     card.appendChild(actions);
+    card.appendChild(details);
     const hint = document.createElement('div');
     hint.className = 'card-hint';
     if (primary) {
@@ -795,6 +821,35 @@
       selectCharger(charger);
     });
     return card;
+  }
+
+  function getAvailabilityPrimary(charger) {
+    if (charger.session) {
+      if (charger.statusKey === 'overdue') {
+        return `Overdue · ended at ${formatTime(charger.session.endTime)}`;
+      }
+      return `In use · ends at ${formatTime(charger.session.endTime)}`;
+    }
+    if (charger.reservation) {
+      const isOwner = sameUserEmail(charger.reservation.userEmail, getCurrentUserEmail());
+      return isOwner
+        ? `Reserved for you · starts at ${formatTime(charger.reservation.startTime)}`
+        : `Reserved · starts at ${formatTime(charger.reservation.startTime)}`;
+    }
+    if (charger.walkup && !charger.walkup.isOpen) {
+      return `Walk-up opens at ${formatTime(charger.walkup.openAt)}`;
+    }
+    return 'Available now';
+  }
+
+  function getAvailabilitySecondary(charger) {
+    if (charger.walkup && charger.walkup.isOpen) {
+      return `Walk-up ends at ${formatTime(charger.walkup.endTime)}`;
+    }
+    if (charger.nextReservation) {
+      return `Next reservation ${formatReservationSummary(charger.nextReservation)}`;
+    }
+    return '';
   }
 
   function isAdmin() {
