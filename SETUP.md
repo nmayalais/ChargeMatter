@@ -36,6 +36,8 @@ Recommended keys:
 - `slack_channel_name`: `ev-charging`
 - `slack_channel_url`: `https://your-workspace.slack.com/archives/CHANNEL_ID`
 - `admin_emails`: `you@example.com,ops@example.com`
+- `ui_version`: `v1` or `v2`
+- `ui_v2_allowlist`: comma-separated emails for v2 access
 - `overdue_repeat_minutes`: `15`
 - `session_move_grace_minutes`: `10`
 - `slack_webhook_url`: webhook URL for a channel (optional)
@@ -60,6 +62,8 @@ Script Properties equivalents:
 - `SLACK_CHANNEL_NAME`
 - `SLACK_CHANNEL_URL`
 - `ADMIN_EMAILS`
+- `UI_VERSION`
+- `UI_V2_ALLOWLIST`
 - `OVERDUE_REPEAT_MINUTES`
 - `SESSION_MOVE_GRACE_MINUTES`
 - `SLACK_WEBHOOK_URL`
@@ -117,6 +121,12 @@ Option B (manual):
 The app has two modes:
 - **Now** (default): shows charger cards and a single primary action per charger.
 - **Reserve**: shows next available slots across chargers, plus My reservations.
+
+UI versioning (feature flags):
+1. URL override: `?v=2` loads v2.
+2. Allowlist: `ui_v2_allowlist` contains the user email.
+3. Global default: `ui_version` is `v2`.
+4. Fallback: v1.
 
 On mobile, the mode switch appears as a bottom tab bar and a sticky action bar for the primary action.
 

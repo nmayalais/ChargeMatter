@@ -1,0 +1,1813 @@
+<script>
+  const state = {
+    board: null,
+    reservations: [],
+    serverTime: null,
+    lastFetch: null,
+    editingReservationId: null,
+    mode: 'now',
+    selectedCharger: null,
+    selectedSlot: null,
+    highlightReservationId: null,
+    isLoading: false,
+    loadingButton: null,
+    countdownIntervalId: null,
+    slotsLoading: false,
+    slotsCache: null,
+    slotsLastFetch: null,
+    slotsOffset: 0,
+    slotsAllLoaded: false,
+    _noticeDismissTimer: null,
+    hiddenAt: null
+  };
+
+  const confirmState = {
+    isOpen: false,
+    resolve: null,
+    lastActive: null,
+    elements: null
+  };
+
+  const SLOTS_CACHE_TTL_MS = 30000;
+
+  const MOBILE_QUERY = '(max-width: 600px)';
+  const mobileQueryList = window.matchMedia(MOBILE_QUERY);
+
+  function updateDeviceClass() {
+    document.body.classList.toggle('is-mobile', mobileQueryList.matches);
+  }
+
+  function init() {
+    const refreshBtn = document.getElementById('refresh-btn');
+    refreshBtn.addEventListener('click', () => {
+      if (state.isLoading) {
+        return;
+      }
+      setActionFeedback(refreshBtn, 'Refreshing...');
+      loadBoard();
+    });
+    updateDeviceClass();
+    if (typeof mobileQueryList.addEventListener === 'function') {
+      mobileQueryList.addEventListener('change', updateDeviceClass);
+    } else {
+      mobileQueryList.addListener(updateDeviceClass);
+    }
+    setUserMeta();
+    loadBoard();
+    startCountdowns();
+    setupModeTabs();
+    setupGlobalHandlers();
+    setupConfirmDialog();
+    setMode('now');
+  }
+
+  function setupConfirmDialog() {
+    confirmState.elements = getConfirmElements();
+    if (!confirmState.elements) {
+      return;
+    }
+    const { backdrop, cancelBtn, confirmBtn, dialog } = confirmState.elements;
+    backdrop.addEventListener('click', (event) => {
+      if (event.target === backdrop) {
+        closeConfirm(false);
+      }
+    });
+    cancelBtn.addEventListener('click', () => closeConfirm(false));
+    confirmBtn.addEventListener('click', () => closeConfirm(true));
+    dialog.addEventListener('click', (event) => event.stopPropagation());
+  }
+
+  function ensureConfirmDialog() {
+    if (document.getElementById('confirm-backdrop')) {
+      return;
+    }
+    const backdrop = document.createElement('div');
+    backdrop.className = 'confirm-backdrop';
+    backdrop.id = 'confirm-backdrop';
+    backdrop.setAttribute('aria-hidden', 'true');
+    const dialog = document.createElement('div');
+    dialog.className = 'confirm-dialog';
+    dialog.setAttribute('role', 'dialog');
+    dialog.setAttribute('aria-modal', 'true');
+    dialog.setAttribute('aria-labelledby', 'confirm-title');
+    dialog.setAttribute('aria-describedby', 'confirm-message');
+
+    const header = document.createElement('div');
+    header.className = 'confirm-header';
+    const title = document.createElement('div');
+    title.className = 'confirm-title';
+    title.id = 'confirm-title';
+    title.textContent = 'Confirm action';
+    header.appendChild(title);
+
+    const body = document.createElement('div');
+    body.className = 'confirm-body';
+    const message = document.createElement('p');
+    message.className = 'confirm-message';
+    message.id = 'confirm-message';
+    const detail = document.createElement('p');
+    detail.className = 'confirm-detail';
+    detail.id = 'confirm-detail';
+    body.appendChild(message);
+    body.appendChild(detail);
+
+    const actions = document.createElement('div');
+    actions.className = 'confirm-actions';
+    const cancelBtn = document.createElement('button');
+    cancelBtn.className = 'btn ghost';
+    cancelBtn.id = 'confirm-cancel';
+    cancelBtn.type = 'button';
+    cancelBtn.textContent = 'Cancel';
+    const confirmBtn = document.createElement('button');
+    confirmBtn.className = 'btn warn';
+    confirmBtn.id = 'confirm-ok';
+    confirmBtn.type = 'button';
+    confirmBtn.textContent = 'Confirm';
+    actions.appendChild(cancelBtn);
+    actions.appendChild(confirmBtn);
+
+    dialog.appendChild(header);
+    dialog.appendChild(body);
+    dialog.appendChild(actions);
+    backdrop.appendChild(dialog);
+    document.body.appendChild(backdrop);
+  }
+
+  function getConfirmElements() {
+    ensureConfirmDialog();
+    const backdrop = document.getElementById('confirm-backdrop');
+    const dialog = backdrop?.querySelector('.confirm-dialog');
+    const title = document.getElementById('confirm-title');
+    const message = document.getElementById('confirm-message');
+    const detail = document.getElementById('confirm-detail');
+    const cancelBtn = document.getElementById('confirm-cancel');
+    const confirmBtn = document.getElementById('confirm-ok');
+    if (!backdrop || !dialog || !title || !message || !detail || !cancelBtn || !confirmBtn) {
+      return null;
+    }
+    return { backdrop, dialog, title, message, detail, cancelBtn, confirmBtn };
+  }
+
+  function openConfirm(options = {}) {
+    if (!confirmState.elements) {
+      confirmState.elements = getConfirmElements();
+    }
+    if (!confirmState.elements) {
+      const fallback = options.message || options.title || 'Are you sure?';
+      return Promise.resolve(window.confirm(fallback));
+    }
+    if (confirmState.isOpen) {
+      closeConfirm(false);
+    }
+    const { backdrop, title, message, detail, cancelBtn, confirmBtn } = confirmState.elements;
+    title.textContent = options.title || 'Confirm action';
+    message.textContent = options.message || '';
+    detail.textContent = options.detail || '';
+    detail.style.display = options.detail ? 'block' : 'none';
+    cancelBtn.textContent = options.cancelLabel || 'Cancel';
+    confirmBtn.textContent = options.confirmLabel || 'Confirm';
+    confirmBtn.classList.remove('warn', 'secondary', 'ghost');
+    confirmBtn.classList.add(options.confirmClass || 'warn');
+    cancelBtn.classList.remove('warn', 'secondary');
+    cancelBtn.classList.add('ghost');
+
+    confirmState.lastActive = document.activeElement;
+    confirmState.isOpen = true;
+    confirmState.resolve = null;
+    backdrop.classList.add('active');
+    backdrop.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('confirm-open');
+
+    setTimeout(() => confirmBtn.focus(), 0);
+    return new Promise((resolve) => {
+      confirmState.resolve = resolve;
+    });
+  }
+
+  function closeConfirm(confirmed) {
+    if (!confirmState.isOpen || !confirmState.elements) {
+      return;
+    }
+    const { backdrop } = confirmState.elements;
+    backdrop.classList.remove('active');
+    backdrop.setAttribute('aria-hidden', 'true');
+    document.body.classList.remove('confirm-open');
+    confirmState.isOpen = false;
+    const resolve = confirmState.resolve;
+    confirmState.resolve = null;
+    if (resolve) {
+      resolve(Boolean(confirmed));
+    }
+    if (confirmState.lastActive && typeof confirmState.lastActive.focus === 'function') {
+      confirmState.lastActive.focus();
+    }
+    confirmState.lastActive = null;
+  }
+
+  function setUserMeta() {
+    const meta = document.getElementById('user-meta');
+    meta.textContent = `${APP_CONFIG.userName} (${APP_CONFIG.userEmail})`;
+  }
+
+  function setNotice(message, type) {
+    const notice = document.getElementById('notice');
+    const noticeHelp = document.getElementById('notice-help');
+    const variants = ['notice--error', 'notice--success', 'notice--info'];
+    variants.forEach((variant) => notice.classList.remove(variant));
+    if (state._noticeDismissTimer) {
+      clearTimeout(state._noticeDismissTimer);
+      state._noticeDismissTimer = null;
+    }
+    if (!message) {
+      notice.textContent = '';
+      if (noticeHelp) {
+        noticeHelp.textContent = '';
+      }
+      return;
+    }
+    const variant = type || 'error';
+    notice.textContent = message;
+    notice.classList.add(`notice--${variant}`);
+    if (noticeHelp) {
+      if (variant === 'error' && /admin access required/i.test(message)) {
+        noticeHelp.textContent = 'Need access? Contact Facilities or IT to be added as an admin.';
+      } else {
+        noticeHelp.textContent = '';
+      }
+    }
+    if (variant === 'success' || variant === 'info') {
+      state._noticeDismissTimer = setTimeout(() => setNotice(''), 4000);
+    }
+  }
+
+  function setLoading(isLoading) {
+    state.isLoading = isLoading;
+    const refreshBtn = document.getElementById('refresh-btn');
+    if (refreshBtn) {
+      refreshBtn.disabled = isLoading;
+    }
+    document.body.classList.toggle('is-loading', isLoading);
+    toggleActionButtons(isLoading);
+    if (!isLoading) {
+      clearActionFeedback();
+    }
+  }
+
+  function toggleActionButtons(disabled) {
+    document.querySelectorAll('button').forEach((button) => {
+      if (button.id === 'refresh-btn') {
+        return;
+      }
+      if (disabled) {
+        if (!button.dataset.prevDisabled) {
+          button.dataset.prevDisabled = button.disabled ? 'true' : 'false';
+        }
+        button.disabled = true;
+      } else if (button.dataset.prevDisabled) {
+        button.disabled = button.dataset.prevDisabled === 'true';
+        delete button.dataset.prevDisabled;
+      }
+    });
+  }
+
+  function setActionFeedback(button, label) {
+    if (!button) {
+      return;
+    }
+    if (state.loadingButton && state.loadingButton !== button) {
+      clearActionFeedback();
+    }
+    state.loadingButton = button;
+    if (!button.dataset.originalText) {
+      button.dataset.originalText = button.textContent;
+    }
+    button.textContent = label || 'Working...';
+    button.classList.add('btn-loading');
+    button.setAttribute('aria-busy', 'true');
+  }
+
+  function clearActionFeedback() {
+    const button = state.loadingButton;
+    if (!button) {
+      return;
+    }
+    if (button.dataset.originalText) {
+      button.textContent = button.dataset.originalText;
+      delete button.dataset.originalText;
+    }
+    button.classList.remove('btn-loading');
+    button.removeAttribute('aria-busy');
+    state.loadingButton = null;
+  }
+
+  function loadBoard() {
+    if (state.isLoading) {
+      return;
+    }
+    setNotice('');
+    if (state.board === null) {
+      document.getElementById('board').innerHTML =
+        '<div class="skeleton-card"></div>'.repeat(4);
+    }
+    setLoading(true);
+    google.script.run
+      .withSuccessHandler((data) => {
+        setLoading(false);
+        renderBoard(data);
+      })
+      .withFailureHandler((err) => {
+        setLoading(false);
+        setNotice(err.message || String(err), 'error');
+      })
+      .getBoardData();
+  }
+
+  function renderBoard(data, options = {}) {
+    state.board = data;
+    state.reservations = data.reservations || [];
+    state.serverTime = new Date(data.serverTime);
+    state.lastFetch = Date.now();
+    const board = document.getElementById('board');
+    board.innerHTML = '';
+    renderSuspensionBanner(data.user);
+    renderMyStatusBanner();
+    renderSummary(data);
+
+    if (!data.chargers.length) {
+      const empty = document.createElement('div');
+      empty.textContent = 'No chargers configured yet.';
+      board.appendChild(empty);
+      return;
+    }
+
+    const fragment = document.createDocumentFragment();
+    data.chargers.forEach((charger) => {
+      fragment.appendChild(createCard(charger));
+    });
+    board.appendChild(fragment);
+
+    if (state.mode === 'reserve') {
+      updateReservationUI(data);
+      refreshSlotsIfNeeded({ force: Boolean(options.refreshSlots) });
+    }
+    updateStickyBar();
+    updateSelectionUI();
+    updateCountdowns();
+    updateCheckoutReminder();
+  }
+
+  function renderSuspensionBanner(user) {
+    const banner = document.getElementById('suspension-banner');
+    if (!banner) {
+      return;
+    }
+    if (!user?.suspension) {
+      banner.classList.remove('active');
+      banner.innerHTML = '';
+      return;
+    }
+    const endAt = user.suspension.endAt ? new Date(user.suspension.endAt) : null;
+    let endLabel = 'soon';
+    if (endAt && !Number.isNaN(endAt.getTime())) {
+      endLabel = endAt.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }) +
+        ' at ' + endAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    }
+    banner.innerHTML =
+      '<strong>Charging privileges suspended</strong>' +
+      'You cannot start sessions or make reservations until ' + endLabel + '. ' +
+      'Please contact Facilities if you have questions.';
+    banner.classList.add('active');
+  }
+
+  function renderMyStatusBanner() {
+    const banner = document.getElementById('my-status-banner');
+    if (!banner) {
+      return;
+    }
+    const eyebrow = banner.querySelector('.my-status-banner__eyebrow');
+    const detail = banner.querySelector('.my-status-banner__detail');
+    const sub = banner.querySelector('.my-status-banner__sub');
+    const countdown = banner.querySelector('.my-status-banner__countdown');
+    // Remove any previously rendered action button
+    const existing = banner.querySelector('.btn');
+    if (existing) {
+      existing.remove();
+    }
+    if (countdown) {
+      countdown.dataset.sessionEnd = '';
+      countdown.textContent = '';
+    }
+
+    // 1. Active session?
+    const sessionEntry = getCurrentUserSession();
+    if (sessionEntry) {
+      const { charger, session } = sessionEntry;
+      eyebrow.textContent = 'Your session';
+      detail.textContent = charger.name + ' · ends at ' + formatTime(session.endTime);
+      sub.textContent = '';
+      if (countdown) {
+        countdown.dataset.sessionEnd = session.endTime;
+      }
+      const endBtn = createButton("I've moved my car", 'btn', () => {
+        setActionFeedback(endBtn, 'Ending...');
+        callServer('endSession', [session.sessionId], {
+          successMessage: 'Session ended. Thanks for checking out.',
+          successType: 'success'
+        });
+      }, { showLoading: true, loadingLabel: 'Ending...' });
+      banner.appendChild(endBtn);
+      banner.classList.remove('is-hidden');
+      return;
+    }
+
+    // 2. Upcoming reservation not yet checked in?
+    const reservations = state.reservations || [];
+    const userReservation = reservations.find(
+      (r) => !r.checkedInAt && r.status !== 'no_show' && r.status !== 'canceled'
+    );
+    if (userReservation) {
+      const charger = state.board?.chargers?.find((c) => String(c.id) === String(userReservation.chargerId));
+      const chargerName = charger ? charger.name : `Charger ${userReservation.chargerId}`;
+      if (shouldShowCheckIn(userReservation)) {
+        eyebrow.textContent = 'Your reservation';
+        detail.textContent = chargerName + ' · starts at ' + formatTime(userReservation.startTime);
+        sub.textContent = '';
+        const checkInBtn = createButton('Check in', 'btn', () => {
+          setActionFeedback(checkInBtn, 'Checking in...');
+          callServer('checkInReservation', [userReservation.reservationId]);
+        }, { showLoading: true, loadingLabel: 'Checking in...' });
+        banner.appendChild(checkInBtn);
+        banner.classList.remove('is-hidden');
+        return;
+      }
+      // Not yet in check-in window
+      eyebrow.textContent = 'Upcoming reservation';
+      detail.textContent = chargerName + ' · starts at ' + formatTime(userReservation.startTime);
+      sub.textContent = '';
+      banner.classList.remove('is-hidden');
+      return;
+    }
+
+    // 3. Nothing active — hide banner
+    banner.classList.add('is-hidden');
+  }
+
+  function renderSummary(data) {
+    const summary = document.getElementById('summary');
+    const summaryCaption = document.getElementById('summary-caption');
+    if (!summary) {
+      return;
+    }
+    if (!data?.chargers?.length) {
+      summary.classList.add('is-hidden');
+      summary.innerHTML = '';
+      if (summaryCaption) {
+        summaryCaption.classList.add('is-hidden');
+      }
+      return;
+    }
+    summary.classList.remove('is-hidden');
+    if (summaryCaption) {
+      summaryCaption.classList.remove('is-hidden');
+    }
+    const counts = data.chargers.reduce(
+      (acc, charger) => {
+        acc[charger.statusKey] = (acc[charger.statusKey] || 0) + 1;
+        return acc;
+      },
+      { free: 0, in_use: 0, reserved: 0, overdue: 0 }
+    );
+    summary.innerHTML = '';
+    [
+      { key: 'free', label: 'Open' },
+      { key: 'in_use', label: 'In use' },
+      { key: 'reserved', label: 'Reserved' },
+      { key: 'overdue', label: 'Overdue' }
+    ].forEach((item) => {
+      const chip = document.createElement('div');
+      chip.className = `summary-item status-${item.key}`;
+      chip.title = getStatusHint(item.key);
+      const count = document.createElement('strong');
+      count.textContent = counts[item.key] || 0;
+      const label = document.createElement('span');
+      label.textContent = item.label;
+      chip.appendChild(count);
+      chip.appendChild(label);
+      summary.appendChild(chip);
+    });
+  }
+
+  function createCard(charger) {
+    const isAdminUser = isAdmin();
+    const card = document.createElement('div');
+    card.className = `card status-${charger.statusKey}`;
+    card.dataset.chargerId = charger.id;
+
+    const header = document.createElement('div');
+    header.className = 'card-header';
+
+    const title = document.createElement('div');
+    title.className = 'card-title';
+    title.textContent = charger.name;
+
+    const headerRight = document.createElement('div');
+    headerRight.className = 'card-header-right';
+
+    const status = document.createElement('div');
+    status.className = 'status-pill';
+    status.textContent = charger.status;
+    status.title = getStatusHint(charger.statusKey);
+
+    header.appendChild(title);
+    headerRight.appendChild(status);
+
+    if (isAdminUser) {
+      const menu = document.createElement('div');
+      menu.className = 'menu';
+      const trigger = document.createElement('button');
+      trigger.className = 'menu-trigger';
+      trigger.type = 'button';
+      trigger.textContent = '⋯';
+      const menuId = makeSafeId(`menu-${charger.id}`);
+      const triggerId = makeSafeId(`menu-trigger-${charger.id}`);
+      trigger.id = triggerId;
+      trigger.setAttribute('aria-haspopup', 'menu');
+      trigger.setAttribute('aria-expanded', 'false');
+      trigger.setAttribute('aria-controls', menuId);
+      trigger.setAttribute('aria-label', 'Admin actions');
+      const list = document.createElement('div');
+      list.className = 'menu-list';
+      list.id = menuId;
+      list.dataset.triggerId = triggerId;
+      list.setAttribute('role', 'menu');
+      list.setAttribute('aria-hidden', 'true');
+      const forceBtn = document.createElement('button');
+      forceBtn.className = 'menu-item';
+      forceBtn.textContent = 'Force end';
+      forceBtn.setAttribute('role', 'menuitem');
+      forceBtn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        openConfirm({
+          title: 'Force end session?',
+          message: 'End the current charging session immediately?',
+          detail: 'This will check out the driver and free the charger for the next user.',
+          confirmLabel: 'Force end',
+          cancelLabel: 'Keep session',
+          confirmClass: 'warn'
+        }).then((confirmed) => {
+          if (confirmed) {
+            setActionFeedback(forceBtn, 'Ending...');
+            callServer('forceEnd', [charger.id]);
+          }
+          closeMenu(list);
+        });
+      });
+      const resetBtn = document.createElement('button');
+      resetBtn.className = 'menu-item';
+      resetBtn.textContent = 'Reset charger';
+      resetBtn.setAttribute('role', 'menuitem');
+      resetBtn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        openConfirm({
+          title: 'Reset this charger?',
+          message: 'Clear the charger status and any active session?',
+          detail: 'Use this only when the charger status is incorrect.',
+          confirmLabel: 'Reset charger',
+          cancelLabel: 'Keep status',
+          confirmClass: 'warn'
+        }).then((confirmed) => {
+          if (confirmed) {
+            setActionFeedback(resetBtn, 'Resetting...');
+            callServer('resetCharger', [charger.id]);
+          }
+          closeMenu(list);
+        });
+      });
+      list.appendChild(forceBtn);
+      list.appendChild(resetBtn);
+      trigger.addEventListener('click', (event) => {
+        event.stopPropagation();
+        if (list.classList.contains('active')) {
+          closeMenu(list);
+        } else {
+          openMenu(list);
+        }
+      });
+      trigger.addEventListener('keydown', (event) => {
+        if (event.key === 'ArrowDown') {
+          event.preventDefault();
+          openMenu(list);
+          forceBtn.focus();
+        }
+      });
+      menu.appendChild(trigger);
+      menu.appendChild(list);
+      headerRight.appendChild(menu);
+    }
+
+    header.appendChild(headerRight);
+
+    const body = document.createElement('div');
+    body.className = 'card-body';
+
+    if (charger.session) {
+      body.appendChild(
+        createInfoRow('Max time', formatDuration(charger.maxMinutes), {
+          secondary: true,
+          hint: 'Max time before a session is marked overdue.'
+        })
+      );
+      body.appendChild(createInfoRow('In use by', formatUserLabel(charger.session.userName, charger.session.userEmail)));
+      body.appendChild(createInfoRow('Ends at', formatTime(charger.session.endTime)));
+      const countdown = createInfoRow('Countdown', '--', { hint: 'Time remaining in the current session.' });
+      countdown.querySelector('.value').classList.add('countdown');
+      countdown.querySelector('.value').dataset.endTime = charger.session.endTime;
+      body.appendChild(countdown);
+      if (charger.nextReservation) {
+        body.appendChild(
+          createInfoRow('Next reservation', formatReservationSummary(charger.nextReservation), {
+            secondary: true
+          })
+        );
+      }
+    } else if (charger.reservation) {
+      body.appendChild(
+        createInfoRow('Max time', formatDuration(charger.maxMinutes), {
+          secondary: true,
+          hint: 'Max time before a session is marked overdue.'
+        })
+      );
+      body.appendChild(
+        createInfoRow('Reserved for', formatUserLabel(charger.reservation.userName, charger.reservation.userEmail))
+      );
+      body.appendChild(createInfoRow('Reserved at', formatTime(charger.reservation.startTime)));
+      if (charger.nextReservation) {
+        body.appendChild(
+          createInfoRow('Next reservation', formatReservationSummary(charger.nextReservation), {
+            secondary: true
+          })
+        );
+      }
+    } else {
+      body.appendChild(
+        createInfoRow('Max time', formatDuration(charger.maxMinutes), {
+          secondary: true,
+          hint: 'Max time before a session is marked overdue.'
+        })
+      );
+      body.appendChild(createInfoRow('Status', 'Available now', { hint: 'Current availability.' }));
+      if (charger.walkup) {
+        if (charger.walkup.isOpen) {
+          body.appendChild(
+            createInfoRow('Walk-up ends at', formatTime(charger.walkup.endTime), {
+              hint: 'Walk-up sessions end at the slot boundary.'
+            })
+          );
+          const remaining = createInfoRow('Time left', '--', {
+            hint: 'Estimated time remaining if you start now.'
+          });
+          const value = remaining.querySelector('.value');
+          value.classList.add('walkup-remaining');
+          value.dataset.endTime = charger.walkup.endTime;
+          body.appendChild(remaining);
+          if (!charger.walkup.isOpenToAll) {
+            if (!charger.walkup.isOpenToReturning) {
+              // Tier 1: net-new users only (no charges or reservations today).
+              const isNetNew = state.board?.user?.isNetNew === true;
+              body.appendChild(
+                createInfoRow('Priority', isNetNew
+                  ? "You're eligible · Ends at " + formatTime(charger.walkup.allUsersOpenAt)
+                  : 'First-time drivers only · Opens wider at ' + formatTime(charger.walkup.allUsersOpenAt), {
+                  hint: 'Priority access is reserved for first-time drivers today — someone who has not charged or made a reservation yet. Returning drivers get priority next; everyone else after that.'
+                })
+              );
+            } else {
+              // Tier 2: net-new OR returning users (charged or reserved today).
+              // Both groups are eligible — only truly "other" users are gated.
+              const isNetNew = state.board?.user?.isNetNew === true;
+              const isReturning = state.board?.user?.isReturning === true;
+              body.appendChild(
+                createInfoRow('Priority', (isNetNew || isReturning)
+                  ? "You're eligible · Ends at " + formatTime(charger.walkup.returningUsersOpenAt)
+                  : 'Returning drivers priority · Opens to all at ' + formatTime(charger.walkup.returningUsersOpenAt), {
+                  hint: 'Priority access is open to returning drivers (charged or reserved today) and first-time drivers. Opens to everyone at ' + formatTime(charger.walkup.returningUsersOpenAt) + '.'
+                })
+              );
+            }
+          }
+        } else {
+          body.appendChild(
+            createInfoRow('Walk-up opens at', formatTime(charger.walkup.openAt), {
+              hint: 'Walk-up charging opens after the reservation grace window.'
+            })
+          );
+        }
+      }
+      if (charger.nextReservation) {
+        body.appendChild(
+          createInfoRow('Next reservation', formatReservationSummary(charger.nextReservation), {
+            secondary: true
+          })
+        );
+      }
+    }
+
+    const actions = document.createElement('div');
+    actions.className = 'card-actions';
+
+    const primary = getPrimaryAction(charger);
+    if (primary) {
+      const primaryBtn = createButton(
+        primary.label,
+        'btn primary-action',
+        () => {
+          selectCharger(charger);
+          primary.action();
+        },
+        {
+          showLoading: primary.needsServer,
+          loadingLabel: primary.loadingLabel
+        }
+      );
+      actions.appendChild(primaryBtn);
+      if (primary.helpText) {
+        const helpText = document.createElement('div');
+        helpText.className = 'action-help';
+        helpText.textContent = primary.helpText;
+        actions.appendChild(helpText);
+      }
+    }
+
+    if (
+      charger.statusKey === 'reserved' &&
+      charger.reservation &&
+      !charger.reservation.checkedInAt &&
+      sameUserEmail(charger.reservation.userEmail, getCurrentUserEmail())
+    ) {
+      const secondaryRow = document.createElement('div');
+      secondaryRow.className = 'card-secondary-actions';
+
+      const changeBtn = createButton('Change', 'btn ghost', () => {
+        selectCharger(charger);
+        startReservationEdit(charger.reservation);
+      });
+      secondaryRow.appendChild(changeBtn);
+
+      // Show Cancel alongside Check in (when Release reservation is not the primary button).
+      if (shouldShowCheckIn(charger.reservation)) {
+        const cancelBtn = createButton('Cancel', 'btn warn', () => {
+          selectCharger(charger);
+          openConfirm({
+            title: 'Cancel reservation?',
+            message: 'Release this slot back to the schedule?',
+            detail: 'You can always book another open time.',
+            confirmLabel: 'Cancel reservation',
+            cancelLabel: 'Keep reservation',
+            confirmClass: 'warn'
+          }).then((confirmed) => {
+            if (confirmed) {
+              setActionFeedback(cancelBtn, 'Canceling...');
+              callServer('cancelReservation', [charger.reservation.reservationId], { refreshSlots: true });
+            }
+          });
+        });
+        secondaryRow.appendChild(cancelBtn);
+      }
+
+      actions.appendChild(secondaryRow);
+    }
+
+    card.appendChild(header);
+    card.appendChild(body);
+    card.appendChild(actions);
+    const hint = document.createElement('div');
+    hint.className = 'card-hint';
+    if (primary) {
+      hint.textContent = `Tap to ${primary.label.toLowerCase()}`;
+    } else {
+      hint.classList.add('is-hidden');
+    }
+    card.appendChild(hint);
+    card.addEventListener('click', (event) => {
+      if (event.target.closest('button')) {
+        return;
+      }
+      selectCharger(charger);
+    });
+    return card;
+  }
+
+  function isAdmin() {
+    if (state.board && state.board.user && typeof state.board.user.isAdmin !== 'undefined') {
+      return Boolean(state.board.user.isAdmin);
+    }
+    return Boolean(APP_CONFIG.isAdmin);
+  }
+
+  function createInfoRow(label, value, options = {}) {
+    const row = document.createElement('div');
+    row.className = 'info-row';
+    if (options.secondary) {
+      row.classList.add('secondary');
+    }
+    if (options.className) {
+      options.className.split(' ').forEach((name) => {
+        if (name) {
+          row.classList.add(name);
+        }
+      });
+    }
+    const labelSpan = document.createElement('span');
+    labelSpan.className = 'label';
+    labelSpan.textContent = label;
+    if (options.hint) {
+      labelSpan.title = options.hint;
+      row.title = options.hint;
+    }
+    const valueSpan = document.createElement('span');
+    valueSpan.className = 'value';
+    valueSpan.textContent = value || '--';
+    row.appendChild(labelSpan);
+    row.appendChild(valueSpan);
+    return row;
+  }
+
+  function createButton(text, className, onClick, options = {}) {
+    const button = document.createElement('button');
+    button.textContent = text;
+    button.className = className;
+    button.addEventListener('click', (event) => {
+      if (state.isLoading) {
+        return;
+      }
+      if (options.showLoading) {
+        setActionFeedback(button, options.loadingLabel);
+      }
+      onClick(event);
+    });
+    return button;
+  }
+
+  function slotKey(slot) {
+    return encodeURIComponent(`${slot.chargerId}::${slot.startTime}`);
+  }
+
+  function updateSelectionUI() {
+    document.querySelectorAll('.card.selected').forEach((card) => card.classList.remove('selected'));
+    document.querySelectorAll('.slot-row.selected').forEach((row) => row.classList.remove('selected'));
+    if (state.selectedCharger) {
+      const card = document.querySelector(`.card[data-charger-id="${state.selectedCharger.id}"]`);
+      if (card) {
+        card.classList.add('selected');
+      }
+    }
+    if (state.selectedSlot) {
+      const key = slotKey(state.selectedSlot);
+      const row = document.querySelector(`.slot-row[data-slot-key="${key}"]`);
+      if (row) {
+        row.classList.add('selected');
+      }
+    }
+  }
+
+  function callServer(method, args, options = {}) {
+    if (state.isLoading) {
+      return;
+    }
+    setNotice('');
+    setLoading(true);
+    const runner = google.script.run
+      .withSuccessHandler((data) => {
+        setLoading(false);
+        renderBoard(data, options);
+        if (options.successMessage) {
+          setNotice(options.successMessage, options.successType || 'success');
+        }
+      })
+      .withFailureHandler((err) => {
+        setLoading(false);
+        let handled = false;
+        if (typeof options.onError === 'function') {
+          const result = options.onError(err);
+          if (result && typeof result.then === 'function') {
+            result.then((resolved) => {
+              if (resolved !== true) {
+                setNotice(err.message || String(err), 'error');
+              }
+            });
+            return;
+          }
+          handled = result === true;
+        }
+        if (!handled) {
+          setNotice(err.message || String(err), 'error');
+        }
+      });
+    runner[method].apply(runner, args);
+  }
+
+  function updateReservationUI(data) {
+    renderReservationsList(state.reservations || []);
+    renderReservationLimits(data.config || {});
+    renderEditBanner();
+  }
+
+  function renderReservationLimits(config) {
+    const meta = document.getElementById('reservation-limits');
+    const parts = [];
+    parts.push('Same-day only');
+    const openLabel = formatReservationOpenTime(config);
+    if (openLabel) {
+      parts.push(`Opens at ${openLabel}`);
+    }
+    if (config.reservationMaxUpcoming) {
+      parts.push(`Max ${config.reservationMaxUpcoming} upcoming`);
+    }
+    if (config.reservationMaxPerDay) {
+      parts.push(`Max ${config.reservationMaxPerDay} per day`);
+    }
+    meta.textContent = parts.join(' · ');
+  }
+
+  function renderReservationsList(reservations) {
+    const list = document.getElementById('reservations-list');
+    list.innerHTML = '';
+    if (!reservations.length) {
+      const empty = document.createElement('div');
+      empty.textContent = 'No upcoming reservations yet. Book a slot above.';
+      list.appendChild(empty);
+      return;
+    }
+    reservations.forEach((reservation) => {
+      const item = document.createElement('div');
+      item.className = 'reservation-item';
+      if (state.highlightReservationId === reservation.reservationId) {
+        item.classList.add('highlight');
+      }
+      const title = document.createElement('strong');
+      title.textContent = reservationLabel(reservation);
+      item.appendChild(title);
+      item.appendChild(createInfoRow('Start', formatTime(reservation.startTime)));
+      item.appendChild(createInfoRow('End', formatTime(reservation.endTime)));
+      const status = reservation.status ? reservation.status.replace(/_/g, ' ') : 'active';
+      item.appendChild(createInfoRow('Status', status));
+      if (reservation.checkedInAt) {
+        const tip = document.createElement('div');
+        tip.className = 'reservation-tip';
+        tip.textContent = 'Checked in — end session to free the spot for the next driver.';
+        item.appendChild(tip);
+      }
+      const actions = document.createElement('div');
+      actions.className = 'reservation-actions';
+      if (reservation.checkedInAt) {
+        const endBtn = createButton('End session', 'btn warn', () => {
+          openConfirm({
+            title: 'End charging session?',
+            message: 'Mark your session complete and free this charger?',
+            detail: 'Use this after you have moved your car.',
+            confirmLabel: 'End session',
+            cancelLabel: 'Keep charging',
+            confirmClass: 'warn'
+          }).then((confirmed) => {
+            if (!confirmed) {
+              return;
+            }
+            setActionFeedback(endBtn, 'Ending...');
+            callServer('endSessionForReservation', [reservation.reservationId], {
+              successMessage: 'Session ended. Thanks for checking out.',
+              successType: 'success',
+              onError: (err) => {
+                const message = err?.message || String(err || '');
+                if (!/session not found for this reservation|session does not match this reservation/i.test(message)) {
+                  return false;
+                }
+                return openConfirm({
+                  title: 'No active session found',
+                  message: 'Clear the checked-in reservation instead?',
+                  detail: 'This keeps the schedule accurate for the next driver.',
+                  confirmLabel: 'Clear reservation',
+                  cancelLabel: 'Keep checked-in',
+                  confirmClass: 'warn'
+                }).then((fallbackConfirmed) => {
+                  if (!fallbackConfirmed) {
+                    return true;
+                  }
+                  callServer('completeCheckedInReservation', [reservation.reservationId], {
+                    successMessage: 'Reservation cleared.',
+                    successType: 'success'
+                  });
+                  return true;
+                });
+              }
+            });
+          });
+        });
+        actions.appendChild(endBtn);
+      } else {
+        const editBtn = createButton('Change', 'btn ghost', () => startReservationEdit(reservation));
+        const cancelBtn = createButton('Cancel', 'btn warn', () => {
+          openConfirm({
+            title: 'Cancel reservation?',
+            message: 'Release this slot back to the schedule?',
+            detail: 'You can always book another open time.',
+            confirmLabel: 'Cancel reservation',
+            cancelLabel: 'Keep reservation',
+            confirmClass: 'warn'
+          }).then((confirmed) => {
+            if (confirmed) {
+              setActionFeedback(cancelBtn, 'Canceling...');
+              callServer('cancelReservation', [reservation.reservationId], { refreshSlots: true });
+            }
+          });
+        });
+        actions.appendChild(editBtn);
+        actions.appendChild(cancelBtn);
+      }
+      if (shouldShowCheckIn(reservation)) {
+        const checkInBtn = createButton('Check in', 'btn secondary', () => {
+          setActionFeedback(checkInBtn, 'Checking in...');
+          callServer('checkInReservation', [reservation.reservationId]);
+        });
+        actions.appendChild(checkInBtn);
+      }
+      item.appendChild(actions);
+      list.appendChild(item);
+    });
+  }
+
+  function reservationLabel(reservation) {
+    const charger = state.board?.chargers?.find((item) => item.id === reservation.chargerId);
+    return charger ? charger.name : `Charger ${reservation.chargerId}`;
+  }
+
+  function startReservationEdit(reservation) {
+    state.editingReservationId = reservation.reservationId;
+    setMode('reserve');
+    renderEditBanner();
+    setNotice('Select a new slot to replace this reservation.', 'info');
+  }
+
+  function cancelReservationEdit() {
+    state.editingReservationId = null;
+    renderEditBanner();
+    setNotice('');
+  }
+
+  function updateCountdowns() {
+    if (!state.serverTime || !state.lastFetch) {
+      return;
+    }
+    const now = new Date(state.serverTime.getTime() + (Date.now() - state.lastFetch));
+    document.getElementById('last-updated').textContent = now.toLocaleTimeString([], {
+      hour: 'numeric',
+      minute: '2-digit'
+    });
+    document.querySelectorAll('.countdown').forEach((el) => {
+      const endTime = new Date(el.dataset.endTime);
+      if (Number.isNaN(endTime.getTime())) {
+        return;
+      }
+      const diffMs = endTime.getTime() - now.getTime();
+      if (diffMs >= 0) {
+        const mins = Math.floor(diffMs / 60000);
+        const secs = Math.floor((diffMs % 60000) / 1000);
+        el.textContent = formatCountdown(mins, secs);
+      } else {
+        const overdueMinutes = Math.max(1, Math.ceil(Math.abs(diffMs) / 60000));
+        el.textContent = `Overdue by ${overdueMinutes}m`;
+      }
+    });
+    document.querySelectorAll('.walkup-remaining').forEach((el) => {
+      const endTime = new Date(el.dataset.endTime);
+      if (Number.isNaN(endTime.getTime())) {
+        return;
+      }
+      const diffMs = endTime.getTime() - now.getTime();
+      if (diffMs >= 0) {
+        const mins = Math.ceil(diffMs / 60000);
+        el.textContent = formatDuration(mins);
+      } else {
+        el.textContent = 'Ended';
+      }
+    });
+    document.querySelectorAll('.my-status-banner__countdown[data-session-end]').forEach((el) => {
+      if (!el.dataset.sessionEnd) {
+        return;
+      }
+      const endTime = new Date(el.dataset.sessionEnd);
+      if (Number.isNaN(endTime.getTime())) {
+        return;
+      }
+      const diffMs = endTime.getTime() - now.getTime();
+      if (diffMs >= 0) {
+        const mins = Math.floor(diffMs / 60000);
+        const secs = Math.floor((diffMs % 60000) / 1000);
+        el.textContent = formatCountdown(mins, secs);
+      } else {
+        const overdueMinutes = Math.max(1, Math.ceil(Math.abs(diffMs) / 60000));
+        el.textContent = `Overdue by ${overdueMinutes}m`;
+      }
+    });
+    updateCheckoutReminder(now);
+  }
+
+  function formatCountdown(minutes, seconds) {
+    const hours = Math.floor(minutes / 60);
+    const remaining = minutes % 60;
+    if (hours > 0) {
+      return `${hours}h ${pad(remaining)}m`;
+    }
+    return `${remaining}m ${pad(seconds)}s`;
+  }
+
+  function formatTime(isoString) {
+    const date = new Date(isoString);
+    if (Number.isNaN(date.getTime())) {
+      return '--';
+    }
+    return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  }
+
+  function getReservationOpenTime(config) {
+    if (!config) {
+      return null;
+    }
+    const hour = Number(config.reservationOpenHour);
+    const minute = Number(config.reservationOpenMinute);
+    if (Number.isNaN(hour) || Number.isNaN(minute)) {
+      return null;
+    }
+    const now = getClientNow();
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour, minute, 0);
+  }
+
+  function formatReservationOpenTime(config) {
+    const openTime = getReservationOpenTime(config);
+    if (!openTime) {
+      return '';
+    }
+    return openTime.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  }
+
+  function getReservationClosedMessage() {
+    const config = state.board?.config;
+    const openTime = getReservationOpenTime(config);
+    if (!openTime) {
+      return '';
+    }
+    const now = getClientNow();
+    if (now < openTime) {
+      return `Bookings open at ${formatReservationOpenTime(config)}.`;
+    }
+    return '';
+  }
+
+  function deriveFullNameFromEmail(email) {
+    if (!email) {
+      return '';
+    }
+    const local = String(email).split('@')[0] || '';
+    const parts = local.split(/[._-]+/).filter(Boolean);
+    if (parts.length < 2) {
+      return '';
+    }
+    return parts
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ');
+  }
+
+  function formatUserLabel(userName, userEmail) {
+    const cleanedName = userName ? userName.trim() : '';
+    const derivedName = deriveFullNameFromEmail(userEmail);
+    let displayName = cleanedName;
+    if (displayName && displayName.split(/\s+/).length < 2 && derivedName) {
+      displayName = derivedName;
+    }
+    if (!displayName) {
+      displayName = derivedName;
+    }
+    if (!displayName && userEmail) {
+      return userEmail;
+    }
+    return displayName || 'Unknown';
+  }
+
+  function formatReservationSummary(reservation) {
+    if (!reservation) {
+      return '--';
+    }
+    const start = new Date(reservation.startTime);
+    const who = formatUserLabel(reservation.userName, reservation.userEmail);
+    if (Number.isNaN(start.getTime())) {
+      return who;
+    }
+    const now = getClientNow();
+    const isSameDay = formatDateInput(start) === formatDateInput(now);
+    const dayLabel = isSameDay
+      ? 'Today'
+      : start.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+    return `${dayLabel} ${formatTime(reservation.startTime)} · ${who}`;
+  }
+
+  function formatDuration(minutes) {
+    if (!minutes) {
+      return '--';
+    }
+    if (minutes < 60) {
+      return `${minutes} minutes`;
+    }
+    const hours = minutes / 60;
+    if (Number.isInteger(hours)) {
+      return `${hours} hours`;
+    }
+    return `${hours.toFixed(1)} hours`;
+  }
+
+  function pad(value) {
+    return String(value).padStart(2, '0');
+  }
+
+  function formatDateInput(date) {
+    if (Number.isNaN(date.getTime())) {
+      return '';
+    }
+    const year = date.getFullYear();
+    const month = pad(date.getMonth() + 1);
+    const day = pad(date.getDate());
+    return `${year}-${month}-${day}`;
+  }
+
+  function formatTimeInput(date) {
+    if (Number.isNaN(date.getTime())) {
+      return '';
+    }
+    const hours = pad(date.getHours());
+    const minutes = pad(date.getMinutes());
+    return `${hours}:${minutes}`;
+  }
+
+  function shouldShowCheckIn(reservation) {
+    if (!reservation.startTime || reservation.status === 'no_show' || reservation.status === 'canceled') {
+      return false;
+    }
+    const config = state.board?.config || {};
+    const checkinEarlyMinutes = Number.isFinite(config.reservationCheckinEarlyMinutes)
+      ? config.reservationCheckinEarlyMinutes
+      : 5;
+    const earlyStartMinutes = Number.isFinite(config.reservationEarlyStartMinutes)
+      ? config.reservationEarlyStartMinutes
+      : checkinEarlyMinutes;
+    const earlyMinutes = Math.max(checkinEarlyMinutes, earlyStartMinutes);
+    const graceMinutes = Number.isFinite(config.reservationLateGraceMinutes)
+      ? config.reservationLateGraceMinutes
+      : 10;
+    const start = new Date(reservation.startTime);
+    const now = getClientNow();
+    const earliest = new Date(start.getTime() - earlyMinutes * 60000);
+    const latest = new Date(start.getTime() + graceMinutes * 60000);
+    if (Number.isNaN(start.getTime())) {
+      return false;
+    }
+    return now >= earliest && now <= latest;
+  }
+
+  function getClientNow() {
+    if (!state.serverTime || !state.lastFetch) {
+      return new Date();
+    }
+    return new Date(state.serverTime.getTime() + (Date.now() - state.lastFetch));
+  }
+
+  function getCurrentUserSession() {
+    const chargers = state.board?.chargers || [];
+    return chargers
+      .map((charger) => ({ charger, session: charger.session }))
+      .filter((entry) => entry.session && sameUserEmail(entry.session.userEmail, getCurrentUserEmail()))
+      .sort((a, b) => new Date(a.session.endTime) - new Date(b.session.endTime))[0] || null;
+  }
+
+  function findSessionForReservation(reservation) {
+    if (!reservation?.chargerId) {
+      return null;
+    }
+    const chargers = state.board?.chargers || [];
+    const charger = chargers.find((entry) => String(entry.id) === String(reservation.chargerId));
+    if (!charger?.session) {
+      return null;
+    }
+    if (!sameUserEmail(charger.session.userEmail, getCurrentUserEmail())) {
+      return null;
+    }
+    return charger.session;
+  }
+
+  function updateCheckoutReminder(referenceNow) {
+    const reminder = document.getElementById('checkout-reminder');
+    if (!reminder) {
+      return;
+    }
+    const now = referenceNow || getClientNow();
+    const entry = getCurrentUserSession();
+    if (!entry || !entry.session?.endTime) {
+      reminder.textContent = '';
+      return;
+    }
+    const endTime = new Date(entry.session.endTime);
+    if (Number.isNaN(endTime.getTime())) {
+      reminder.textContent = '';
+      return;
+    }
+    const diffMs = endTime.getTime() - now.getTime();
+    const diffMinutes = Math.ceil(diffMs / 60000);
+    if (diffMinutes > 10) {
+      reminder.textContent = '';
+      return;
+    }
+    const chargerName = entry.charger?.name || 'this charger';
+    if (diffMs > 0) {
+      reminder.textContent = `Your session on ${chargerName} ends at ${formatTime(entry.session.endTime)}. Please move your car and tap "I've moved my car".`;
+      return;
+    }
+    reminder.textContent = `Your session on ${chargerName} is past its end time. Please move your car and tap "I've moved my car".`;
+  }
+
+  function setupModeTabs() {
+    document.querySelectorAll('.mode-tab, .mobile-tab').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        setMode(btn.dataset.mode);
+      });
+    });
+  }
+
+  function setupGlobalHandlers() {
+    document.addEventListener('click', () => closeAllMenus());
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        if (confirmState.isOpen) {
+          closeConfirm(false);
+          return;
+        }
+        closeAllMenus();
+      }
+    });
+    window.addEventListener('resize', () => updateStickyBar());
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+  }
+
+  function setMode(mode) {
+    state.mode = mode;
+    document.querySelectorAll('.mode-tab').forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset.mode === mode);
+    });
+    document.querySelectorAll('.mobile-tab').forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset.mode === mode);
+    });
+    document.getElementById('mode-now').classList.toggle('active', mode === 'now');
+    document.getElementById('mode-reserve').classList.toggle('active', mode === 'reserve');
+    clearSelection();
+    if (mode === 'reserve' && state.board) {
+      updateReservationUI(state.board);
+      refreshSlotsIfNeeded({ force: false });
+    }
+    updateStickyBar();
+  }
+
+  function closeAllMenus() {
+    document.querySelectorAll('.menu-list.active').forEach((menu) => closeMenu(menu));
+  }
+
+  function getPrimaryAction(charger) {
+    if (charger.session) {
+      if (sameUserEmail(charger.session.userEmail, getCurrentUserEmail())) {
+        return {
+          label: "I've moved my car",
+          action: () =>
+            callServer('endSession', [charger.session.sessionId], {
+              successMessage: 'Session ended. Thanks for checking out.',
+              successType: 'success'
+            }),
+          needsServer: true,
+          loadingLabel: 'Ending...',
+          helpText: 'Ends your session and frees this charger.'
+        };
+      }
+      return {
+        label: 'Notify owner',
+        action: () => callServer('notifyOwner', [charger.id]),
+        needsServer: true,
+        loadingLabel: 'Notifying...',
+        helpText: 'Sends a friendly reminder to wrap up.'
+      };
+    }
+    if (charger.statusKey === 'overdue') {
+      return {
+        label: 'Notify owner',
+        action: () => callServer('notifyOwner', [charger.id]),
+        needsServer: true,
+        loadingLabel: 'Notifying...',
+        helpText: 'Sends a friendly reminder to wrap up.'
+      };
+    }
+    if (charger.statusKey === 'reserved') {
+      if (charger.reservation && sameUserEmail(charger.reservation.userEmail, getCurrentUserEmail())) {
+        if (!charger.reservation.checkedInAt && shouldShowCheckIn(charger.reservation)) {
+          return {
+            label: 'Check in',
+            action: () => callServer('checkInReservation', [charger.reservation.reservationId]),
+            needsServer: true,
+            loadingLabel: 'Checking in...',
+            helpText: 'Confirms your arrival and starts your charging session.'
+          };
+        }
+        if (!charger.reservation.checkedInAt) {
+          return {
+            label: 'Release reservation',
+            action: () =>
+              callServer('cancelReservation', [charger.reservation.reservationId], {
+                successMessage: 'Reservation released.',
+                successType: 'success',
+                refreshSlots: true
+              }),
+            needsServer: true,
+            loadingLabel: 'Releasing...',
+            helpText: 'Releases your reservation and frees this charger.'
+          };
+        }
+        return null;
+      }
+      return {
+        label: 'View reservation',
+        action: () => viewReservation(charger),
+        needsServer: false,
+        loadingLabel: '',
+        helpText: 'Jump to reservation details below.'
+      };
+    }
+    if (charger.walkup && !charger.walkup.isOpen) {
+      return null;
+    }
+    let helpText = 'Starts a new session and holds this spot for you.';
+    if (charger.walkup && charger.walkup.isOpen) {
+      helpText = `Walk-up ends at ${formatTime(charger.walkup.endTime)}. Reserve for a full slot.`;
+    }
+    return {
+      label: 'Start charging',
+      action: () => callServer('startSession', [charger.id]),
+      needsServer: true,
+      loadingLabel: 'Starting...',
+      helpText: helpText
+    };
+  }
+
+  function getCurrentUserEmail() {
+    if (state.board && state.board.user && state.board.user.email) {
+      return state.board.user.email;
+    }
+    return APP_CONFIG.userEmail || '';
+  }
+
+  function sameUserEmail(first, second) {
+    return String(first || '').toLowerCase() === String(second || '').toLowerCase();
+  }
+
+  function viewReservation(charger) {
+    setMode('reserve');
+    if (charger.reservation) {
+      state.highlightReservationId = charger.reservation.reservationId;
+      renderReservationsList(state.reservations || []);
+    }
+    document.getElementById('reservations-list').scrollIntoView({ behavior: 'smooth' });
+  }
+
+  function selectCharger(charger) {
+    state.selectedCharger = charger;
+    state.selectedSlot = null;
+    updateSelectionUI();
+    updateStickyBar();
+  }
+
+  function selectSlot(slot) {
+    state.selectedSlot = slot;
+    state.selectedCharger = null;
+    updateSelectionUI();
+    updateStickyBar();
+  }
+
+  function clearSelection() {
+    state.selectedCharger = null;
+    state.selectedSlot = null;
+    updateSelectionUI();
+    updateStickyBar();
+  }
+
+  function updateStickyBar() {
+    const bar = document.getElementById('sticky-bar');
+    const info = document.getElementById('sticky-info');
+    const actionBtn = document.getElementById('sticky-action');
+    const hint = document.getElementById('sticky-hint');
+    const defaultHint = 'Select a charger or slot to begin.';
+    if (!bar || !info || !actionBtn) {
+      return;
+    }
+    if (window.innerWidth >= 900) {
+      bar.classList.remove('active');
+      return;
+    }
+    actionBtn.disabled = true;
+    actionBtn.onclick = null;
+    if (hint) {
+      hint.textContent = defaultHint;
+    }
+    if (state.mode === 'now' && state.selectedCharger) {
+      const primary = getPrimaryAction(state.selectedCharger);
+      info.textContent = `${state.selectedCharger.name} selected`;
+      actionBtn.textContent = primary.label;
+      actionBtn.disabled = false;
+      if (hint) {
+        hint.textContent = primary.helpText || defaultHint;
+      }
+      actionBtn.onclick = () => {
+        if (state.isLoading) {
+          return;
+        }
+        if (primary.needsServer) {
+          setActionFeedback(actionBtn, primary.loadingLabel);
+        }
+        primary.action();
+      };
+      bar.classList.add('active');
+      return;
+    }
+    if (state.mode === 'reserve' && state.selectedSlot) {
+      const label = `${formatTime(state.selectedSlot.startTime)} · ${reservationLabel({
+        chargerId: state.selectedSlot.chargerId
+      })}`;
+      info.textContent = label;
+      actionBtn.textContent = state.editingReservationId ? 'Update reservation' : 'Book slot';
+      actionBtn.disabled = false;
+      if (hint) {
+        hint.textContent = state.editingReservationId
+          ? 'Updates your reservation to this slot.'
+          : 'Books this time slot for you.';
+      }
+      actionBtn.onclick = () => {
+        if (state.isLoading) {
+          return;
+        }
+        setActionFeedback(actionBtn, state.editingReservationId ? 'Updating...' : 'Booking...');
+        bookSlot(state.selectedSlot);
+      };
+      bar.classList.add('active');
+      return;
+    }
+    bar.classList.remove('active');
+  }
+
+  function loadSlots({ loadMore = false } = {}) {
+    if (state.slotsLoading) {
+      return;
+    }
+    setSlotsLoading(true);
+    const offset = loadMore ? state.slotsOffset : 0;
+    google.script.run
+      .withSuccessHandler((slots) => {
+        const PAGE_SIZE = 10;
+        if (!loadMore) {
+          state.slotsCache = slots || [];
+          state.slotsOffset = 0;
+        } else {
+          state.slotsCache = (state.slotsCache || []).concat(slots || []);
+        }
+        state.slotsOffset = offset + PAGE_SIZE;
+        state.slotsAllLoaded = (slots || []).length < PAGE_SIZE;
+        state.slotsLastFetch = Date.now();
+        setSlotsLoading(false);
+        renderSlotsList(state.slotsCache);
+      })
+      .withFailureHandler((err) => {
+        setSlotsLoading(false);
+        setNotice(err.message || String(err), 'error');
+      })
+      .getAvailabilitySummary(offset);
+  }
+
+  function refreshSlotsIfNeeded({ force }) {
+    if (state.mode !== 'reserve') {
+      return;
+    }
+    if (state.slotsLoading) {
+      return;
+    }
+    const cacheFresh = state.slotsCache && (Date.now() - (state.slotsLastFetch || 0)) < SLOTS_CACHE_TTL_MS;
+    if (!force && cacheFresh) {
+      renderSlotsList(state.slotsCache);
+      return;
+    }
+    loadSlots();
+  }
+
+  function renderSlotsList(slots) {
+    const container = document.getElementById('slots-list');
+    container.innerHTML = '';
+    if (!slots.length) {
+      const empty = document.createElement('div');
+      empty.textContent = getReservationClosedMessage() || 'No available slots found. Check back soon.';
+      container.appendChild(empty);
+      return;
+    }
+    const groups = groupSlotsByDay(slots);
+    const fragment = document.createDocumentFragment();
+    groups.forEach((group) => {
+      const groupEl = document.createElement('div');
+      groupEl.className = 'slots-group';
+      const title = document.createElement('div');
+      title.className = 'slots-group-title';
+      title.textContent = group.label;
+      groupEl.appendChild(title);
+      group.slots.forEach((slot) => {
+        const row = document.createElement('div');
+        row.className = 'slot-row';
+        row.dataset.slotKey = slotKey(slot);
+        row.addEventListener('click', () => selectSlot(slot));
+        const meta = document.createElement('div');
+        meta.className = 'slot-meta';
+        meta.innerHTML = `<div>${formatTime(slot.startTime)} – ${formatTime(slot.endTime)}</div><div>${reservationLabel({
+          chargerId: slot.chargerId
+        })}</div>`;
+        const action = createButton(
+          'Book',
+          'btn',
+          (event) => {
+            event.stopPropagation();
+            bookSlot(slot);
+          },
+          { showLoading: true, loadingLabel: 'Booking...' }
+        );
+        row.appendChild(meta);
+        row.appendChild(action);
+        groupEl.appendChild(row);
+      });
+      fragment.appendChild(groupEl);
+    });
+    container.appendChild(fragment);
+    if (!state.slotsAllLoaded) {
+      const moreBtn = createButton(
+        'Show More',
+        'btn btn-secondary show-more-btn',
+        () => {
+          loadSlots({ loadMore: true });
+        },
+        { showLoading: true, loadingLabel: 'Loading...' }
+      );
+      container.appendChild(moreBtn);
+    }
+    updateSelectionUI();
+  }
+
+  function groupSlotsByDay(slots) {
+    const grouped = {};
+    slots.forEach((slot) => {
+      const dateKey = formatDateInput(new Date(slot.startTime));
+      if (!grouped[dateKey]) {
+        grouped[dateKey] = [];
+      }
+      grouped[dateKey].push(slot);
+    });
+    return Object.keys(grouped)
+      .sort()
+      .map((dateKey) => ({
+        label: formatDayLabel(new Date(`${dateKey}T00:00:00`)),
+        slots: grouped[dateKey]
+      }));
+  }
+
+  function formatDayLabel(date) {
+    const now = getClientNow();
+    const today = formatDateInput(now);
+    const tomorrow = formatDateInput(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1));
+    const dateKey = formatDateInput(date);
+    if (dateKey === today) {
+      return 'Today';
+    }
+    if (dateKey === tomorrow) {
+      return 'Tomorrow';
+    }
+    return date.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+  }
+
+  function bookSlot(slot) {
+    if (state.editingReservationId) {
+      callServer('updateReservation', [state.editingReservationId, slot.chargerId, slot.startTime], {
+        refreshSlots: true
+      });
+    } else {
+      callServer('createReservation', [slot.chargerId, slot.startTime], { refreshSlots: true });
+    }
+    cancelReservationEdit();
+    clearSelection();
+  }
+
+  function renderEditBanner() {
+    const banner = document.getElementById('edit-banner');
+    if (!banner) {
+      return;
+    }
+    banner.innerHTML = '';
+    if (!state.editingReservationId) {
+      banner.classList.remove('active');
+      return;
+    }
+    banner.classList.add('active');
+    const text = document.createElement('div');
+    text.textContent = 'Changing a reservation. Pick a new slot below.';
+    const cancel = createButton('Cancel change', 'btn ghost', () => cancelReservationEdit());
+    banner.appendChild(text);
+    banner.appendChild(cancel);
+  }
+
+  function startCountdowns() {
+    if (state.countdownIntervalId) {
+      return;
+    }
+    state.countdownIntervalId = setInterval(updateCountdowns, 1000);
+  }
+
+  function stopCountdowns() {
+    if (!state.countdownIntervalId) {
+      return;
+    }
+    clearInterval(state.countdownIntervalId);
+    state.countdownIntervalId = null;
+  }
+
+  function handleVisibilityChange() {
+    if (document.hidden) {
+      state.hiddenAt = Date.now();
+      stopCountdowns();
+      return;
+    }
+    const hiddenMs = state.hiddenAt ? Date.now() - state.hiddenAt : 0;
+    state.hiddenAt = null;
+    startCountdowns();
+    updateCountdowns();
+    if (hiddenMs > 60000 && !state.isLoading) {
+      loadBoard();
+    }
+  }
+
+  function setSlotsLoading(isLoading) {
+    state.slotsLoading = isLoading;
+    const container = document.getElementById('slots-list');
+    if (!container) {
+      return;
+    }
+    if (!isLoading) {
+      return;
+    }
+    container.innerHTML = '';
+    const loading = document.createElement('div');
+    loading.className = 'loading-state';
+    loading.textContent = 'Loading available slots...';
+    container.appendChild(loading);
+  }
+
+  function openMenu(list) {
+    closeAllMenus();
+    list.classList.add('active');
+    list.setAttribute('aria-hidden', 'false');
+    const trigger = document.getElementById(list.dataset.triggerId);
+    if (trigger) {
+      trigger.setAttribute('aria-expanded', 'true');
+    }
+  }
+
+  function closeMenu(list) {
+    list.classList.remove('active');
+    list.setAttribute('aria-hidden', 'true');
+    const trigger = document.getElementById(list.dataset.triggerId);
+    if (trigger) {
+      trigger.setAttribute('aria-expanded', 'false');
+    }
+  }
+
+  function makeSafeId(value) {
+    return String(value).replace(/[^a-zA-Z0-9_-]/g, '');
+  }
+
+  document.addEventListener('DOMContentLoaded', init);
+
+  function getStatusHint(statusKey) {
+    switch (statusKey) {
+      case 'free':
+        return 'Available now';
+      case 'in_use':
+        return 'Currently charging';
+      case 'reserved':
+        return 'Reserved for a future time';
+      case 'overdue':
+        return 'Past the max session time';
+      default:
+        return '';
+    }
+  }
+</script>
