@@ -43,7 +43,8 @@ Use this after pushing v2 UI changes.
 2. Confirm layout shows two panels: “My reservation” and “Available today”.
 3. Verify slot groups display by time window (“Next 2 hours”, “Later today”, “Tonight”).
 4. Ensure each slot row shows time range, charger name, and a single “Reserve” action.
-5. On mobile width, ensure the reserve action is full-width and easy to tap.
+5. On mobile width, ensure panels stack in a single column (no side-by-side shrinking).
+6. On mobile width, ensure the reserve action is full-width and easy to tap.
 
 Mobile (90%+ of users) uses a bottom tab bar and a sticky action bar for primary actions. Additional mobile features:
 - **My Status Banner**: always-visible strip above the board showing the user’s active session (with "I’ve moved my car"), check-in-eligible reservation (with "Check in"), or upcoming reservation.
