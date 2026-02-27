@@ -986,13 +986,20 @@
 
   function renderReservationsList(reservations) {
     const list = document.getElementById('reservations-list');
+    const panel = document.getElementById('my-reservations-panel');
     list.innerHTML = '';
     if (!reservations.length) {
+      if (panel) {
+        panel.classList.add('is-hidden');
+      }
       const empty = document.createElement('div');
       empty.className = 'empty-state';
       empty.textContent = 'No reservation yet. Choose a time below.';
       list.appendChild(empty);
       return;
+    }
+    if (panel) {
+      panel.classList.remove('is-hidden');
     }
     reservations.forEach((reservation) => {
       const item = document.createElement('div');
