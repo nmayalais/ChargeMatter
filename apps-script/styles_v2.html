@@ -743,6 +743,11 @@
     flex-wrap: wrap;
   }
 
+  .reserve-meta {
+    max-width: 320px;
+    text-align: right;
+  }
+
   .board-header {
     display: flex;
     align-items: flex-start;
@@ -1016,13 +1021,18 @@
     }
   }
 
-  @media (max-width: 900px) {
+  @media (max-width: 1024px), (pointer: coarse) {
     .reserve-grid {
+      display: block;
       grid-template-columns: 1fr !important;
     }
 
     .reserve-panel {
       width: 100%;
+    }
+
+    .reserve-panel + .reserve-panel {
+      margin-top: var(--space-4);
     }
   }
 
@@ -1146,6 +1156,13 @@
       background: #ffffff;
     }
 
+    .reserve-meta {
+      text-align: left;
+      max-width: 100%;
+      font-size: 11px;
+      color: var(--color-muted);
+    }
+
     .panel-title {
       font-size: 17px;
     }
@@ -1237,6 +1254,22 @@
     .slot-row .btn {
       width: 100%;
       justify-content: center;
+    }
+
+    .slots-list {
+      gap: var(--space-2);
+    }
+
+    .slot-row {
+      border-radius: 16px;
+    }
+
+    .slot-time {
+      font-size: 16px;
+    }
+
+    .slot-meta {
+      font-size: 12px;
     }
 
     .reservations {
