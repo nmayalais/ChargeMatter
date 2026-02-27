@@ -60,35 +60,32 @@
       </section>
 
       <section class="mode mode-reserve" id="mode-reserve">
-        <div class="section-header">
+        <div class="reserve-header">
           <div>
-            <div class="section-title">Next available slots</div>
-            <div class="section-subtitle">Book the soonest open charger.</div>
+            <div class="section-title">Reserve a slot</div>
+            <div class="section-subtitle">Choose a same-day window and confirm.</div>
           </div>
           <div class="section-meta" id="reservation-limits"></div>
         </div>
-        <div class="section-hint">
-          Select a slot below to reserve it. Look for the action button near your selection.
-        </div>
-        <div class="section-hint">
-          One car per person at a time (one reservation per day).
-        </div>
         <div class="edit-banner" id="edit-banner"></div>
 
-        <div class="reservations">
-          <div class="section-header">
-            <div>
-              <div class="section-title">My reservations</div>
-              <div class="section-subtitle">Edit or cancel upcoming slots.</div>
+        <div class="reserve-grid">
+          <div class="reserve-panel" id="my-reservations-panel">
+            <div class="panel-header">
+              <div class="panel-title">My reservation</div>
+              <div class="panel-subtitle">Manage or check in.</div>
             </div>
+            <div id="reservations-list" class="reservation-list"></div>
           </div>
-          <div class="section-hint">Tip: Change picks a new time. Cancel frees the slot.</div>
-          <div class="reservation-list">
-            <div id="reservations-list"></div>
+
+          <div class="reserve-panel">
+            <div class="panel-header">
+              <div class="panel-title">Available today</div>
+              <div class="panel-subtitle">Tap a time to reserve.</div>
+            </div>
+            <div id="slots-list" class="slots-list"></div>
           </div>
         </div>
-
-        <div id="slots-list"></div>
       </section>
 
       <footer class="footer">

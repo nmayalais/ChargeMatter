@@ -964,7 +964,7 @@ describe('UI behaviors', () => {
       const window = loadScriptIntoDom({ userEmail: 'alex@example.com' });
       activeWindow = window;
       window.renderBoard(buildWalkupBoard({ isNetNew: false }, { isOpenToReturning: false }));
-      expect(getPriorityValue(window)).toContain('Priority window');
+      expect(getPriorityValue(window)).toContain('First-time drivers only');
     });
 
     test('returning user in Tier 2 window sees eligible message', () => {
