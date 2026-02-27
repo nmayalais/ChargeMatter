@@ -989,7 +989,8 @@
     list.innerHTML = '';
     if (!reservations.length) {
       const empty = document.createElement('div');
-      empty.textContent = 'No upcoming reservations yet. Book a slot above.';
+      empty.className = 'empty-state';
+      empty.textContent = 'No reservation yet. Choose a time below.';
       list.appendChild(empty);
       return;
     }
@@ -999,13 +1000,22 @@
       if (state.highlightReservationId === reservation.reservationId) {
         item.classList.add('highlight');
       }
-      const title = document.createElement('strong');
+      const header = document.createElement('div');
+      header.className = 'reservation-item-header';
+      const title = document.createElement('div');
+      title.className = 'reservation-title';
       title.textContent = reservationLabel(reservation);
-      item.appendChild(title);
-      item.appendChild(createInfoRow('Start', formatTime(reservation.startTime)));
-      item.appendChild(createInfoRow('End', formatTime(reservation.endTime)));
-      const status = reservation.status ? reservation.status.replace(/_/g, ' ') : 'active';
-      item.appendChild(createInfoRow('Status', status));
+      const status = document.createElement('div');
+      status.className = 'reservation-status';
+      status.textContent = reservation.checkedInAt ? 'Checked in' : 'Upcoming';
+      header.appendChild(title);
+      header.appendChild(status);
+      item.appendChild(header);
+
+      const time = document.createElement('div');
+      time.className = 'reservation-time';
+      time.textContent = `${formatTime(reservation.startTime)} – ${formatTime(reservation.endTime)}`;
+      item.appendChild(time);
       if (reservation.checkedInAt) {
         const tip = document.createElement('div');
         tip.className = 'reservation-tip';
@@ -1666,11 +1676,12 @@
     container.innerHTML = '';
     if (!slots.length) {
       const empty = document.createElement('div');
+      empty.className = 'empty-state';
       empty.textContent = getReservationClosedMessage() || 'No available slots found. Check back soon.';
       container.appendChild(empty);
       return;
     }
-    const groups = groupSlotsByDay(slots);
+    const groups = groupSlotsByWindow(slots);
     const fragment = document.createDocumentFragment();
     groups.forEach((group) => {
       const groupEl = document.createElement('div');
@@ -1684,21 +1695,26 @@
         row.className = 'slot-row';
         row.dataset.slotKey = slotKey(slot);
         row.addEventListener('click', () => selectSlot(slot));
+        const info = document.createElement('div');
+        info.className = 'slot-info';
+        const time = document.createElement('div');
+        time.className = 'slot-time';
+        time.textContent = `${formatTime(slot.startTime)} – ${formatTime(slot.endTime)}`;
         const meta = document.createElement('div');
         meta.className = 'slot-meta';
-        meta.innerHTML = `<div>${formatTime(slot.startTime)} – ${formatTime(slot.endTime)}</div><div>${reservationLabel({
-          chargerId: slot.chargerId
-        })}</div>`;
+        meta.textContent = `${reservationLabel({ chargerId: slot.chargerId })} · ${formatDuration(getSlotDurationMinutes(slot))}`;
+        info.appendChild(time);
+        info.appendChild(meta);
         const action = createButton(
-          'Book',
-          'btn',
+          'Reserve',
+          'btn primary-action',
           (event) => {
             event.stopPropagation();
             bookSlot(slot);
           },
           { showLoading: true, loadingLabel: 'Booking...' }
         );
-        row.appendChild(meta);
+        row.appendChild(info);
         row.appendChild(action);
         groupEl.appendChild(row);
       });
@@ -1719,35 +1735,66 @@
     updateSelectionUI();
   }
 
-  function groupSlotsByDay(slots) {
-    const grouped = {};
+  function groupSlotsByWindow(slots) {
+    const now = getClientNow();
+    const todayKey = formatDateInput(now);
+    const grouped = {
+      next: [],
+      later: [],
+      tonight: [],
+      other: {}
+    };
     slots.forEach((slot) => {
-      const dateKey = formatDateInput(new Date(slot.startTime));
-      if (!grouped[dateKey]) {
-        grouped[dateKey] = [];
+      const start = new Date(slot.startTime);
+      const dateKey = formatDateInput(start);
+      if (dateKey !== todayKey) {
+        if (!grouped.other[dateKey]) {
+          grouped.other[dateKey] = [];
+        }
+        grouped.other[dateKey].push(slot);
+        return;
       }
-      grouped[dateKey].push(slot);
+      const diffMinutes = Math.round((start.getTime() - now.getTime()) / 60000);
+      if (diffMinutes <= 120) {
+        grouped.next.push(slot);
+      } else if (start.getHours() < 17) {
+        grouped.later.push(slot);
+      } else {
+        grouped.tonight.push(slot);
+      }
     });
-    return Object.keys(grouped)
+    const groups = [];
+    if (grouped.next.length) {
+      groups.push({ label: 'Next 2 hours', slots: grouped.next });
+    }
+    if (grouped.later.length) {
+      groups.push({ label: 'Later today', slots: grouped.later });
+    }
+    if (grouped.tonight.length) {
+      groups.push({ label: 'Tonight', slots: grouped.tonight });
+    }
+    Object.keys(grouped.other)
       .sort()
-      .map((dateKey) => ({
-        label: formatDayLabel(new Date(`${dateKey}T00:00:00`)),
-        slots: grouped[dateKey]
-      }));
+      .forEach((dateKey) => {
+        groups.push({
+          label: formatDayLabel(new Date(`${dateKey}T00:00:00`)),
+          slots: grouped.other[dateKey]
+        });
+      });
+    return groups;
   }
 
   function formatDayLabel(date) {
-    const now = getClientNow();
-    const today = formatDateInput(now);
-    const tomorrow = formatDateInput(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1));
-    const dateKey = formatDateInput(date);
-    if (dateKey === today) {
-      return 'Today';
-    }
-    if (dateKey === tomorrow) {
-      return 'Tomorrow';
-    }
     return date.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+  }
+
+  function getSlotDurationMinutes(slot) {
+    const start = new Date(slot.startTime);
+    const end = new Date(slot.endTime);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      return 0;
+    }
+    return Math.max(0, Math.round((end.getTime() - start.getTime()) / 60000));
   }
 
   function bookSlot(slot) {

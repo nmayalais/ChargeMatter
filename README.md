@@ -24,6 +24,27 @@ Config keys (set in the `config` sheet):
 - `ui_version`: `v1` or `v2`.
 - `ui_v2_allowlist`: comma-separated emails.
 
+## V2 availability board test checklist
+Use this after pushing v2 UI changes.
+1. Open the web app URL with `?v=2` (or add yourself to `ui_v2_allowlist`).
+2. Confirm each charger card shows a single primary action button.
+3. Verify the availability summary block shows the correct state:
+   - Free: “Available now” with walk‑up timing if applicable.
+   - In use/overdue: shows end time.
+   - Reserved: shows start time and whether it’s your reservation.
+4. On mobile width, verify:
+   - Buttons are easy to tap (≥ 48px height).
+   - Card content is legible without zoom.
+5. Verify walk‑up countdown updates for free chargers.
+6. Confirm selecting a card still highlights it and reveals details.
+
+## V2 reserve mode test checklist
+1. Open the Reserve tab with v2 enabled.
+2. Confirm layout shows two panels: “My reservation” and “Available today”.
+3. Verify slot groups display by time window (“Next 2 hours”, “Later today”, “Tonight”).
+4. Ensure each slot row shows time range, charger name, and a single “Reserve” action.
+5. On mobile width, ensure the reserve action is full-width and easy to tap.
+
 Mobile (90%+ of users) uses a bottom tab bar and a sticky action bar for primary actions. Additional mobile features:
 - **My Status Banner**: always-visible strip above the board showing the user’s active session (with "I’ve moved my car"), check-in-eligible reservation (with "Check in"), or upcoming reservation.
 - **Compact header**: single-line title + refresh icon; subtitle/helper text hidden to save vertical space.
