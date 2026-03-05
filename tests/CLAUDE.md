@@ -7,6 +7,7 @@ Jest test suite targeting `cli/engine.js` (business logic) and `apps-script/scri
 - **cli.policy.test.js** — reservation limits (max upcoming, per-day), no-show strikes, suspensions, early-start rules, prior reservation protection, early/late session-release halfway rule.
 - **cli.admin.test.js** — admin force-end sessions, reset charger.
 - **cli.reservation-session.test.js** — check-in lifecycle, session auto-start on check-in, matching reservations to sessions.
+- **cli.checkin.test.js** — comprehensive check-in coverage: on-time and early happy paths, timing boundaries, authorization (user/admin/case-insensitive), reservation state guards, active session conflict, suspension, early-start error cases (charger busy, previous reservation grace window), double check-in, return value.
 - **ui.test.js** — DOM rendering via jsdom, board data display, action handler behavior, and new mobile-UI features.
 
 ## Running tests

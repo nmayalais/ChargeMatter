@@ -125,6 +125,8 @@ Key/value settings (strings). Common keys:
 - `reservation_open_minute`: earliest local minute for same-day booking.
 - `walkup_net_new_window_minutes`: walk-up priority window for net-new users after a slot opens.
 - `walkup_returning_window_minutes`: additional walk-up window for returning users before full open access.
+- `reminder_10_enabled`: set to `true` to enable the 10-minute session-end warning (default off).
+- `reminder_5_enabled`: set to `true` to enable the 5-minute session-end warning (default off).
 
 ## Reservation rules
 - Same-day only.

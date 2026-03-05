@@ -24,7 +24,7 @@ Production Google Apps Script code. No build step — files are deployed directl
 - `isReturningUser_(userEmail, sessions, reservations, now)` — returns true if the user charged or made a qualifying reservation today. Early-released sessions/reservations do not count.
 - `completeReservationForSession_(session, now)` — called on session end; stamps `released_early: true` on the reservation if `now` is before the reservation's halfway point (using the original planned `end_time` before it is overwritten).
 - `getReservationConfig_(config)` — parses all reservation settings. Supports `"H:MM"` format in `reservation_open_hour` (e.g. `"5:45"` correctly sets 5:45 AM).
-- `checkInReservation()` — early-check-in window uses `earlyStartMinutes` only (not the old `Math.max` conflation with `checkinEarlyMinutes`).
+- `checkInReservation()` — always delegates session creation to `startSessionForReservation_()` for both early and on-time check-ins. This ensures admin check-ins and reservation-owner check-ins bypass walk-up tier rules correctly. Previously the on-time path called `startSession()` which re-evaluated walk-up rules against the caller's email, breaking admin check-ins.
 - `validateReservation_()` — per-day check runs before upcoming-count check so users get the clearer error message first.
 
 ## Frontend patterns
