@@ -538,11 +538,7 @@ function createEngine(options) {
         var activeName = activeCharger ? (activeCharger.name || ('Charger ' + activeCharger.charger_id)) : 'another charger';
         throw new Error('You already have an active session on ' + activeName + '. End it before checking in.');
       }
-      if (now.getTime() < startTime.getTime()) {
-        startSessionForReservation_(reservation, auth, now, config, chargersData, sessionsData, reservationsData);
-      } else {
-        startSession(reservation.charger_id);
-      }
+      startSessionForReservation_(reservation, auth, now, config, chargersData, sessionsData, reservationsData);
       if (!reservation.checked_in_at) {
         updateRow_(reservationsData.sheet, reservationsData.headerMap, reservation._row, {
           checked_in_at: now,
@@ -787,6 +783,8 @@ function createEngine(options) {
       var overdueRepeatMinutes = parseInt(config.overdue_repeat_minutes, 10);
       sessionMoveGraceMinutes = isNaN(sessionMoveGraceMinutes) ? APP_DEFAULTS.sessionMoveGraceMinutes : sessionMoveGraceMinutes;
       overdueRepeatMinutes = isNaN(overdueRepeatMinutes) ? APP_DEFAULTS.overdueRepeatMinutes : overdueRepeatMinutes;
+      var reminder10Enabled = isTrue_(config.reminder_10_enabled);
+      var reminder5Enabled = isTrue_(config.reminder_5_enabled);
       var chargersData = getSheetData_(SHEETS.chargers, CHARGERS_HEADERS);
       var sessionsData = getSheetData_(SHEETS.sessions, SESSIONS_HEADERS);
       var reservationsData = getSheetData_(SHEETS.reservations, RESERVATIONS_HEADERS);
@@ -820,12 +818,12 @@ function createEngine(options) {
             updates.overdue = false;
             updates.complete = false;
           }
-          if (!isTrue_(session.reminder_10_sent) && minutesToEnd <= 10 && minutesToEnd > 5) {
+          if (reminder10Enabled && !isTrue_(session.reminder_10_sent) && minutesToEnd <= 10 && minutesToEnd > 5) {
             if (notifyChannel_(buildReminderText_('tminus10', session, charger, endTime, now, sessionMoveGraceMinutes), session.user_id)) {
               updates.reminder_10_sent = true;
             }
           }
-          if (!isTrue_(session.reminder_5_sent) && minutesToEnd <= 5 && minutesToEnd > 0) {
+          if (reminder5Enabled && !isTrue_(session.reminder_5_sent) && minutesToEnd <= 5 && minutesToEnd > 0) {
             if (notifyChannel_(buildReminderText_('tminus5', session, charger, endTime, now, sessionMoveGraceMinutes), session.user_id)) {
               updates.reminder_5_sent = true;
             }
