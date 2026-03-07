@@ -63,6 +63,8 @@ Tabs created by `initSheets()`:
 - `sessions`: active/complete charging sessions.
 - `reservations`: upcoming reservations, check-in, and no-show data.
 - `config`: key/value settings.
+- `strikes`: per-user no-show strike records.
+- `suspensions`: temporary bans issued when a user exceeds the strike threshold.
 
 ### chargers
 - `charger_id`: unique identifier (string/number).
@@ -181,9 +183,9 @@ Admin actions are hidden under overflow menus in the UI.
 
 ## Key scripts
 - `apps-script/Code.gs`: server logic, reminders, reservations, availability, notifications.
-- `apps-script/index.html`: layout.
-- `apps-script/script.html`: UI logic.
-- `apps-script/styles.html`: styles.
+- `apps-script/index_v2.html`: layout.
+- `apps-script/script_v2.html`: UI logic.
+- `apps-script/styles_v2.html`: styles.
 
 ## Architecture
 ```mermaid

@@ -5,9 +5,9 @@ Production Google Apps Script code. No build step — files are deployed directl
 ## Files
 
 - **Code.gs** — all server logic: auth, Sheets read/write, session/reservation management, availability computation, reminders, Slack/email notifications. ~2600 lines.
-- **index.html** — HTML shell/layout.
-- **script.html** — client-side UI logic (vanilla JS). Two modes: **Now** (immediate charge) and **Reserve** (booking).
-- **styles.html** — CSS styles.
+- **index_v2.html** — HTML shell/layout.
+- **script_v2.html** — client-side UI logic (vanilla JS). Two modes: **Now** (immediate charge) and **Reserve** (booking).
+- **styles_v2.html** — CSS styles.
 - **appsscript.json** — manifest (timezone: `America/Los_Angeles`, runtime: V8).
 
 ## Key entry points in Code.gs
