@@ -119,10 +119,8 @@ function doGet(e) {
   var slackChannelName = String(config.slack_channel_name || '');
   var slackChannelUrl = String(config.slack_channel_url || '');
   var slackChannelLabel = formatSlackChannelLabel_(slackChannelName);
-  var useV3 = e && e.parameter && e.parameter.ui === 'v3';
-  var adminEmails = config.admin_emails ? String(config.admin_emails).split(',').map(function(s) { return s.trim().toLowerCase(); }) : [];
-  var isAdmin = adminEmails.indexOf(auth.email.toLowerCase()) !== -1;
-  var templateName = (useV3 && isAdmin) ? 'index_v3' : 'index_v2';
+  var useLegacy = e && e.parameter && e.parameter.ui === 'v2';
+  var templateName = useLegacy ? 'index_v2' : 'index_v3';
   var template = HtmlService.createTemplateFromFile(templateName);
   template.userEmail = auth.email;
   template.userName = auth.name;

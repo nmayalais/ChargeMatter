@@ -5,9 +5,12 @@ Production Google Apps Script code. No build step — files are deployed directl
 ## Files
 
 - **Code.gs** — all server logic: auth, Sheets read/write, session/reservation management, availability computation, reminders, Slack/email notifications. ~2600 lines.
-- **index_v2.html** — HTML shell/layout.
-- **script_v2.html** — client-side UI logic (vanilla JS). Two modes: **Now** (immediate charge) and **Reserve** (booking).
-- **styles_v2.html** — CSS styles.
+- **index_v3.html** — HTML shell/layout (default UI).
+- **script_v3.html** — client-side UI logic (default). Builds on v2 with onboarding tour, help popovers, toast notifications, and "End Session" button label.
+- **styles_v3.html** — CSS styles (default UI).
+- **index_v2.html** — v2 HTML shell (fallback via `?ui=v2`).
+- **script_v2.html** — v2 client-side UI logic (fallback).
+- **styles_v2.html** — v2 CSS styles (fallback).
 - **appsscript.json** — manifest (timezone: `America/Los_Angeles`, runtime: V8).
 
 ## Key entry points in Code.gs
@@ -33,7 +36,7 @@ Production Google Apps Script code. No build step — files are deployed directl
 - Mobile-optimized: bottom tab bar switches between Now/Reserve modes; sticky action bar holds primary CTA.
 - Admin actions are hidden under overflow menus and gated by `admin_emails` config.
 
-## Mobile UI features (script.html / styles.html)
+## Mobile UI features (script_v2.html / script_v3.html)
 
 ### My Status Banner (`#my-status-banner`)
 `renderMyStatusBanner()` is called inside `renderBoard()` immediately after `renderSuspensionBanner()`. It shows the current user's status at the top of the board with one of three states:
@@ -75,7 +78,7 @@ Note: Tier 2 checks **both** `isNetNew` and `isReturning` because the backend (`
 - `renderSlotsList()` appends a `.show-more-btn` button at the bottom when `!state.slotsAllLoaded` and the list is non-empty.
 - `state.slotsAllLoaded` is set `true` when a page returns fewer than 10 slots.
 
-## UI design system (styles.html)
+## UI design system (styles_v2.html / styles_v3.html)
 
 ### CSS custom properties (`:root`)
 Key tokens to be aware of when making visual changes:

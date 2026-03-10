@@ -27,7 +27,7 @@ Google Apps Script web app for managing EV charger reservations. No build step â
 | Business logic | `apps-script/Code.gs` | `cli/engine.js` |
 | Data store | Google Sheets | `data/store.json` |
 | Runtime APIs | Apps Script built-ins | `cli/runtime.js` (mocks) |
-| Frontend | `apps-script/script_v2.html` | N/A |
+| Frontend | `apps-script/script_v3.html` (default), `script_v2.html` (fallback via `?ui=v2`) | N/A |
 
 ## Data model
 

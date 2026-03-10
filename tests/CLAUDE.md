@@ -1,6 +1,6 @@
 # tests/CLAUDE.md
 
-Jest test suite targeting `cli/engine.js` (business logic) and `apps-script/script.html` (frontend JS via jsdom).
+Jest test suite targeting `cli/engine.js` (business logic) and `apps-script/script_v2.html` (frontend JS via jsdom).
 
 ## Test files
 
