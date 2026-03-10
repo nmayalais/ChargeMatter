@@ -331,8 +331,11 @@
       }
     }
     if (variant === 'success' || variant === 'info') {
+      // Toast-only for success/info — no inline banner (cleaner on mobile)
       showToast(message, variant);
-      state._noticeDismissTimer = setTimeout(() => setNotice(''), 4000);
+      notice.textContent = '';
+      notice.classList.remove(`notice--${variant}`);
+      return;
     }
   }
 
@@ -1088,6 +1091,9 @@
         .withFailureHandler(function(err) {
           setLoading(false);
           state._pendingAction = null;
+          // Clear the "Refreshing data..." toast container before showing error
+          var tc = document.getElementById('toast-container');
+          if (tc) tc.innerHTML = '';
           setNotice(err.message || String(err), 'error');
         })
         .getBoardData();
@@ -2153,6 +2159,7 @@
     // Tab trap: keep focus inside the onboarding card
     overlay.addEventListener('keydown', function(e) {
       if (e.key === 'Escape') {
+        e.stopImmediatePropagation();
         dismiss();
         return;
       }
@@ -2260,9 +2267,10 @@
       }
     });
 
-    // Escape key closes popover
+    // Escape key closes popover (stop propagation so global handler doesn't also fire)
     document.addEventListener('keydown', function(e) {
       if (e.key === 'Escape' && popover.classList.contains('active')) {
+        e.stopImmediatePropagation();
         hide();
       }
     });

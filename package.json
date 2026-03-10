@@ -6,7 +6,8 @@
   "scripts": {
     "test": "jest",
     "cli": "node cli/index.js",
-    "policy-check": "jest --runTestsByPath tests/cli.policy.test.js"
+    "policy-check": "jest --runTestsByPath tests/cli.policy.test.js",
+    "deploy": "cd apps-script && clasp push --force && clasp deploy -i AKfycbzG62vpV-i1M839wr_A_lzbHbJ3F1orTXMWbLxI_UeTbKnufeJ3RG6_X4nPU4XnB98 -d \"Deploy\""
   },
   "devDependencies": {
     "jest": "^29.7.0",

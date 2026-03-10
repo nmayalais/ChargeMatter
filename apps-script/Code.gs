@@ -119,8 +119,8 @@ function doGet(e) {
   var slackChannelName = String(config.slack_channel_name || '');
   var slackChannelUrl = String(config.slack_channel_url || '');
   var slackChannelLabel = formatSlackChannelLabel_(slackChannelName);
-  var useV3 = e && e.parameter && e.parameter.ui === 'v3';
-  var templateName = useV3 ? 'index_v3' : 'index_v2';
+  var useV2 = e && e.parameter && e.parameter.ui === 'v2';
+  var templateName = useV2 ? 'index_v2' : 'index_v3';
   var template = HtmlService.createTemplateFromFile(templateName);
   template.userEmail = auth.email;
   template.userName = auth.name;
