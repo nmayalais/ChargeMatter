@@ -523,11 +523,22 @@
       const { charger, session } = sessionEntry;
       eyebrow.textContent = 'Your session';
       detail.textContent = charger.name + ' · ends at ' + formatTime(session.endTime);
-      sub.textContent = '';
+      const endTime = new Date(session.endTime);
+      const diffMs = endTime.getTime() - getClientNow().getTime();
+      const diffMin = Math.ceil(diffMs / 60000);
+      if (diffMs <= 0) {
+        sub.textContent = '⏰ Time is up! Please unplug and end your session below.';
+        sub.classList.add('checkout-urgent');
+      } else if (diffMin <= 10) {
+        sub.textContent = `⚡ ${diffMin} min left — when done, unplug and tap "End Session" below.`;
+        sub.classList.add('checkout-soon');
+      } else {
+        sub.textContent = 'When finished, unplug your car and tap "End Session" below.';
+      }
       if (countdown) {
         countdown.dataset.sessionEnd = session.endTime;
       }
-      const endBtn = createButton("I've moved my car", 'btn', () => {
+      const endBtn = createButton('End Session', 'btn', () => {
         setActionFeedback(endBtn, 'Ending...');
         callServer('endSession', [session.sessionId], {
           successMessage: 'Session ended. The charger is now free for others.',
@@ -1188,7 +1199,7 @@
           openConfirm({
             title: 'End charging session?',
             message: 'Mark your session complete and free this charger?',
-            detail: 'Use this after you have moved your car.',
+            detail: 'Use this after you've unplugged and moved your car.',
             confirmLabel: 'End session',
             cancelLabel: 'Keep charging',
             confirmClass: 'warn'
@@ -1549,10 +1560,10 @@
     }
     const chargerName = entry.charger?.name || 'this charger';
     if (diffMs > 0) {
-      reminder.textContent = `Your session on ${chargerName} ends at ${formatTime(entry.session.endTime)}. Please move your car and tap "I've moved my car".`;
+      reminder.textContent = `Your session on ${chargerName} ends at ${formatTime(entry.session.endTime)}. When you're done, unplug and tap "End Session".`;
       return;
     }
-    reminder.textContent = `Your session on ${chargerName} is past its end time. Please move your car and tap "I've moved my car".`;
+    reminder.textContent = `Your session on ${chargerName} is past its end time. Please unplug and tap "End Session" now to avoid going overdue.`;
   }
 
   function setupModeTabs() {
@@ -1605,7 +1616,7 @@
     if (charger.session) {
       if (sameUserEmail(charger.session.userEmail, getCurrentUserEmail())) {
         return {
-          label: "I've moved my car",
+          label: 'End Session',
           action: () =>
             callServer('endSession', [charger.session.sessionId], {
               successMessage: 'Session ended. The charger is now free for others.',
