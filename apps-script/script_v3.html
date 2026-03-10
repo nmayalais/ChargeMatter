@@ -22,7 +22,8 @@
     slotsAllLoaded: false,
     _noticeDismissTimer: null,
     hiddenAt: null,
-    _pendingAction: null
+    _pendingAction: null,
+    timezone: null
   };
 
   const confirmState = {
@@ -431,6 +432,9 @@
     state.reservations = data.reservations || [];
     state.serverTime = new Date(data.serverTime);
     state.lastFetch = Date.now();
+    if (data.timezone) {
+      state.timezone = data.timezone;
+    }
     const board = document.getElementById('board');
 
     // Capture previous statuses for flash animation (only meaningful after first render)
@@ -491,8 +495,8 @@
     const endAt = user.suspension.endAt ? new Date(user.suspension.endAt) : null;
     let endLabel = 'soon';
     if (endAt && !Number.isNaN(endAt.getTime())) {
-      endLabel = endAt.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }) +
-        ' at ' + endAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      endLabel = endAt.toLocaleDateString([], tzOptions({ weekday: 'short', month: 'short', day: 'numeric' })) +
+        ' at ' + endAt.toLocaleTimeString([], tzOptions({ hour: 'numeric', minute: '2-digit' }));
     }
     banner.innerHTML =
       '<strong>Charging privileges suspended</strong>' +
@@ -1303,10 +1307,10 @@
       return;
     }
     const now = new Date(state.serverTime.getTime() + (Date.now() - state.lastFetch));
-    document.getElementById('last-updated').textContent = now.toLocaleTimeString([], {
+    document.getElementById('last-updated').textContent = now.toLocaleTimeString([], tzOptions({
       hour: 'numeric',
       minute: '2-digit'
-    });
+    }));
     document.querySelectorAll('.countdown').forEach((el) => {
       const endTime = new Date(el.dataset.endTime);
       if (Number.isNaN(endTime.getTime())) {
@@ -1365,12 +1369,31 @@
     return `${remaining}m ${pad(seconds)}s`;
   }
 
+  function tzOptions(extra) {
+    const opts = state.timezone ? { timeZone: state.timezone } : {};
+    return extra ? Object.assign(opts, extra) : opts;
+  }
+
+  function getDatePartsInTz(date) {
+    if (!state.timezone) {
+      return { year: date.getFullYear(), month: date.getMonth() + 1, day: date.getDate(), hours: date.getHours(), minutes: date.getMinutes() };
+    }
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: state.timezone,
+      year: 'numeric', month: 'numeric', day: 'numeric',
+      hour: 'numeric', minute: 'numeric', hour12: false
+    }).formatToParts(date);
+    const vals = {};
+    parts.forEach(function(p) { vals[p.type] = parseInt(p.value, 10); });
+    return { year: vals.year, month: vals.month, day: vals.day, hours: vals.hour === 24 ? 0 : vals.hour, minutes: vals.minute };
+  }
+
   function formatTime(isoString) {
     const date = new Date(isoString);
     if (Number.isNaN(date.getTime())) {
       return '--';
     }
-    return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    return date.toLocaleTimeString([], tzOptions({ hour: 'numeric', minute: '2-digit' }));
   }
 
   function getReservationOpenTime(config) {
@@ -1383,7 +1406,8 @@
       return null;
     }
     const now = getClientNow();
-    return new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour, minute, 0);
+    const dp = getDatePartsInTz(now);
+    return new Date(dp.year, dp.month - 1, dp.day, hour, minute, 0);
   }
 
   function formatReservationOpenTime(config) {
@@ -1391,7 +1415,7 @@
     if (!openTime) {
       return '';
     }
-    return openTime.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    return openTime.toLocaleTimeString([], tzOptions({ hour: 'numeric', minute: '2-digit' }));
   }
 
   function getReservationClosedMessage() {
@@ -1450,7 +1474,7 @@
     const isSameDay = formatDateInput(start) === formatDateInput(now);
     const dayLabel = isSameDay
       ? 'Today'
-      : start.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+      : start.toLocaleDateString([], tzOptions({ weekday: 'short', month: 'short', day: 'numeric' }));
     return `${dayLabel} ${formatTime(reservation.startTime)} · ${who}`;
   }
 
@@ -1476,19 +1500,16 @@
     if (Number.isNaN(date.getTime())) {
       return '';
     }
-    const year = date.getFullYear();
-    const month = pad(date.getMonth() + 1);
-    const day = pad(date.getDate());
-    return `${year}-${month}-${day}`;
+    const dp = getDatePartsInTz(date);
+    return `${dp.year}-${pad(dp.month)}-${pad(dp.day)}`;
   }
 
   function formatTimeInput(date) {
     if (Number.isNaN(date.getTime())) {
       return '';
     }
-    const hours = pad(date.getHours());
-    const minutes = pad(date.getMinutes());
-    return `${hours}:${minutes}`;
+    const dp = getDatePartsInTz(date);
+    return `${pad(dp.hours)}:${pad(dp.minutes)}`;
   }
 
   function shouldShowCheckIn(reservation) {
@@ -1952,7 +1973,7 @@
       const diffMinutes = Math.round((start.getTime() - now.getTime()) / 60000);
       if (diffMinutes <= 120) {
         grouped.next.push(slot);
-      } else if (start.getHours() < 17) {
+      } else if (getDatePartsInTz(start).hours < 17) {
         grouped.later.push(slot);
       } else {
         grouped.tonight.push(slot);
@@ -1980,7 +2001,7 @@
   }
 
   function formatDayLabel(date) {
-    return date.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+    return date.toLocaleDateString([], tzOptions({ weekday: 'short', month: 'short', day: 'numeric' }));
   }
 
   function getSlotDurationMinutes(slot) {
