@@ -516,6 +516,10 @@
       countdown.dataset.sessionEnd = '';
       countdown.textContent = '';
     }
+    // Clear checkout-reminder classes from previous render
+    if (sub) {
+      sub.classList.remove('checkout-soon', 'checkout-urgent');
+    }
 
     // 1. Active session?
     const sessionEntry = getCurrentUserSession();
@@ -1199,7 +1203,7 @@
           openConfirm({
             title: 'End charging session?',
             message: 'Mark your session complete and free this charger?',
-            detail: 'Use this after you've unplugged and moved your car.',
+            detail: "Use this after you've unplugged and moved your car.",
             confirmLabel: 'End session',
             cancelLabel: 'Keep charging',
             confirmClass: 'warn'
@@ -1765,6 +1769,11 @@
     }
     if (state.mode === 'now' && state.selectedCharger) {
       const primary = getPrimaryAction(state.selectedCharger);
+      if (!primary) {
+        info.textContent = `${state.selectedCharger.name} selected`;
+        bar.classList.add('active');
+        return;
+      }
       info.textContent = `${state.selectedCharger.name} selected`;
       actionBtn.textContent = primary.label;
       actionBtn.disabled = false;
