@@ -80,7 +80,7 @@ function loadScriptIntoDom(options = {}) {
   }
   window.confirm = () => true;
 
-  const scriptHtml = fs.readFileSync(path.join(__dirname, '..', 'apps-script', 'script.html'), 'utf8');
+  const scriptHtml = fs.readFileSync(path.join(__dirname, '..', 'apps-script', 'script_v2.html'), 'utf8');
   const match = scriptHtml.match(/<script>([\s\S]*?)<\/script>/);
   if (!match) {
     throw new Error('Could not find <script> tag in apps-script/script.html');

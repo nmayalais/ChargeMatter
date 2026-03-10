@@ -33,6 +33,62 @@
   const MOBILE_QUERY = '(max-width: 600px)';
   const mobileQueryList = window.matchMedia(MOBILE_QUERY);
 
+  // ── Analytics (PostHog) ──────────────────────────────────────────────────
+  const PH_EVENT_NAMES = {
+    startSession: 'session_started',
+    endSession: 'session_ended',
+    endSessionForReservation: 'session_ended',
+    createReservation: 'reservation_created',
+    updateReservation: 'reservation_updated',
+    cancelReservation: 'reservation_cancelled',
+    checkInReservation: 'reservation_checked_in',
+    notifyOwner: 'owner_notified',
+    forceEnd: 'session_force_ended',
+    resetCharger: 'charger_reset',
+    completeCheckedInReservation: 'reservation_completed_manually',
+  };
+
+  const _phKey = APP_CONFIG.posthogKey || '';
+  const _phHost = 'https://us.i.posthog.com';
+  let _phDistinctId = '';
+
+  function _phSend(payload) {
+    if (!_phKey) return;
+    fetch(_phHost + '/capture/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(Object.assign({ api_key: _phKey }, payload))
+    }).catch(function() {});
+  }
+
+  function phCapture(event, props) {
+    if (!_phKey) return;
+    if (typeof posthog !== 'undefined') {
+      posthog.capture(event, props);
+      return;
+    }
+    _phSend({ event: event, distinct_id: _phDistinctId || APP_CONFIG.userEmail || 'anonymous', properties: props || {} });
+  }
+
+  function phIdentify(email, name) {
+    if (!_phKey) return;
+    _phDistinctId = email;
+    if (typeof posthog !== 'undefined') {
+      posthog.identify(email, { email: email, name: name });
+      return;
+    }
+    _phSend({ event: '$identify', distinct_id: email, properties: { $set: { email: email, name: name } } });
+  }
+
+  window.onerror = function(msg, src, line, col, err) {
+    phCapture('js_error', { message: msg, source: src, line, col, stack: err && err.stack });
+  };
+
+  window.onunhandledrejection = function(event) {
+    phCapture('js_error', { message: event.reason?.message || String(event.reason), stack: event.reason?.stack, type: 'unhandledrejection' });
+  };
+  // ────────────────────────────────────────────────────────────────────────
+
   function updateDeviceClass() {
     document.body.classList.toggle('is-mobile', mobileQueryList.matches);
   }
@@ -207,6 +263,7 @@
   function setUserMeta() {
     const meta = document.getElementById('user-meta');
     meta.textContent = `${APP_CONFIG.userName} (${APP_CONFIG.userEmail})`;
+    phIdentify(APP_CONFIG.userEmail, APP_CONFIG.userName);
   }
 
   function setNotice(message, type) {
@@ -305,7 +362,8 @@
       return;
     }
     setNotice('');
-    if (state.board === null) {
+    const isFirstLoad = state.board === null;
+    if (isFirstLoad) {
       document.getElementById('board').innerHTML =
         '<div class="skeleton-card"></div>'.repeat(4);
     }
@@ -314,10 +372,14 @@
       .withSuccessHandler((data) => {
         setLoading(false);
         renderBoard(data);
+        if (isFirstLoad) {
+          phCapture('app_loaded', { is_admin: APP_CONFIG.isAdmin, is_mobile: mobileQueryList.matches });
+        }
       })
       .withFailureHandler((err) => {
         setLoading(false);
         setNotice(err.message || String(err), 'error');
+        phCapture('board_load_error', { error: err.message || String(err) });
       })
       .getBoardData();
   }
@@ -938,6 +1000,7 @@
         if (options.successMessage) {
           setNotice(options.successMessage, options.successType || 'success');
         }
+        phCapture(PH_EVENT_NAMES[method] || method, { method, is_admin: APP_CONFIG.isAdmin });
       })
       .withFailureHandler((err) => {
         setLoading(false);
@@ -950,6 +1013,7 @@
                 setNotice(err.message || String(err), 'error');
               }
             });
+            phCapture('action_error', { method, error: err.message || String(err), is_admin: APP_CONFIG.isAdmin });
             return;
           }
           handled = result === true;
@@ -957,6 +1021,7 @@
         if (!handled) {
           setNotice(err.message || String(err), 'error');
         }
+        phCapture('action_error', { method, error: err.message || String(err), is_admin: APP_CONFIG.isAdmin });
       });
     runner[method].apply(runner, args);
   }
@@ -1442,6 +1507,7 @@
       refreshSlotsIfNeeded({ force: false });
     }
     updateStickyBar();
+    phCapture('mode_changed', { mode });
   }
 
   function closeAllMenus() {

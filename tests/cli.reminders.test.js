@@ -12,42 +12,42 @@ jest.mock('../cli/runtime', () => {
   };
 });
 
-const { createEngine } = require('../cli/engine');
+const {
+  createEngine,
+  CHARGERS_HEADERS,
+  SESSIONS_HEADERS,
+  RESERVATIONS_HEADERS,
+  STRIKES_HEADERS,
+  SUSPENSIONS_HEADERS,
+  CONFIG_HEADERS
+} = require('../cli/engine');
 
 function buildBaseStore() {
   return {
     properties: { SPREADSHEET_ID: 'local' },
     sheets: {
       chargers: {
-        headers: ['charger_id', 'name', 'max_minutes', 'slot_starts', 'active_session_id'],
+        headers: CHARGERS_HEADERS,
         rows: []
       },
       sessions: {
-        headers: [
-          'session_id', 'charger_id', 'user_id', 'user_name', 'start_time', 'end_time',
-          'status', 'active', 'overdue', 'complete', 'reminder_10_sent', 'reminder_5_sent',
-          'reminder_0_sent', 'overdue_last_sent_at', 'grace_notified_at', 'late_strike_at', 'ended_at'
-        ],
+        headers: SESSIONS_HEADERS,
         rows: []
       },
       reservations: {
-        headers: [
-          'reservation_id', 'charger_id', 'user_id', 'user_name', 'start_time', 'end_time',
-          'status', 'checked_in_at', 'no_show_at', 'no_show_strike_at',
-          'reminder_5_before_sent', 'reminder_5_after_sent', 'created_at', 'updated_at', 'canceled_at'
-        ],
+        headers: RESERVATIONS_HEADERS,
         rows: []
       },
       strikes: {
-        headers: ['strike_id', 'user_id', 'user_name', 'type', 'source_type', 'source_id', 'reason', 'occurred_at', 'month_key'],
+        headers: STRIKES_HEADERS,
         rows: []
       },
       suspensions: {
-        headers: ['suspension_id', 'user_id', 'user_name', 'start_at', 'end_at', 'reason', 'active', 'created_at'],
+        headers: SUSPENSIONS_HEADERS,
         rows: []
       },
       config: {
-        headers: ['key', 'value'],
+        headers: CONFIG_HEADERS,
         rows: [
           ['allowed_domain', 'example.com'],
           ['admin_emails', 'admin@example.com']

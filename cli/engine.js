@@ -3,6 +3,80 @@
 const { Spreadsheet } = require('./store');
 const { createRuntime } = require('./runtime');
 
+// Schema header arrays are exported so tests can import them directly
+// instead of hardcoding copies that drift from the real schema.
+const CHARGERS_HEADERS = [
+  'charger_id',
+  'name',
+  'max_minutes',
+  'slot_starts',
+  'active_session_id'
+];
+
+const SESSIONS_HEADERS = [
+  'session_id',
+  'charger_id',
+  'user_id',
+  'user_name',
+  'start_time',
+  'end_time',
+  'status',
+  'active',
+  'overdue',
+  'complete',
+  'reminder_10_sent',
+  'reminder_5_sent',
+  'reminder_0_sent',
+  'overdue_last_sent_at',
+  'grace_notified_at',
+  'late_strike_at',
+  'ended_at'
+];
+
+const RESERVATIONS_HEADERS = [
+  'reservation_id',
+  'charger_id',
+  'user_id',
+  'user_name',
+  'start_time',
+  'end_time',
+  'status',
+  'checked_in_at',
+  'no_show_at',
+  'no_show_strike_at',
+  'reminder_5_before_sent',
+  'reminder_5_after_sent',
+  'created_at',
+  'updated_at',
+  'canceled_at',
+  'released_early'
+];
+
+const STRIKES_HEADERS = [
+  'strike_id',
+  'user_id',
+  'user_name',
+  'type',
+  'source_type',
+  'source_id',
+  'reason',
+  'occurred_at',
+  'month_key'
+];
+
+const SUSPENSIONS_HEADERS = [
+  'suspension_id',
+  'user_id',
+  'user_name',
+  'start_at',
+  'end_at',
+  'reason',
+  'active',
+  'created_at'
+];
+
+const CONFIG_HEADERS = ['key', 'value'];
+
 function createEngine(options) {
   const store = options.store;
   const runtime = createRuntime(options);
@@ -21,8 +95,14 @@ function createEngine(options) {
   const SpreadsheetApp = {
     openById() {
       return new Spreadsheet(store);
-    }
+    },
+    flush() {}
   };
+
+  // Execution-scoped caches — reset on each createEngine() call (one per test/CLI run).
+  var _cachedConfig = null;
+  var _spreadsheet = null;
+  var _sheetsInitialized = false;
 
   var APP_DEFAULTS = {
     allowedDomain: 'example.com',
@@ -56,78 +136,6 @@ function createEngine(options) {
     config: 'config'
   };
 
-  var CHARGERS_HEADERS = [
-    'charger_id',
-    'name',
-    'max_minutes',
-    'slot_starts',
-    'active_session_id'
-  ];
-
-  var SESSIONS_HEADERS = [
-    'session_id',
-    'charger_id',
-    'user_id',
-    'user_name',
-    'start_time',
-    'end_time',
-    'status',
-    'active',
-    'overdue',
-    'complete',
-    'reminder_10_sent',
-    'reminder_5_sent',
-    'reminder_0_sent',
-    'overdue_last_sent_at',
-    'grace_notified_at',
-    'late_strike_at',
-    'ended_at'
-  ];
-
-  var RESERVATIONS_HEADERS = [
-    'reservation_id',
-    'charger_id',
-    'user_id',
-    'user_name',
-    'start_time',
-    'end_time',
-    'status',
-    'checked_in_at',
-    'no_show_at',
-    'no_show_strike_at',
-    'reminder_5_before_sent',
-    'reminder_5_after_sent',
-    'created_at',
-    'updated_at',
-    'canceled_at',
-    'released_early'
-  ];
-
-  var STRIKES_HEADERS = [
-    'strike_id',
-    'user_id',
-    'user_name',
-    'type',
-    'source_type',
-    'source_id',
-    'reason',
-    'occurred_at',
-    'month_key'
-  ];
-
-  var SUSPENSIONS_HEADERS = [
-    'suspension_id',
-    'user_id',
-    'user_name',
-    'start_at',
-    'end_at',
-    'reason',
-    'active',
-    'created_at'
-  ];
-
-  var CONFIG_HEADERS = ['key', 'value'];
-
   function include() {
     return '';
   }
@@ -142,7 +150,7 @@ function createEngine(options) {
     var now = new Date();
     var reservationsData = getSheetData_(SHEETS.reservations, RESERVATIONS_HEADERS);
     var sessionsData = getSheetData_(SHEETS.sessions, SESSIONS_HEADERS);
-    var board = buildBoard_(now, reservationsData);
+    var board = buildBoard_(now, reservationsData, sessionsData);
     var userReservations = getUpcomingReservationsForUser_(reservationsData.rows, auth.email, now);
     var suspension = getActiveSuspensionForUser_(auth.email);
     if (suspension) {
@@ -532,13 +540,19 @@ function createEngine(options) {
       if (now.getTime() > latest.getTime()) {
         throw new Error('This reservation is too late to check in.');
       }
-      var activeSession = findActiveSessionForUser_(sessionsData.rows, auth.email);
+      var ownerEmail = String(reservation.user_id || '').toLowerCase();
+      var activeSession = findActiveSessionForUser_(sessionsData.rows, ownerEmail);
       if (activeSession) {
         var activeCharger = findById_(chargersData.rows, 'charger_id', activeSession.charger_id);
         var activeName = activeCharger ? (activeCharger.name || ('Charger ' + activeCharger.charger_id)) : 'another charger';
-        throw new Error('You already have an active session on ' + activeName + '. End it before checking in.');
+        throw new Error((auth.email.toLowerCase() === ownerEmail ? 'You already have' : reservation.user_id + ' already has') + ' an active session on ' + activeName + '. End it before checking in.');
       }
-      startSessionForReservation_(reservation, auth, now, config, chargersData, sessionsData, reservationsData);
+      var ownerAuth = {
+        email: reservation.user_id,
+        name: reservation.user_name || nameFromEmail_(reservation.user_id),
+        isAdmin: false
+      };
+      startSessionForReservation_(reservation, ownerAuth, now, config, chargersData, sessionsData, reservationsData);
       if (!reservation.checked_in_at) {
         updateRow_(reservationsData.sheet, reservationsData.headerMap, reservation._row, {
           checked_in_at: now,
@@ -788,6 +802,16 @@ function createEngine(options) {
       var chargersData = getSheetData_(SHEETS.chargers, CHARGERS_HEADERS);
       var sessionsData = getSheetData_(SHEETS.sessions, SESSIONS_HEADERS);
       var reservationsData = getSheetData_(SHEETS.reservations, RESERVATIONS_HEADERS);
+      var hasActiveSessions = sessionsData.rows.some(function(s) {
+        return s.session_id && !isComplete_(s);
+      });
+      var hasPendingReservations = reservationsData.rows.some(function(r) {
+        return r.reservation_id && !isReservationCanceled_(r) &&
+          !isReservationNoShow_(r) && !isReservationComplete_(r) && !r.checked_in_at;
+      });
+      if (!hasActiveSessions && !hasPendingReservations) {
+        return;
+      }
       var chargersById = {};
       chargersData.rows.forEach(function(charger) {
         chargersById[String(charger.charger_id)] = charger;
@@ -911,6 +935,7 @@ function createEngine(options) {
           });
         }
       });
+      SpreadsheetApp.flush();
     } finally {
       lock.releaseLock();
     }
@@ -1025,10 +1050,9 @@ function createEngine(options) {
     });
   }
 
-  function buildBoard_(now, reservationsData) {
+  function buildBoard_(now, reservationsData, sessionsData) {
     var config = getConfig_();
     var chargersData = getSheetData_(SHEETS.chargers, CHARGERS_HEADERS);
-    var sessionsData = getSheetData_(SHEETS.sessions, SESSIONS_HEADERS);
     var reservations = reservationsData ? reservationsData.rows : [];
     var reservationConfig = getReservationConfig_(config);
     var sessionMoveGraceMinutes = Number(config.session_move_grace_minutes) || APP_DEFAULTS.sessionMoveGraceMinutes;
@@ -1191,12 +1215,22 @@ function createEngine(options) {
   }
 
   function updateRow_(sheet, headerMap, rowIndex, updates) {
-    Object.keys(updates).forEach(function(key) {
-      var column = headerMap[key];
-      if (column) {
-        sheet.getRange(rowIndex, column, 1, 1).setValue(updates[key]);
-      }
+    var keys = Object.keys(updates).filter(function(k) { return headerMap[k]; });
+    if (!keys.length) return;
+    if (keys.length === 1) {
+      sheet.getRange(rowIndex, headerMap[keys[0]], 1, 1).setValue(updates[keys[0]]);
+      return;
+    }
+    var cols = keys.map(function(k) { return headerMap[k]; });
+    var minCol = Math.min.apply(null, cols);
+    var maxCol = Math.max.apply(null, cols);
+    var width = maxCol - minCol + 1;
+    var range = sheet.getRange(rowIndex, minCol, 1, width);
+    var existing = range.getValues()[0];
+    keys.forEach(function(key) {
+      existing[headerMap[key] - minCol] = updates[key];
     });
+    range.setValues([existing]);
   }
 
   function getSheet_(name) {
@@ -1209,6 +1243,8 @@ function createEngine(options) {
   }
 
   function initSheets_() {
+    if (_sheetsInitialized) return;
+    _sheetsInitialized = true;
     ensureHeaders_(getSheet_(SHEETS.chargers), CHARGERS_HEADERS);
     ensureHeaders_(getSheet_(SHEETS.sessions), SESSIONS_HEADERS);
     ensureHeaders_(getSheet_(SHEETS.reservations), RESERVATIONS_HEADERS);
@@ -1218,15 +1254,18 @@ function createEngine(options) {
   }
 
   function getSpreadsheet_() {
+    if (_spreadsheet) return _spreadsheet;
     var props = PropertiesService.getScriptProperties();
     var id = props.getProperty('SPREADSHEET_ID');
     if (!id) {
       throw new Error('Missing SPREADSHEET_ID in Script Properties.');
     }
-    return SpreadsheetApp.openById(id);
+    _spreadsheet = SpreadsheetApp.openById(id);
+    return _spreadsheet;
   }
 
   function getConfig_() {
+    if (_cachedConfig) return _cachedConfig;
     var sheet = getSheet_(SHEETS.config);
     ensureHeaders_(sheet, CONFIG_HEADERS);
     var data = getSheetData_(SHEETS.config, CONFIG_HEADERS);
@@ -1297,7 +1336,8 @@ function createEngine(options) {
       props.getProperty('WALKUP_NET_NEW_WINDOW_MINUTES'),
       APP_DEFAULTS.walkupNetNewWindowMinutes
     );
-    return config;
+    _cachedConfig = config;
+    return _cachedConfig;
   }
 
   function resolveConfigValue_(value, fallbackValue, defaultValue) {
@@ -1405,7 +1445,7 @@ function createEngine(options) {
         if (!isReservationComplete_(reservation)) {
           return false;
         }
-        if (!reservation.released_early) {
+        if (!isTrue_(reservation.released_early)) {
           return false;
         }
         if (String(reservation.user_id || '').toLowerCase() !== email) {
@@ -1449,7 +1489,7 @@ function createEngine(options) {
         }
         return true; // late cancellation — disqualified
       }
-      if (isReservationComplete_(reservation) && reservation.released_early) {
+      if (isReservationComplete_(reservation) && isTrue_(reservation.released_early)) {
         return false; // early-released — still net-new
       }
       return true; // no-show, late-complete, and active all disqualify
@@ -1473,7 +1513,7 @@ function createEngine(options) {
       var sessionEnd = toDate_(session.end_time);
       var hasMatchingEarlyRelease = reservations.some(function(reservation) {
         if (!isReservationComplete_(reservation)) { return false; }
-        if (!reservation.released_early) { return false; }
+        if (!isTrue_(reservation.released_early)) { return false; }
         if (String(reservation.user_id || '').toLowerCase() !== email) { return false; }
         if (String(reservation.charger_id || '') !== sessionChargerId) { return false; }
         var resStart = toDate_(reservation.start_time);
@@ -1492,7 +1532,7 @@ function createEngine(options) {
       if (!start || dayKey_(start) !== todayKey) { return false; }
       if (isReservationNoShow_(reservation)) { return true; }
       if (isReservationComplete_(reservation)) {
-        return !reservation.released_early; // early-released = not returning
+        return !isTrue_(reservation.released_early); // early-released = not returning
       }
       if (isReservationCanceled_(reservation)) {
         var end = toDate_(reservation.end_time);
@@ -1636,8 +1676,7 @@ function createEngine(options) {
       now,
       monthKey
     ]);
-    var refreshed = getSheetData_(SHEETS.strikes, STRIKES_HEADERS);
-    var count = getMonthlyStrikeCount_(refreshed.rows, userEmail, monthKey);
+    var count = getMonthlyStrikeCount_(strikesData.rows, userEmail, monthKey) + 1;
     maybeApplySuspension_(params.userEmail, params.userName, monthKey, now, count);
     return null;
   }
@@ -1880,7 +1919,7 @@ function createEngine(options) {
       if (!reservation.reservation_id || isReservationCanceled_(reservation)) {
         return false;
       }
-      if (isReservationComplete_(reservation) && reservation.released_early) {
+      if (isReservationComplete_(reservation) && isTrue_(reservation.released_early)) {
         return false; // early-released — doesn't count against daily limit
       }
       if (String(reservation.reservation_id) === excludeId) {
@@ -2172,6 +2211,8 @@ function createEngine(options) {
       false,
       false,
       false,
+      '',
+      '',
       '',
       ''
     ];
@@ -2604,53 +2645,6 @@ function createEngine(options) {
     return sentSlack || sentEmail;
   }
 
-  function notifyUser_(session, charger, text) {
-    var config = getConfig_();
-    var email = String(session.user_id || '');
-    var sentSlack = false;
-    var sentEmail = false;
-    var slackText = text;
-    if (config.slack_bot_token && email) {
-      try {
-        var userId = getSlackUserId_(email, config.slack_bot_token);
-        if (userId) {
-          slackText = '<@' + userId + '> ' + text;
-        }
-      } catch (err) {
-        logError_('Slack user lookup failed', err, { email: email });
-      }
-    }
-    if (config.slack_bot_token && config.slack_webhook_channel) {
-      try {
-        sendSlackChannelMessage_(config.slack_bot_token, config.slack_webhook_channel, slackText);
-        sentSlack = true;
-      } catch (err) {
-        logError_('Slack bot channel failed', err, { channel: config.slack_webhook_channel });
-      }
-    }
-    if (!sentSlack) {
-      if (config.slack_webhook_url) {
-        try {
-          sendSlackWebhook_(config.slack_webhook_url, slackText, config.slack_webhook_channel);
-          sentSlack = true;
-        } catch (err) {
-          logError_('Slack webhook failed', err, { channel: config.slack_webhook_channel });
-        }
-      } else {
-        logError_('Slack webhook missing', '', {});
-      }
-    }
-    if (email) {
-      try {
-        MailApp.sendEmail(email, getAppName_(config) + ' reminder', text);
-        sentEmail = true;
-      } catch (err) {
-        logError_('Email notification failed', err, { email: email });
-      }
-    }
-    return sentSlack || sentEmail;
-  }
-
   function sendSlackWebhook_(webhookUrl, text, channel) {
     if (!webhookUrl) {
       return;
@@ -2831,5 +2825,11 @@ function createEngine(options) {
 }
 
 module.exports = {
-  createEngine
+  createEngine,
+  CHARGERS_HEADERS,
+  SESSIONS_HEADERS,
+  RESERVATIONS_HEADERS,
+  STRIKES_HEADERS,
+  SUSPENSIONS_HEADERS,
+  CONFIG_HEADERS
 };

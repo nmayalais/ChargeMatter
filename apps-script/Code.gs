@@ -1,3 +1,8 @@
+// Execution-scoped caches — reset automatically on each new GAS execution context.
+var _cachedConfig = null;
+var _spreadsheet = null;
+var _sheetsInitialized = false;
+
 var APP_DEFAULTS = {
   allowedDomain: 'example.com',
   appName: 'EV Charging',
@@ -114,8 +119,10 @@ function doGet(e) {
   var slackChannelName = String(config.slack_channel_name || '');
   var slackChannelUrl = String(config.slack_channel_url || '');
   var slackChannelLabel = formatSlackChannelLabel_(slackChannelName);
-  var uiVersion = selectUiVersion_(auth, config, e);
-  var templateName = uiVersion === 'v2' ? 'index_v2' : 'index';
+  var useV3 = e && e.parameter && e.parameter.ui === 'v3';
+  var adminEmails = config.admin_emails ? String(config.admin_emails).split(',').map(function(s) { return s.trim().toLowerCase(); }) : [];
+  var isAdmin = adminEmails.indexOf(auth.email.toLowerCase()) !== -1;
+  var templateName = (useV3 && isAdmin) ? 'index_v3' : 'index_v2';
   var template = HtmlService.createTemplateFromFile(templateName);
   template.userEmail = auth.email;
   template.userName = auth.name;
@@ -124,6 +131,7 @@ function doGet(e) {
   template.slackChannelName = slackChannelName;
   template.slackChannelUrl = slackChannelUrl;
   template.slackChannelLabel = slackChannelLabel;
+  template.posthogKey = PropertiesService.getScriptProperties().getProperty('posthog_api_key') || '';
   return template.evaluate().setTitle(appName);
 }
 
@@ -133,7 +141,7 @@ function getBoardData() {
   var now = new Date();
   var reservationsData = getSheetData_(SHEETS.reservations, RESERVATIONS_HEADERS);
   var sessionsData = getSheetData_(SHEETS.sessions, SESSIONS_HEADERS);
-  var board = buildBoard_(now, reservationsData);
+  var board = buildBoard_(now, reservationsData, sessionsData);
   var userReservations = getUpcomingReservationsForUser_(reservationsData.rows, auth.email, now);
   var suspension = getActiveSuspensionForUser_(auth.email);
   if (suspension) {
@@ -262,6 +270,8 @@ function startSession(chargerId) {
       false,
       false,
       false,
+      '',
+      '',
       '',
       ''
     ];
@@ -521,13 +531,19 @@ function checkInReservation(reservationId) {
     if (now.getTime() > latest.getTime()) {
       throw new Error('This reservation is too late to check in.');
     }
-    var activeSession = findActiveSessionForUser_(sessionsData.rows, auth.email);
+    var ownerEmail = String(reservation.user_id || '').toLowerCase();
+    var activeSession = findActiveSessionForUser_(sessionsData.rows, ownerEmail);
     if (activeSession) {
       var activeCharger = findById_(chargersData.rows, 'charger_id', activeSession.charger_id);
       var activeName = activeCharger ? (activeCharger.name || ('Charger ' + activeCharger.charger_id)) : 'another charger';
-      throw new Error('You already have an active session on ' + activeName + '. End it before checking in.');
+      throw new Error((auth.email.toLowerCase() === ownerEmail ? 'You already have' : reservation.user_id + ' already has') + ' an active session on ' + activeName + '. End it before checking in.');
     }
-    startSessionForReservation_(reservation, auth, now, config, chargersData, sessionsData, reservationsData);
+    var ownerAuth = {
+      email: reservation.user_id,
+      name: reservation.user_name || nameFromEmail_(reservation.user_id),
+      isAdmin: false
+    };
+    startSessionForReservation_(reservation, ownerAuth, now, config, chargersData, sessionsData, reservationsData);
     if (!reservation.checked_in_at) {
       updateRow_(reservationsData.sheet, reservationsData.headerMap, reservation._row, {
         checked_in_at: now,
@@ -777,6 +793,16 @@ function sendRemindersCore_() {
     var chargersData = getSheetData_(SHEETS.chargers, CHARGERS_HEADERS);
     var sessionsData = getSheetData_(SHEETS.sessions, SESSIONS_HEADERS);
     var reservationsData = getSheetData_(SHEETS.reservations, RESERVATIONS_HEADERS);
+    var hasActiveSessions = sessionsData.rows.some(function(s) {
+      return s.session_id && !isComplete_(s);
+    });
+    var hasPendingReservations = reservationsData.rows.some(function(r) {
+      return r.reservation_id && !isReservationCanceled_(r) &&
+        !isReservationNoShow_(r) && !isReservationComplete_(r) && !r.checked_in_at;
+    });
+    if (!hasActiveSessions && !hasPendingReservations) {
+      return;
+    }
     var chargersById = {};
     chargersData.rows.forEach(function(charger) {
       chargersById[String(charger.charger_id)] = charger;
@@ -900,6 +926,7 @@ function sendRemindersCore_() {
         });
       }
     });
+    SpreadsheetApp.flush();
   } finally {
     lock.releaseLock();
   }
@@ -1014,10 +1041,9 @@ function completeReservationForSession_(session, now) {
   });
 }
 
-function buildBoard_(now, reservationsData) {
+function buildBoard_(now, reservationsData, sessionsData) {
   var config = getConfig_();
   var chargersData = getSheetData_(SHEETS.chargers, CHARGERS_HEADERS);
-  var sessionsData = getSheetData_(SHEETS.sessions, SESSIONS_HEADERS);
   var reservations = reservationsData ? reservationsData.rows : [];
   var reservationConfig = getReservationConfig_(config);
   var sessionMoveGraceMinutes = Number(config.session_move_grace_minutes) || APP_DEFAULTS.sessionMoveGraceMinutes;
@@ -1180,12 +1206,22 @@ function ensureHeaders_(sheet, expectedHeaders) {
 }
 
 function updateRow_(sheet, headerMap, rowIndex, updates) {
-  Object.keys(updates).forEach(function(key) {
-    var column = headerMap[key];
-    if (column) {
-      sheet.getRange(rowIndex, column).setValue(updates[key]);
-    }
+  var keys = Object.keys(updates).filter(function(k) { return headerMap[k]; });
+  if (!keys.length) return;
+  if (keys.length === 1) {
+    sheet.getRange(rowIndex, headerMap[keys[0]]).setValue(updates[keys[0]]);
+    return;
+  }
+  var cols = keys.map(function(k) { return headerMap[k]; });
+  var minCol = Math.min.apply(null, cols);
+  var maxCol = Math.max.apply(null, cols);
+  var width = maxCol - minCol + 1;
+  var range = sheet.getRange(rowIndex, minCol, 1, width);
+  var existing = range.getValues()[0];
+  keys.forEach(function(key) {
+    existing[headerMap[key] - minCol] = updates[key];
   });
+  range.setValues([existing]);
 }
 
 function getSheet_(name) {
@@ -1198,6 +1234,8 @@ function getSheet_(name) {
 }
 
 function initSheets_() {
+  if (_sheetsInitialized) return;
+  _sheetsInitialized = true;
   ensureHeaders_(getSheet_(SHEETS.chargers), CHARGERS_HEADERS);
   ensureHeaders_(getSheet_(SHEETS.sessions), SESSIONS_HEADERS);
   ensureHeaders_(getSheet_(SHEETS.reservations), RESERVATIONS_HEADERS);
@@ -1207,15 +1245,18 @@ function initSheets_() {
 }
 
 function getSpreadsheet_() {
+  if (_spreadsheet) return _spreadsheet;
   var props = PropertiesService.getScriptProperties();
   var id = props.getProperty('SPREADSHEET_ID');
   if (!id) {
     throw new Error('Missing SPREADSHEET_ID in Script Properties.');
   }
-  return SpreadsheetApp.openById(id);
+  _spreadsheet = SpreadsheetApp.openById(id);
+  return _spreadsheet;
 }
 
 function getConfig_() {
+  if (_cachedConfig) return _cachedConfig;
   var sheet = getSheet_(SHEETS.config);
   ensureHeaders_(sheet, CONFIG_HEADERS);
   var data = getSheetData_(SHEETS.config, CONFIG_HEADERS);
@@ -1234,8 +1275,6 @@ function getConfig_() {
   config.slack_webhook_channel = config.slack_webhook_channel || props.getProperty('SLACK_WEBHOOK_CHANNEL') || '';
   config.slack_bot_token = config.slack_bot_token || props.getProperty('SLACK_BOT_TOKEN') || '';
   config.admin_emails = config.admin_emails || props.getProperty('ADMIN_EMAILS') || '';
-  config.ui_version = config.ui_version || props.getProperty('UI_VERSION') || 'v1';
-  config.ui_v2_allowlist = config.ui_v2_allowlist || props.getProperty('UI_V2_ALLOWLIST') || '';
   config.overdue_repeat_minutes = config.overdue_repeat_minutes || props.getProperty('OVERDUE_REPEAT_MINUTES') || APP_DEFAULTS.overdueRepeatMinutes;
   config.session_move_grace_minutes =
     config.session_move_grace_minutes ||
@@ -1288,7 +1327,8 @@ function getConfig_() {
     props.getProperty('WALKUP_NET_NEW_WINDOW_MINUTES'),
     APP_DEFAULTS.walkupNetNewWindowMinutes
   );
-  return config;
+  _cachedConfig = config;
+  return _cachedConfig;
 }
 
 function resolveConfigValue_(value, fallbackValue, defaultValue) {
@@ -1341,35 +1381,6 @@ function getAdminEmails_(config) {
       return item;
     });
   return list;
-}
-
-function getUiV2Allowlist_(config) {
-  var list = String(config.ui_v2_allowlist || '')
-    .split(',')
-    .map(function(item) {
-      return item.trim().toLowerCase();
-    })
-    .filter(function(item) {
-      return item;
-    });
-  return list;
-}
-
-function selectUiVersion_(auth, config, e) {
-  var params = (e && e.parameter) || {};
-  var requested = String(params.v || '').trim().toLowerCase();
-  if (requested === '2' || requested === 'v2') {
-    return 'v2';
-  }
-  var allowlist = getUiV2Allowlist_(config);
-  if (allowlist.indexOf(String(auth.email || '').toLowerCase()) !== -1) {
-    return 'v2';
-  }
-  var configured = String(config.ui_version || '').trim().toLowerCase();
-  if (configured === '2' || configured === 'v2') {
-    return 'v2';
-  }
-  return 'v1';
 }
 
 function nameFromEmail_(email) {
@@ -1427,7 +1438,7 @@ function isNetNewUser_(userEmail, sessions, reservations, now) {
       if (!isReservationComplete_(reservation)) {
         return false;
       }
-      if (!reservation.released_early) {
+      if (!isTrue_(reservation.released_early)) {
         return false;
       }
       if (String(reservation.user_id || '').toLowerCase() !== email) {
@@ -1471,7 +1482,7 @@ function isNetNewUser_(userEmail, sessions, reservations, now) {
       }
       return true; // late cancellation — disqualified
     }
-    if (isReservationComplete_(reservation) && reservation.released_early) {
+    if (isReservationComplete_(reservation) && isTrue_(reservation.released_early)) {
       return false; // early-released — still net-new
     }
     return true; // no-show, late-complete, and active all disqualify
@@ -1495,7 +1506,7 @@ function isReturningUser_(userEmail, sessions, reservations, now) {
     var sessionEnd = toDate_(session.end_time);
     var hasMatchingEarlyRelease = reservations.some(function(reservation) {
       if (!isReservationComplete_(reservation)) { return false; }
-      if (!reservation.released_early) { return false; }
+      if (!isTrue_(reservation.released_early)) { return false; }
       if (String(reservation.user_id || '').toLowerCase() !== email) { return false; }
       if (String(reservation.charger_id || '') !== sessionChargerId) { return false; }
       var resStart = toDate_(reservation.start_time);
@@ -1514,7 +1525,7 @@ function isReturningUser_(userEmail, sessions, reservations, now) {
     if (!start || dayKey_(start) !== todayKey) { return false; }
     if (isReservationNoShow_(reservation)) { return true; }
     if (isReservationComplete_(reservation)) {
-      return !reservation.released_early; // early-released = not returning
+      return !isTrue_(reservation.released_early); // early-released = not returning
     }
     if (isReservationCanceled_(reservation)) {
       var end = toDate_(reservation.end_time);
@@ -1658,8 +1669,7 @@ function recordStrike_(params) {
     now,
     monthKey
   ]);
-  var refreshed = getSheetData_(SHEETS.strikes, STRIKES_HEADERS);
-  var count = getMonthlyStrikeCount_(refreshed.rows, userEmail, monthKey);
+  var count = getMonthlyStrikeCount_(strikesData.rows, userEmail, monthKey) + 1;
   maybeApplySuspension_(params.userEmail, params.userName, monthKey, now, count);
   return null;
 }
@@ -1902,7 +1912,7 @@ function validateReservation_(params) {
     if (!reservation.reservation_id || isReservationCanceled_(reservation)) {
       return false;
     }
-    if (isReservationComplete_(reservation) && reservation.released_early) {
+    if (isReservationComplete_(reservation) && isTrue_(reservation.released_early)) {
       return false; // early-released — doesn't count against daily limit
     }
     if (String(reservation.reservation_id) === excludeId) {
@@ -2194,6 +2204,8 @@ function startSessionForReservation_(reservation, auth, now, config, chargersDat
     false,
     false,
     false,
+    '',
+    '',
     '',
     ''
   ];
@@ -2616,53 +2628,6 @@ function notifyChannel_(text, email) {
     }
   }
   if (!sentSlack && email) {
-    try {
-      MailApp.sendEmail(email, getAppName_(config) + ' reminder', text);
-      sentEmail = true;
-    } catch (err) {
-      logError_('Email notification failed', err, { email: email });
-    }
-  }
-  return sentSlack || sentEmail;
-}
-
-function notifyUser_(session, charger, text) {
-  var config = getConfig_();
-  var email = String(session.user_id || '');
-  var sentSlack = false;
-  var sentEmail = false;
-  var slackText = text;
-  if (config.slack_bot_token && email) {
-    try {
-      var userId = getSlackUserId_(email, config.slack_bot_token);
-      if (userId) {
-        slackText = '<@' + userId + '> ' + text;
-      }
-    } catch (err) {
-      logError_('Slack user lookup failed', err, { email: email });
-    }
-  }
-  if (config.slack_bot_token && config.slack_webhook_channel) {
-    try {
-      sendSlackChannelMessage_(config.slack_bot_token, config.slack_webhook_channel, slackText);
-      sentSlack = true;
-    } catch (err) {
-      logError_('Slack bot channel failed', err, { channel: config.slack_webhook_channel });
-    }
-  }
-  if (!sentSlack) {
-    if (config.slack_webhook_url) {
-      try {
-        sendSlackWebhook_(config.slack_webhook_url, slackText, config.slack_webhook_channel);
-        sentSlack = true;
-      } catch (err) {
-        logError_('Slack webhook failed', err, { channel: config.slack_webhook_channel });
-      }
-    } else {
-      logError_('Slack webhook missing', '', {});
-    }
-  }
-  if (email) {
     try {
       MailApp.sendEmail(email, getAppName_(config) + ' reminder', text);
       sentEmail = true;
