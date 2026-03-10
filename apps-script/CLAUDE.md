@@ -115,6 +115,13 @@ Styled via ID selector (overrides `.btn.ghost`): dark charcoal background `#1d29
 
 Uses [clasp](https://github.com/google/clasp). Config is in `.clasp.json` (git-ignored). See `SETUP.md` for full steps.
 
+**WARNING:** `appsscript.json` MUST contain the `"webapp"` property. Without it, `clasp deploy` creates a Library deployment instead of a Web App, removing the web app URL. Never delete this property.
+
+**Safe deployment workflow:**
+- `clasp push` — sync code only (safe, no deployment change)
+- `clasp deploy -i <DEPLOYMENT_ID> -d "message"` — update existing deployment (requires `"webapp"` in manifest)
+- **Never run `clasp deploy` without `-i`** — this creates a new deployment instead of updating the existing one
+
 Secrets (Slack tokens, Spreadsheet IDs) live in **Script Properties**, never in code.
 
 ## Sync requirement
