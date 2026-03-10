@@ -1597,8 +1597,14 @@
     document.querySelectorAll('.mobile-tab').forEach((btn) => {
       btn.classList.toggle('active', btn.dataset.mode === mode);
     });
-    document.getElementById('mode-now').classList.toggle('active', mode === 'now');
-    document.getElementById('mode-reserve').classList.toggle('active', mode === 'reserve');
+    var modeNow = document.getElementById('mode-now');
+    var modeReserve = document.getElementById('mode-reserve');
+    // Remove active from both, force reflow, then add to target — restarts CSS animation
+    modeNow.classList.remove('active');
+    modeReserve.classList.remove('active');
+    var target = (mode === 'now') ? modeNow : modeReserve;
+    void target.offsetWidth; // force reflow to restart animation
+    target.classList.add('active');
     clearSelection();
     if (mode === 'reserve' && state.board) {
       updateReservationUI(state.board);
