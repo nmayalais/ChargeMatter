@@ -511,4 +511,408 @@ describe('checkInReservation', () => {
       expect(result.chargers).toBeDefined();
     });
   });
+
+  // -------------------------------------------------------------------------
+  // Force-end overdue session on check-in
+  // -------------------------------------------------------------------------
+
+  describe('force-end overdue session on check-in', () => {
+
+    test('happy path: overdue session is force-ended and check-in succeeds', () => {
+      const store = buildStore();
+      // Person A: active session 7:00–8:00 on Charger 1
+      pushSession(store, {
+        id: 'session-a',
+        chargerId: '1',
+        userId: 'persona@example.com',
+        start: localDate(2026, 3, 10, 7, 0),
+        end: localDate(2026, 3, 10, 8, 0)
+      });
+      // Person B: reservation 8:00–9:00 on Charger 1
+      const resId = pushReservation(store, {
+        id: 'res-b',
+        chargerId: '1',
+        userId: 'personb@example.com',
+        start: localDate(2026, 3, 10, 8, 0),
+        end: localDate(2026, 3, 10, 9, 0)
+      });
+      const engine = createUserEngine(store, 'personb@example.com');
+
+      withLocalTime(2026, 3, 10, 8, 5, () => {
+        expect(() => engine.checkInReservation(resId)).not.toThrow();
+      });
+
+      // Person A's session should be complete with ended_at set
+      const sessionA = store.sheets.sessions.rows.find((r) => r[0] === 'session-a');
+      expect(sessionA[6]).toBe('complete');   // status
+      expect(sessionA[9]).toBe(true);         // complete flag
+      expect(sessionA[16]).toBeTruthy();      // ended_at
+
+      // Person B should have a new active session
+      const sessionB = store.sheets.sessions.rows.find(
+        (r) => r[2] === 'personb@example.com' && r[6] === 'active'
+      );
+      expect(sessionB).toBeTruthy();
+      expect(String(sessionB[1])).toBe('1');  // charger_id
+
+      // Person B's reservation should be checked_in
+      const resRow = store.sheets.reservations.rows.find((r) => r[0] === 'res-b');
+      expect(resRow[6]).toBe('checked_in');
+      expect(resRow[7]).toBeTruthy();         // checked_in_at
+    });
+
+    test('late strike recorded when past grace period', () => {
+      const store = buildStore();
+      pushSession(store, {
+        id: 'session-a',
+        chargerId: '1',
+        userId: 'persona@example.com',
+        start: localDate(2026, 3, 10, 7, 0),
+        end: localDate(2026, 3, 10, 8, 0)
+      });
+      const resId = pushReservation(store, {
+        id: 'res-b',
+        chargerId: '1',
+        userId: 'personb@example.com',
+        start: localDate(2026, 3, 10, 8, 0),
+        end: localDate(2026, 3, 10, 9, 0)
+      });
+      const engine = createUserEngine(store, 'personb@example.com');
+
+      // 8:15 AM — 15 min past session end, beyond 10-min grace
+      withLocalTime(2026, 3, 10, 8, 15, () => {
+        engine.checkInReservation(resId);
+      });
+
+      const strikes = store.sheets.strikes.rows;
+      expect(strikes.length).toBe(1);
+      expect(strikes[0][1]).toBe('persona@example.com');  // user_id
+      expect(strikes[0][3]).toBe('late');                  // type
+      expect(strikes[0][5]).toBe('session-a');             // source_id
+    });
+
+    test('no strike within grace period', () => {
+      const store = buildStore();
+      pushSession(store, {
+        id: 'session-a',
+        chargerId: '1',
+        userId: 'persona@example.com',
+        start: localDate(2026, 3, 10, 7, 0),
+        end: localDate(2026, 3, 10, 8, 0)
+      });
+      const resId = pushReservation(store, {
+        id: 'res-b',
+        chargerId: '1',
+        userId: 'personb@example.com',
+        start: localDate(2026, 3, 10, 8, 0),
+        end: localDate(2026, 3, 10, 9, 0)
+      });
+      const engine = createUserEngine(store, 'personb@example.com');
+
+      // 8:02 AM — within 10-min grace
+      withLocalTime(2026, 3, 10, 8, 2, () => {
+        engine.checkInReservation(resId);
+      });
+
+      // Session should be force-ended
+      const sessionA = store.sheets.sessions.rows.find((r) => r[0] === 'session-a');
+      expect(sessionA[6]).toBe('complete');
+
+      // No strike recorded
+      expect(store.sheets.strikes.rows.length).toBe(0);
+    });
+
+    test('no double-strike when late_strike_at already stamped', () => {
+      const store = buildStore();
+      pushSession(store, {
+        id: 'session-a',
+        chargerId: '1',
+        userId: 'persona@example.com',
+        start: localDate(2026, 3, 10, 7, 0),
+        end: localDate(2026, 3, 10, 8, 0)
+      });
+      // Pre-stamp late_strike_at on the session (column index 15)
+      const sessionRow = store.sheets.sessions.rows.find((r) => r[0] === 'session-a');
+      sessionRow[15] = localDate(2026, 3, 10, 8, 12);
+
+      // Pre-seed a strike row
+      store.sheets.strikes.rows.push([
+        'strike-existing',
+        'persona@example.com',
+        'Driver',
+        'late',
+        'session',
+        'session-a',
+        'Overdue session',
+        localDate(2026, 3, 10, 8, 12),
+        '2026-03'
+      ]);
+
+      const resId = pushReservation(store, {
+        id: 'res-b',
+        chargerId: '1',
+        userId: 'personb@example.com',
+        start: localDate(2026, 3, 10, 8, 0),
+        end: localDate(2026, 3, 10, 9, 0)
+      });
+      const engine = createUserEngine(store, 'personb@example.com');
+
+      withLocalTime(2026, 3, 10, 8, 15, () => {
+        engine.checkInReservation(resId);
+      });
+
+      // Still exactly 1 strike — no duplicate
+      expect(store.sheets.strikes.rows.length).toBe(1);
+    });
+
+    test('does NOT force-end if session has not ended yet', () => {
+      const store = buildStore();
+      // Person A's session ends at 8:30, not yet overdue
+      pushSession(store, {
+        id: 'session-a',
+        chargerId: '1',
+        userId: 'persona@example.com',
+        start: localDate(2026, 3, 10, 7, 0),
+        end: localDate(2026, 3, 10, 8, 30)
+      });
+      const resId = pushReservation(store, {
+        id: 'res-b',
+        chargerId: '1',
+        userId: 'personb@example.com',
+        start: localDate(2026, 3, 10, 8, 0),
+        end: localDate(2026, 3, 10, 9, 0)
+      });
+      const engine = createUserEngine(store, 'personb@example.com');
+
+      // 8:05 AM — session still active until 8:30
+      withLocalTime(2026, 3, 10, 8, 5, () => {
+        expect(() => engine.checkInReservation(resId)).toThrow(/in use/i);
+      });
+
+      // Person A's session should still be active
+      const sessionA = store.sheets.sessions.rows.find((r) => r[0] === 'session-a');
+      expect(sessionA[6]).toBe('active');
+    });
+
+    test('Person A\'s reservation is also completed after force-end', () => {
+      const store = buildStore();
+      // Person A: checked-in reservation 7:00–8:00
+      pushReservation(store, {
+        id: 'res-a',
+        chargerId: '1',
+        userId: 'persona@example.com',
+        start: localDate(2026, 3, 10, 7, 0),
+        end: localDate(2026, 3, 10, 8, 0),
+        status: 'checked_in',
+        checkedInAt: localDate(2026, 3, 10, 7, 0)
+      });
+      pushSession(store, {
+        id: 'session-a',
+        chargerId: '1',
+        userId: 'persona@example.com',
+        start: localDate(2026, 3, 10, 7, 0),
+        end: localDate(2026, 3, 10, 8, 0)
+      });
+      // Person B: reservation 8:00–9:00
+      const resId = pushReservation(store, {
+        id: 'res-b',
+        chargerId: '1',
+        userId: 'personb@example.com',
+        start: localDate(2026, 3, 10, 8, 0),
+        end: localDate(2026, 3, 10, 9, 0)
+      });
+      const engine = createUserEngine(store, 'personb@example.com');
+
+      withLocalTime(2026, 3, 10, 8, 5, () => {
+        engine.checkInReservation(resId);
+      });
+
+      // Person A's reservation should be complete
+      const resA = store.sheets.reservations.rows.find((r) => r[0] === 'res-a');
+      expect(resA[6]).toBe('complete');
+    });
+
+    test('admin can trigger force-end when checking in another user\'s reservation', () => {
+      const store = buildStore();
+      pushSession(store, {
+        id: 'session-a',
+        chargerId: '1',
+        userId: 'persona@example.com',
+        start: localDate(2026, 3, 10, 7, 0),
+        end: localDate(2026, 3, 10, 8, 0)
+      });
+      const resId = pushReservation(store, {
+        id: 'res-b',
+        chargerId: '1',
+        userId: 'personb@example.com',
+        start: localDate(2026, 3, 10, 8, 0),
+        end: localDate(2026, 3, 10, 9, 0)
+      });
+      const engine = createAdminEngine(store);
+
+      withLocalTime(2026, 3, 10, 8, 5, () => {
+        expect(() => engine.checkInReservation(resId)).not.toThrow();
+      });
+
+      // Person A's session should be force-ended
+      const sessionA = store.sheets.sessions.rows.find((r) => r[0] === 'session-a');
+      expect(sessionA[6]).toBe('complete');
+
+      // Person B should have new active session
+      const sessionB = store.sheets.sessions.rows.find(
+        (r) => r[2] === 'personb@example.com' && r[6] === 'active'
+      );
+      expect(sessionB).toBeTruthy();
+    });
+
+    test('no-op when charger has no active session — check-in succeeds normally', () => {
+      const store = buildStore();
+      // No active session on Charger 1
+      const resId = pushReservation(store, {
+        id: 'res-b',
+        chargerId: '1',
+        userId: 'personb@example.com',
+        start: localDate(2026, 3, 10, 8, 0),
+        end: localDate(2026, 3, 10, 9, 0)
+      });
+      const engine = createUserEngine(store, 'personb@example.com');
+
+      withLocalTime(2026, 3, 10, 8, 5, () => {
+        expect(() => engine.checkInReservation(resId)).not.toThrow();
+      });
+
+      // Person B should have an active session
+      const sessionB = store.sheets.sessions.rows.find(
+        (r) => r[2] === 'personb@example.com' && r[6] === 'active'
+      );
+      expect(sessionB).toBeTruthy();
+    });
+
+    test('boundary: force-end at exact session end time (now == sessionEnd)', () => {
+      const store = buildStore();
+      pushSession(store, {
+        id: 'session-a',
+        chargerId: '1',
+        userId: 'persona@example.com',
+        start: localDate(2026, 3, 10, 7, 0),
+        end: localDate(2026, 3, 10, 8, 0)
+      });
+      const resId = pushReservation(store, {
+        id: 'res-b',
+        chargerId: '1',
+        userId: 'personb@example.com',
+        start: localDate(2026, 3, 10, 8, 0),
+        end: localDate(2026, 3, 10, 9, 0)
+      });
+      const engine = createUserEngine(store, 'personb@example.com');
+
+      // Exactly 8:00 — session end time
+      withLocalTime(2026, 3, 10, 8, 0, () => {
+        expect(() => engine.checkInReservation(resId)).not.toThrow();
+      });
+
+      // Person A's session should be force-ended (now >= sessionEnd)
+      const sessionA = store.sheets.sessions.rows.find((r) => r[0] === 'session-a');
+      expect(sessionA[6]).toBe('complete');
+      expect(sessionA[16]).toBeTruthy(); // ended_at
+    });
+
+    test('different charger — no cross-charger force-end', () => {
+      const store = buildStore();
+      // Person A overdue on Charger 1
+      pushSession(store, {
+        id: 'session-a',
+        chargerId: '1',
+        userId: 'persona@example.com',
+        start: localDate(2026, 3, 10, 7, 0),
+        end: localDate(2026, 3, 10, 8, 0)
+      });
+      // Person B's reservation on Charger 2
+      const resId = pushReservation(store, {
+        id: 'res-b',
+        chargerId: '2',
+        userId: 'personb@example.com',
+        start: localDate(2026, 3, 10, 8, 0),
+        end: localDate(2026, 3, 10, 9, 0)
+      });
+      const engine = createUserEngine(store, 'personb@example.com');
+
+      withLocalTime(2026, 3, 10, 8, 5, () => {
+        expect(() => engine.checkInReservation(resId)).not.toThrow();
+      });
+
+      // Person A's session on Charger 1 should NOT be affected
+      const sessionA = store.sheets.sessions.rows.find((r) => r[0] === 'session-a');
+      expect(sessionA[6]).toBe('active');
+      expect(sessionA[7]).toBe(true); // still active flag
+
+      // Person B should have active session on Charger 2
+      const sessionB = store.sheets.sessions.rows.find(
+        (r) => r[2] === 'personb@example.com' && r[6] === 'active'
+      );
+      expect(sessionB).toBeTruthy();
+      expect(String(sessionB[1])).toBe('2');
+    });
+
+    test('feature disabled via config — charger in use error, session not ended', () => {
+      const store = buildStore();
+      // Disable force-end feature
+      store.sheets.config.rows.push(['force_end_on_checkin_enabled', 'false']);
+
+      pushSession(store, {
+        id: 'session-a',
+        chargerId: '1',
+        userId: 'persona@example.com',
+        start: localDate(2026, 3, 10, 7, 0),
+        end: localDate(2026, 3, 10, 8, 0)
+      });
+      const resId = pushReservation(store, {
+        id: 'res-b',
+        chargerId: '1',
+        userId: 'personb@example.com',
+        start: localDate(2026, 3, 10, 8, 0),
+        end: localDate(2026, 3, 10, 9, 0)
+      });
+      const engine = createUserEngine(store, 'personb@example.com');
+
+      withLocalTime(2026, 3, 10, 8, 5, () => {
+        expect(() => engine.checkInReservation(resId)).toThrow(/in use/i);
+      });
+
+      // Person A's session should NOT be ended
+      const sessionA = store.sheets.sessions.rows.find((r) => r[0] === 'session-a');
+      expect(sessionA[6]).toBe('active');
+    });
+
+    test('force-end at exact grace boundary records a strike', () => {
+      const store = buildStore();
+      // session_move_grace_minutes = 10 (already in config), session ends at 8:00
+      pushSession(store, {
+        id: 'session-a',
+        chargerId: '1',
+        userId: 'persona@example.com',
+        start: localDate(2026, 3, 10, 7, 0),
+        end: localDate(2026, 3, 10, 8, 0)
+      });
+      const resId = pushReservation(store, {
+        id: 'res-b',
+        chargerId: '1',
+        userId: 'personb@example.com',
+        start: localDate(2026, 3, 10, 8, 0),
+        end: localDate(2026, 3, 10, 9, 0)
+      });
+      const engine = createUserEngine(store, 'personb@example.com');
+
+      // Exactly 8:10 — at the grace boundary
+      withLocalTime(2026, 3, 10, 8, 10, () => {
+        engine.checkInReservation(resId);
+      });
+
+      // Strike should be recorded at exact boundary (>= grace)
+      const strikes = store.sheets.strikes.rows;
+      expect(strikes.length).toBe(1);
+      expect(strikes[0][1]).toBe('persona@example.com');
+      expect(strikes[0][3]).toBe('late');
+    });
+  });
 });

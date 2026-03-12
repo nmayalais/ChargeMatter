@@ -36,7 +36,7 @@ Six logical "sheets" (Google Sheets in prod, JSON locally):
 - **chargers** — config + active session reference
 - **sessions** — active/completed charging sessions
 - **reservations** — bookings with check-in and no-show data. `released_early` (bool) is stamped `true` when a checked-in session ends before the halfway point of the reservation window, preserving the user's net-new status and daily allotment.
-- **config** — key/value settings (grace periods, limits, etc.). Notable keys: `reservation_open_hour` supports `"H:MM"` format (e.g. `"5:45"`), `walkup_net_new_window_minutes` controls Option A priority window, `reminder_10_enabled` / `reminder_5_enabled` toggle the 10- and 5-minute session-end warnings (both default off).
+- **config** — key/value settings (grace periods, limits, etc.). Notable keys: `reservation_open_hour` supports `"H:MM"` format (e.g. `"5:45"`), `walkup_net_new_window_minutes` controls Option A priority window, `reminder_10_enabled` / `reminder_5_enabled` toggle the 10- and 5-minute session-end warnings (both default off), `force_end_on_checkin_enabled` (bool, default true) auto-ends overdue sessions when the next reservation holder checks in.
 - **strikes** — per-user no-show strike records
 - **suspensions** — temporary bans from strike threshold
 

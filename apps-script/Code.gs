@@ -23,7 +23,8 @@ var APP_DEFAULTS = {
   reservationOpenHour: 5,
   reservationOpenMinute: 45,
   walkupNetNewWindowMinutes: 10,
-  walkupReturningWindowMinutes: 10
+  walkupReturningWindowMinutes: 10,
+  forceEndOnCheckinEnabled: true
 };
 
 var SHEETS = {
@@ -515,7 +516,8 @@ function checkInReservation(reservationId) {
     if (!auth.isAdmin && String(reservation.user_id).toLowerCase() !== auth.email.toLowerCase()) {
       throw new Error('You can only check in to your own reservation.');
     }
-    var config = getReservationConfig_(getConfig_());
+    var rawConfig = getConfig_();
+    var config = getReservationConfig_(rawConfig);
     var startTime = toDate_(reservation.start_time);
     if (!startTime) {
       throw new Error('Invalid reservation start time.');
@@ -528,6 +530,15 @@ function checkInReservation(reservationId) {
     }
     if (now.getTime() > latest.getTime()) {
       throw new Error('This reservation is too late to check in.');
+    }
+    // Force-end overdue session on this charger so next reservation holder can check in
+    var forceEndedSession = forceEndOverdueSessionForCheckin_(
+      reservation.charger_id, chargersData, sessionsData, now, rawConfig
+    );
+    if (forceEndedSession) {
+      // Re-read stale in-memory data after force-end updates
+      chargersData = getSheetData_(SHEETS.chargers, CHARGERS_HEADERS);
+      sessionsData = getSheetData_(SHEETS.sessions, SESSIONS_HEADERS);
     }
     var ownerEmail = String(reservation.user_id || '').toLowerCase();
     var activeSession = findActiveSessionForUser_(sessionsData.rows, ownerEmail);
@@ -994,6 +1005,59 @@ function endSessionInternal_(sessionId, auth, adminOverride) {
   completeReservationForSession_(session, now);
 }
 
+function forceEndOverdueSessionForCheckin_(chargerId, chargersData, sessionsData, now, config) {
+  if (config.force_end_on_checkin_enabled === false) {
+    return null;
+  }
+  var charger = findById_(chargersData.rows, 'charger_id', chargerId);
+  if (!charger || !charger.active_session_id) {
+    return null;
+  }
+  var session = findById_(sessionsData.rows, 'session_id', charger.active_session_id);
+  if (!session || isComplete_(session)) {
+    updateRow_(chargersData.sheet, chargersData.headerMap, charger._row, {
+      active_session_id: ''
+    });
+    return null;
+  }
+  var sessionEnd = toDate_(session.end_time);
+  if (!sessionEnd || now.getTime() < sessionEnd.getTime()) {
+    return null;
+  }
+  var sessionUpdates = {
+    status: 'complete',
+    active: false,
+    overdue: false,
+    complete: true,
+    ended_at: now
+  };
+  var graceMins = Number(config.session_move_grace_minutes) || APP_DEFAULTS.sessionMoveGraceMinutes;
+  var graceCutoff = addMinutes_(sessionEnd, graceMins);
+  if (!session.late_strike_at && now.getTime() >= graceCutoff.getTime()) {
+    recordStrike_({
+      type: 'late',
+      sourceType: 'session',
+      sourceId: session.session_id,
+      userEmail: session.user_id,
+      userName: session.user_name,
+      reason: 'Overdue session force-ended by next reservation check-in',
+      occurredAt: now
+    });
+    sessionUpdates.late_strike_at = now;
+  }
+  updateRow_(sessionsData.sheet, sessionsData.headerMap, session._row, sessionUpdates);
+  updateRow_(chargersData.sheet, chargersData.headerMap, charger._row, {
+    active_session_id: ''
+  });
+  completeReservationForSession_(session, now);
+  var appName = getAppName_(config);
+  var chargerName = charger.name || ('Charger ' + charger.charger_id);
+  var userDisplay = formatUserDisplay_(session.user_name, session.user_id);
+  notifyChannel_(appName + ': ' + userDisplay + '\'s overdue session on ' + chargerName +
+    ' was automatically ended because the next reservation holder checked in.', session.user_id);
+  return session;
+}
+
 function completeReservationForSession_(session, now) {
   var reservationsData = getSheetData_(SHEETS.reservations, RESERVATIONS_HEADERS);
   var sessionStart = toDate_(session.start_time);
@@ -1325,6 +1389,12 @@ function getConfig_() {
     props.getProperty('WALKUP_NET_NEW_WINDOW_MINUTES'),
     APP_DEFAULTS.walkupNetNewWindowMinutes
   );
+  var forceEndRaw = config.force_end_on_checkin_enabled;
+  if (forceEndRaw === false || forceEndRaw === 'FALSE' || forceEndRaw === 'false') {
+    config.force_end_on_checkin_enabled = false;
+  } else {
+    config.force_end_on_checkin_enabled = APP_DEFAULTS.forceEndOnCheckinEnabled;
+  }
   _cachedConfig = config;
   return _cachedConfig;
 }
