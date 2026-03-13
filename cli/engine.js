@@ -1328,6 +1328,11 @@ function createEngine(options) {
     return _spreadsheet;
   }
 
+  // CLI-only: no CacheService available; Apps Script version also clears CacheService
+  function invalidateConfigCache_() {
+    _cachedConfig = null;
+  }
+
   function getConfig_() {
     if (_cachedConfig) return _cachedConfig;
     var sheet = getSheet_(SHEETS.config);

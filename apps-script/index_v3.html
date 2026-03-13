@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <?!= include('styles_v3'); ?>
     <? if (posthogKey) { ?>
-    <script src="https://us-assets.i.posthog.com/static/array.js" crossorigin="anonymous"></script>
+    <script async src="https://us-assets.i.posthog.com/static/array.js" crossorigin="anonymous"></script>
     <script>
       if (window.posthog) {
         posthog.init('<?= posthogKey ?>', {

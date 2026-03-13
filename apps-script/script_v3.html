@@ -1,5 +1,4 @@
 <script>
-  const STALE_THRESHOLD_MS = 120000; // 2 minutes
   const MAX_VISIBLE_TOASTS = 3;
 
   const state = {
@@ -22,7 +21,6 @@
     slotsAllLoaded: false,
     _noticeDismissTimer: null,
     hiddenAt: null,
-    _pendingAction: null,
     timezone: null
   };
 
@@ -947,6 +945,20 @@
     card.appendChild(availability);
     card.appendChild(actions);
     card.appendChild(details);
+    const hint = document.createElement('div');
+    hint.className = 'card-hint';
+    if (primary) {
+      hint.textContent = `Tap to ${primary.label.toLowerCase()}`;
+    } else {
+      hint.classList.add('is-hidden');
+    }
+    card.appendChild(hint);
+    card.addEventListener('click', (event) => {
+      if (event.target.closest('button')) {
+        return;
+      }
+      selectCharger(charger);
+    });
     return card;
   }
 
@@ -1052,41 +1064,8 @@
     }
   }
 
-  function isBoardStale() {
-    if (!state.lastFetch) return false;
-    return (Date.now() - state.lastFetch) > STALE_THRESHOLD_MS;
-  }
-
   function callServer(method, args, options = {}) {
     if (state.isLoading) {
-      return;
-    }
-    // If board data is stale, refresh first then replay the action
-    if (isBoardStale() && !options._afterRefresh) {
-      state._pendingAction = { method: method, args: args, options: options };
-      showToast('Refreshing data...', 'info');
-      setNotice('');
-      setLoading(true);
-      google.script.run
-        .withSuccessHandler(function(data) {
-          setLoading(false);
-          renderBoard(data, options);
-          var pending = state._pendingAction;
-          state._pendingAction = null;
-          if (pending) {
-            pending.options._afterRefresh = true;
-            callServer(pending.method, pending.args, pending.options);
-          }
-        })
-        .withFailureHandler(function(err) {
-          setLoading(false);
-          state._pendingAction = null;
-          // Clear the "Refreshing data..." toast container before showing error
-          var tc = document.getElementById('toast-container');
-          if (tc) tc.innerHTML = '';
-          setNotice(err.message || String(err), 'error');
-        })
-        .getBoardData();
       return;
     }
     setNotice('');

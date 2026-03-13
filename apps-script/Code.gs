@@ -1317,8 +1317,21 @@ function getSpreadsheet_() {
   return _spreadsheet;
 }
 
+function invalidateConfigCache_() {
+  _cachedConfig = null;
+  try { CacheService.getScriptCache().remove('app_config'); } catch(e) {}
+}
+
 function getConfig_() {
   if (_cachedConfig) return _cachedConfig;
+  // Check cross-request cache (persists across invocations, 5-min TTL)
+  try {
+    var cached = CacheService.getScriptCache().get('app_config');
+    if (cached) {
+      _cachedConfig = JSON.parse(cached);
+      return _cachedConfig;
+    }
+  } catch(e) {}
   var sheet = getSheet_(SHEETS.config);
   ensureHeaders_(sheet, CONFIG_HEADERS);
   var data = getSheetData_(SHEETS.config, CONFIG_HEADERS);
@@ -1395,6 +1408,8 @@ function getConfig_() {
   } else {
     config.force_end_on_checkin_enabled = APP_DEFAULTS.forceEndOnCheckinEnabled;
   }
+  // Store in cross-request cache (5-min TTL)
+  try { CacheService.getScriptCache().put('app_config', JSON.stringify(config), 300); } catch(e) {}
   _cachedConfig = config;
   return _cachedConfig;
 }

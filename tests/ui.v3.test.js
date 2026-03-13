@@ -259,14 +259,15 @@ describe('V3 UI regression tests', () => {
     });
   });
 
-  // ─── Bug #3: Stale board refresh cleanup ────────────────────────────────────
+  // ─── Stale board: skip pre-refresh, fire action directly ─────────────────────
 
-  describe('stale board refresh', () => {
-    test('clears toast container when stale-board refresh fails', () => {
+  describe('stale board optimization', () => {
+    test('fires action directly without pre-refreshing when board is stale', () => {
       jest.useFakeTimers();
+      const startSession = jest.fn();
       const getBoardData = jest.fn();
       const { window, runState } = loadV3Dom({
-        runMethods: { getBoardData }
+        runMethods: { startSession, getBoardData }
       });
       activeWindow = window;
 
@@ -284,26 +285,14 @@ describe('V3 UI regression tests', () => {
       // Make board stale (>2 min ago)
       window.__state.lastFetch = Date.now() - 130000;
 
-      // Trigger a server call that will detect stale board
+      // Trigger a server call — should go directly to startSession, not getBoardData
       window.eval(`
         callServer('startSession', ['1'], {});
       `);
 
-      // A "Refreshing data..." toast should have been shown
-      const container = window.document.getElementById('toast-container');
-      expect(container.querySelectorAll('.toast').length).toBeGreaterThanOrEqual(1);
-
-      // Simulate the getBoardData failure
-      if (runState.failure) {
-        runState.failure(new Error('Network error'));
-      }
-
-      // Toast container should be cleared
-      expect(container.querySelectorAll('.toast').length).toBe(0);
-
-      // Error notice should be shown
-      const notice = window.document.getElementById('notice');
-      expect(notice.textContent).toContain('Network error');
+      // startSession should be called directly (no pre-refresh via getBoardData)
+      expect(startSession).toHaveBeenCalled();
+      expect(getBoardData).not.toHaveBeenCalled();
 
       jest.useRealTimers();
     });
