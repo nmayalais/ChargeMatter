@@ -27,8 +27,7 @@ Production Google Apps Script code. No build step — files are deployed directl
 - `isReturningUser_(userEmail, sessions, reservations, now)` — returns true if the user charged or made a qualifying reservation today. Early-released sessions/reservations do not count.
 - `completeReservationForSession_(session, now)` — called on session end; stamps `released_early: true` on the reservation if `now` is before the reservation's halfway point (using the original planned `end_time` before it is overwritten).
 - `getReservationConfig_(config)` — parses all reservation settings. Supports `"H:MM"` format in `reservation_open_hour` (e.g. `"5:45"` correctly sets 5:45 AM).
-- `checkInReservation()` — always delegates session creation to `startSessionForReservation_()` for both early and on-time check-ins. This ensures admin check-ins and reservation-owner check-ins bypass walk-up tier rules correctly. Previously the on-time path called `startSession()` which re-evaluated walk-up rules against the caller's email, breaking admin check-ins. When `force_end_on_checkin_enabled` is true (default), auto-ends any overdue session on the charger before starting the new session via `forceEndOverdueSessionForCheckin_()`.
-- `forceEndOverdueSessionForCheckin_()` — called by `checkInReservation()` when the charger has an overdue session. Ends the overdue session, marks the charger as free, and sends a notification to the displaced user.
+- `checkInReservation()` — always delegates session creation to `startSessionForReservation_()` for both early and on-time check-ins. This ensures admin check-ins and reservation-owner check-ins bypass walk-up tier rules correctly. Previously the on-time path called `startSession()` which re-evaluated walk-up rules against the caller's email, breaking admin check-ins.
 - `validateReservation_()` — per-day check runs before upcoming-count check so users get the clearer error message first.
 
 ## Frontend patterns
@@ -68,8 +67,8 @@ Walk-up rows use user-outcome language instead of internal system vocabulary. Th
 
 Note: Tier 2 checks **both** `isNetNew` and `isReturning` because the backend (`startSession()`) allows either group during this window. A net-new user who didn't claim the spot during Tier 1 remains eligible in Tier 2.
 
-### Card hint text
-`createCard()` sets `.card-hint` to `"Tap to [action label]"` using the result of `getPrimaryAction()` (already computed in scope). The hint element is hidden via `is-hidden` when there is no primary action.
+### Card details visibility
+Card details (info rows, session/reservation metadata) are always visible — no tap-to-reveal interaction.
 
 ### Slot pagination ("Show More")
 `getAvailabilitySummary(offset)` accepts an optional `offset` (default `0`) and returns a page of 10 slots starting at that position. The UI tracks pagination in `state.slotsOffset` and `state.slotsAllLoaded`.

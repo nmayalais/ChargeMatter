@@ -947,20 +947,6 @@
     card.appendChild(availability);
     card.appendChild(actions);
     card.appendChild(details);
-    const hint = document.createElement('div');
-    hint.className = 'card-hint';
-    if (primary) {
-      hint.textContent = `Tap to ${primary.label.toLowerCase()}`;
-    } else {
-      hint.classList.add('is-hidden');
-    }
-    card.appendChild(hint);
-    card.addEventListener('click', (event) => {
-      if (event.target.closest('button')) {
-        return;
-      }
-      selectCharger(charger);
-    });
     return card;
   }
 

@@ -7,7 +7,7 @@ Jest test suite targeting `cli/engine.js` (business logic) and `apps-script/scri
 - **cli.policy.test.js** — reservation limits (max upcoming, per-day), no-show strikes, suspensions, early-start rules, prior reservation protection, early/late session-release halfway rule.
 - **cli.admin.test.js** — admin force-end sessions, reset charger.
 - **cli.reservation-session.test.js** — check-in lifecycle, session auto-start on check-in, matching reservations to sessions.
-- **cli.checkin.test.js** — comprehensive check-in coverage: on-time and early happy paths, timing boundaries, authorization (user/admin/case-insensitive), reservation state guards, active session conflict, suspension, early-start error cases (charger busy, previous reservation grace window), double check-in, return value. Also covers the "force-end overdue session on check-in" feature (12 tests): auto-ending overdue sessions, config toggle, non-overdue protection, notification to displaced user, and edge cases.
+- **cli.checkin.test.js** — comprehensive check-in coverage: on-time and early happy paths, timing boundaries, authorization (user/admin/case-insensitive), reservation state guards, active session conflict, suspension, early-start error cases (charger busy, previous reservation grace window), double check-in, return value.
 - **cli.reminders.test.js** — `sendReminders()` behavior: no-show releases, strike issuance, suspension thresholds, session-end reminder toggles.
 - **sync.test.js** — CI drift check: asserts that every named function in `engine.js` exists in `Code.gs` and vice versa (excluding intentional ENGINE_ONLY / GAS_ONLY allowlists). Catches sync regressions automatically.
 - **ui.test.js** — DOM rendering via jsdom, board data display, action handler behavior, and new mobile-UI features.
@@ -48,5 +48,4 @@ npx jest --runInBand                             # Serial (used in CI)
 | **Skeleton loading** | 4 skeleton cards injected on first `loadBoard()` when `state.board === null`; no skeletons on reload |
 | **Auto-refresh on visibility restore** | `hiddenAt` recorded on hide; `loadBoard()` triggered after >60 s; not triggered after <60 s |
 | **Walk-up priority labels** | Net-new user sees "You're eligible" (Tier 1); non-net-new sees "Priority window"; returning user sees "You're eligible" (Tier 2); non-returning sees "Opens to all at" |
-| **Card hint text** | Free charger shows `"Tap to start charging"`; own-session charger shows own-session label; hint hidden when no primary action |
 | **Show More pagination** | Button shown when `slotsAllLoaded = false`; hidden when `slotsAllLoaded = true`; absent when slot list is empty |
