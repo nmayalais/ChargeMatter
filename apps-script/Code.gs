@@ -138,7 +138,6 @@ function getBoardData() {
   initSheets_();
   var auth = requireAuthorizedUser_();
   var now = new Date();
-  var config = getConfig_();
   var chargersData = getSheetData_(SHEETS.chargers, CHARGERS_HEADERS);
   var sessionsData = getSheetData_(SHEETS.sessions, SESSIONS_HEADERS);
   var reservationsData = getSheetData_(SHEETS.reservations, RESERVATIONS_HEADERS);
@@ -146,7 +145,6 @@ function getBoardData() {
   return buildBoardResponse_({
     auth: auth,
     now: now,
-    config: config,
     chargersData: chargersData,
     sessionsData: sessionsData,
     reservationsData: reservationsData,
@@ -157,10 +155,10 @@ function getBoardData() {
 function buildBoardResponse_(opts) {
   var auth = opts.auth;
   var now = opts.now;
-  var chargersData = opts.chargersData;
-  var sessionsData = opts.sessionsData;
-  var reservationsData = opts.reservationsData;
-  var suspensionsData = opts.suspensionsData;
+  var chargersData = opts.chargersData || getSheetData_(SHEETS.chargers, CHARGERS_HEADERS);
+  var sessionsData = opts.sessionsData || getSheetData_(SHEETS.sessions, SESSIONS_HEADERS);
+  var reservationsData = opts.reservationsData || getSheetData_(SHEETS.reservations, RESERVATIONS_HEADERS);
+  var suspensionsData = opts.suspensionsData || getSheetData_(SHEETS.suspensions, SUSPENSIONS_HEADERS);
   var board = buildBoard_(now, reservationsData, sessionsData, chargersData);
   var userReservations = getUpcomingReservationsForUser_(reservationsData.rows, auth.email, now);
   var suspension = getActiveSuspensionForUser_(auth.email, suspensionsData);
@@ -304,7 +302,7 @@ function startSession(chargerId) {
     sessionsData = getSheetData_(SHEETS.sessions, SESSIONS_HEADERS);
     chargersData = getSheetData_(SHEETS.chargers, CHARGERS_HEADERS);
     return buildBoardResponse_({
-      auth: auth, now: now, config: config,
+      auth: auth, now: now,
       chargersData: chargersData, sessionsData: sessionsData,
       reservationsData: reservationsData, suspensionsData: suspensionsData
     });
@@ -322,7 +320,6 @@ function createReservation(chargerId, startTimeIso) {
     var suspensionsData = getSheetData_(SHEETS.suspensions, SUSPENSIONS_HEADERS);
     assertNotSuspended_(auth, suspensionsData);
     var now = new Date();
-    var config = getConfig_();
     var chargersData = getSheetData_(SHEETS.chargers, CHARGERS_HEADERS);
     var reservationsData = getSheetData_(SHEETS.reservations, RESERVATIONS_HEADERS);
     var sessionsData = getSheetData_(SHEETS.sessions, SESSIONS_HEADERS);
@@ -370,7 +367,7 @@ function createReservation(chargerId, startTimeIso) {
     reservationsData.sheet.appendRow(row);
     reservationsData = getSheetData_(SHEETS.reservations, RESERVATIONS_HEADERS);
     return buildBoardResponse_({
-      auth: auth, now: now, config: config,
+      auth: auth, now: now,
       chargersData: chargersData, sessionsData: sessionsData,
       reservationsData: reservationsData, suspensionsData: suspensionsData
     });
@@ -388,7 +385,6 @@ function updateReservation(reservationId, chargerId, startTimeIso) {
     var suspensionsData = getSheetData_(SHEETS.suspensions, SUSPENSIONS_HEADERS);
     assertNotSuspended_(auth, suspensionsData);
     var now = new Date();
-    var config = getConfig_();
     var reservationsData = getSheetData_(SHEETS.reservations, RESERVATIONS_HEADERS);
     var chargersData = getSheetData_(SHEETS.chargers, CHARGERS_HEADERS);
     var sessionsData = getSheetData_(SHEETS.sessions, SESSIONS_HEADERS);
@@ -440,7 +436,7 @@ function updateReservation(reservationId, chargerId, startTimeIso) {
     });
     reservationsData = getSheetData_(SHEETS.reservations, RESERVATIONS_HEADERS);
     return buildBoardResponse_({
-      auth: auth, now: now, config: config,
+      auth: auth, now: now,
       chargersData: chargersData, sessionsData: sessionsData,
       reservationsData: reservationsData, suspensionsData: suspensionsData
     });
@@ -456,17 +452,12 @@ function cancelReservation(reservationId) {
     initSheets_();
     var auth = requireAuthorizedUser_();
     var now = new Date();
-    var config = getConfig_();
-    var chargersData = getSheetData_(SHEETS.chargers, CHARGERS_HEADERS);
-    var sessionsData = getSheetData_(SHEETS.sessions, SESSIONS_HEADERS);
     var reservationsData = getSheetData_(SHEETS.reservations, RESERVATIONS_HEADERS);
-    var suspensionsData = getSheetData_(SHEETS.suspensions, SUSPENSIONS_HEADERS);
     var reservation = findById_(reservationsData.rows, 'reservation_id', reservationId);
     if (!reservation || isReservationCanceled_(reservation) || isReservationNoShow_(reservation) || isReservationComplete_(reservation)) {
       return buildBoardResponse_({
-        auth: auth, now: now, config: config,
-        chargersData: chargersData, sessionsData: sessionsData,
-        reservationsData: reservationsData, suspensionsData: suspensionsData
+        auth: auth, now: now,
+        reservationsData: reservationsData
       });
     }
     if (!auth.isAdmin && String(reservation.user_id).toLowerCase() !== auth.email.toLowerCase()) {
@@ -479,9 +470,8 @@ function cancelReservation(reservationId) {
     });
     reservationsData = getSheetData_(SHEETS.reservations, RESERVATIONS_HEADERS);
     return buildBoardResponse_({
-      auth: auth, now: now, config: config,
-      chargersData: chargersData, sessionsData: sessionsData,
-      reservationsData: reservationsData, suspensionsData: suspensionsData
+      auth: auth, now: now,
+      reservationsData: reservationsData
     });
   } finally {
     lock.releaseLock();
@@ -622,7 +612,7 @@ function checkInReservation(reservationId) {
     chargersData = getSheetData_(SHEETS.chargers, CHARGERS_HEADERS);
     reservationsData = getSheetData_(SHEETS.reservations, RESERVATIONS_HEADERS);
     return buildBoardResponse_({
-      auth: auth, now: now, config: rawConfig,
+      auth: auth, now: now,
       chargersData: chargersData, sessionsData: sessionsData,
       reservationsData: reservationsData, suspensionsData: suspensionsData
     });
@@ -638,7 +628,6 @@ function endSession(sessionId) {
     initSheets_();
     var auth = requireAuthorizedUser_();
     var now = new Date();
-    var config = getConfig_();
     var sessionsData = getSheetData_(SHEETS.sessions, SESSIONS_HEADERS);
     var chargersData = getSheetData_(SHEETS.chargers, CHARGERS_HEADERS);
     var reservationsData = getSheetData_(SHEETS.reservations, RESERVATIONS_HEADERS);
@@ -648,7 +637,7 @@ function endSession(sessionId) {
     chargersData = getSheetData_(SHEETS.chargers, CHARGERS_HEADERS);
     reservationsData = getSheetData_(SHEETS.reservations, RESERVATIONS_HEADERS);
     return buildBoardResponse_({
-      auth: auth, now: now, config: config,
+      auth: auth, now: now,
       chargersData: chargersData, sessionsData: sessionsData,
       reservationsData: reservationsData, suspensionsData: suspensionsData
     });
@@ -664,7 +653,6 @@ function endMyActiveSession() {
     initSheets_();
     var auth = requireAuthorizedUser_();
     var now = new Date();
-    var config = getConfig_();
     var sessionsData = getSheetData_(SHEETS.sessions, SESSIONS_HEADERS);
     var chargersData = getSheetData_(SHEETS.chargers, CHARGERS_HEADERS);
     var reservationsData = getSheetData_(SHEETS.reservations, RESERVATIONS_HEADERS);
@@ -678,7 +666,7 @@ function endMyActiveSession() {
     chargersData = getSheetData_(SHEETS.chargers, CHARGERS_HEADERS);
     reservationsData = getSheetData_(SHEETS.reservations, RESERVATIONS_HEADERS);
     return buildBoardResponse_({
-      auth: auth, now: now, config: config,
+      auth: auth, now: now,
       chargersData: chargersData, sessionsData: sessionsData,
       reservationsData: reservationsData, suspensionsData: suspensionsData
     });
@@ -694,7 +682,6 @@ function endSessionForReservation(reservationId) {
     initSheets_();
     var auth = requireAuthorizedUser_();
     var now = new Date();
-    var config = getConfig_();
     var reservationsData = getSheetData_(SHEETS.reservations, RESERVATIONS_HEADERS);
     var sessionsData = getSheetData_(SHEETS.sessions, SESSIONS_HEADERS);
     var chargersData = getSheetData_(SHEETS.chargers, CHARGERS_HEADERS);
@@ -735,7 +722,7 @@ function endSessionForReservation(reservationId) {
     chargersData = getSheetData_(SHEETS.chargers, CHARGERS_HEADERS);
     reservationsData = getSheetData_(SHEETS.reservations, RESERVATIONS_HEADERS);
     return buildBoardResponse_({
-      auth: auth, now: now, config: config,
+      auth: auth, now: now,
       chargersData: chargersData, sessionsData: sessionsData,
       reservationsData: reservationsData, suspensionsData: suspensionsData
     });
@@ -751,11 +738,7 @@ function completeCheckedInReservation(reservationId) {
     initSheets_();
     var auth = requireAuthorizedUser_();
     var now = new Date();
-    var config = getConfig_();
-    var chargersData = getSheetData_(SHEETS.chargers, CHARGERS_HEADERS);
-    var sessionsData = getSheetData_(SHEETS.sessions, SESSIONS_HEADERS);
     var reservationsData = getSheetData_(SHEETS.reservations, RESERVATIONS_HEADERS);
-    var suspensionsData = getSheetData_(SHEETS.suspensions, SUSPENSIONS_HEADERS);
     var reservation = findById_(reservationsData.rows, 'reservation_id', reservationId);
     if (!reservation || isReservationCanceled_(reservation) || isReservationNoShow_(reservation) || isReservationComplete_(reservation)) {
       throw new Error('Reservation not found.');
@@ -773,9 +756,8 @@ function completeCheckedInReservation(reservationId) {
     });
     reservationsData = getSheetData_(SHEETS.reservations, RESERVATIONS_HEADERS);
     return buildBoardResponse_({
-      auth: auth, now: now, config: config,
-      chargersData: chargersData, sessionsData: sessionsData,
-      reservationsData: reservationsData, suspensionsData: suspensionsData
+      auth: auth, now: now,
+      reservationsData: reservationsData
     });
   } finally {
     lock.releaseLock();
@@ -791,8 +773,6 @@ function notifyOwner(chargerId) {
   var channelMention = getSlackChannelMention_(config);
   var chargersData = getSheetData_(SHEETS.chargers, CHARGERS_HEADERS);
   var sessionsData = getSheetData_(SHEETS.sessions, SESSIONS_HEADERS);
-  var reservationsData = getSheetData_(SHEETS.reservations, RESERVATIONS_HEADERS);
-  var suspensionsData = getSheetData_(SHEETS.suspensions, SUSPENSIONS_HEADERS);
   var charger = findById_(chargersData.rows, 'charger_id', chargerId);
   if (!charger || !charger.active_session_id) {
     throw new Error('No active session for this charger.');
@@ -808,9 +788,8 @@ function notifyOwner(chargerId) {
     session.user_id
   );
   return buildBoardResponse_({
-    auth: auth, now: now, config: config,
-    chargersData: chargersData, sessionsData: sessionsData,
-    reservationsData: reservationsData, suspensionsData: suspensionsData
+    auth: auth, now: now,
+    chargersData: chargersData, sessionsData: sessionsData
   });
 }
 
@@ -840,7 +819,6 @@ function forceEnd(chargerId) {
     var auth = requireAuthorizedUser_();
     assertAdmin_(auth);
     var now = new Date();
-    var config = getConfig_();
     var chargersData = getSheetData_(SHEETS.chargers, CHARGERS_HEADERS);
     var sessionsData = getSheetData_(SHEETS.sessions, SESSIONS_HEADERS);
     var reservationsData = getSheetData_(SHEETS.reservations, RESERVATIONS_HEADERS);
@@ -848,7 +826,7 @@ function forceEnd(chargerId) {
     var charger = findById_(chargersData.rows, 'charger_id', chargerId);
     if (!charger || !charger.active_session_id) {
       return buildBoardResponse_({
-        auth: auth, now: now, config: config,
+        auth: auth, now: now,
         chargersData: chargersData, sessionsData: sessionsData,
         reservationsData: reservationsData, suspensionsData: suspensionsData
       });
@@ -858,7 +836,7 @@ function forceEnd(chargerId) {
     chargersData = getSheetData_(SHEETS.chargers, CHARGERS_HEADERS);
     reservationsData = getSheetData_(SHEETS.reservations, RESERVATIONS_HEADERS);
     return buildBoardResponse_({
-      auth: auth, now: now, config: config,
+      auth: auth, now: now,
       chargersData: chargersData, sessionsData: sessionsData,
       reservationsData: reservationsData, suspensionsData: suspensionsData
     });
@@ -875,7 +853,6 @@ function resetCharger(chargerId) {
     var auth = requireAuthorizedUser_();
     assertAdmin_(auth);
     var now = new Date();
-    var config = getConfig_();
     var chargersData = getSheetData_(SHEETS.chargers, CHARGERS_HEADERS);
     var sessionsData = getSheetData_(SHEETS.sessions, SESSIONS_HEADERS);
     var reservationsData = getSheetData_(SHEETS.reservations, RESERVATIONS_HEADERS);
@@ -902,7 +879,7 @@ function resetCharger(chargerId) {
     sessionsData = getSheetData_(SHEETS.sessions, SESSIONS_HEADERS);
     chargersData = getSheetData_(SHEETS.chargers, CHARGERS_HEADERS);
     return buildBoardResponse_({
-      auth: auth, now: now, config: config,
+      auth: auth, now: now,
       chargersData: chargersData, sessionsData: sessionsData,
       reservationsData: reservationsData, suspensionsData: suspensionsData
     });

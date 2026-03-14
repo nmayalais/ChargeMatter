@@ -16,19 +16,22 @@ Production Google Apps Script code. No build step — files are deployed directl
 ## Key entry points in Code.gs
 
 - `doGet()` — serves the web app.
-- `getBoardData()` — main data fetch called by the UI on load. Also computes `user.isNetNew` (no sessions or active reservations today) for Option A walk-up priority.
+- `getBoardData()` — main data fetch called by the UI on load. Delegates to `buildBoardResponse_()`. Also computes `user.isNetNew` (no sessions or active reservations today) for Option A walk-up priority.
 - `sendReminders()` — run by a time-driven trigger (recommended: every 5 min). Handles session reminders, no-show releases, and strikes.
 - `startSession()` — enforces Option A net-new priority: during the `walkup_net_new_window_minutes` window after a slot opens, only net-new users may claim it.
 - All user actions (start session, reserve, check-in, end session) are called from the frontend via `google.script.run.<functionName>`.
 
 ## Key helpers
 
+- `buildBoardResponse_(opts)` — accepts `{auth, now, chargersData, sessionsData, reservationsData, suspensionsData}` and builds the full UI response without reading sheets. All 12 mutating functions use this after writes, re-reading only the sheets they mutated (see staleness rules in `project_perf_refactor.md`).
 - `isNetNewUser_(userEmail, sessions, reservations, now)` — returns true if the user has no disqualifying activity today. Early-released sessions/reservations (ended before the halfway point of the reservation window) do not disqualify. Drives Option A walk-up priority.
 - `isReturningUser_(userEmail, sessions, reservations, now)` — returns true if the user charged or made a qualifying reservation today. Early-released sessions/reservations do not count.
-- `completeReservationForSession_(session, now)` — called on session end; stamps `released_early: true` on the reservation if `now` is before the reservation's halfway point (using the original planned `end_time` before it is overwritten).
+- `completeReservationForSession_(session, now, reservationsData)` — called on session end; stamps `released_early: true` on the reservation if `now` is before the reservation's halfway point. Optional `reservationsData` avoids re-reading the sheet when data is already loaded.
 - `getReservationConfig_(config)` — parses all reservation settings. Supports `"H:MM"` format in `reservation_open_hour` (e.g. `"5:45"` correctly sets 5:45 AM).
 - `checkInReservation()` — always delegates session creation to `startSessionForReservation_()` for both early and on-time check-ins. This ensures admin check-ins and reservation-owner check-ins bypass walk-up tier rules correctly. Previously the on-time path called `startSession()` which re-evaluated walk-up rules against the caller's email, breaking admin check-ins.
 - `validateReservation_()` — per-day check runs before upcoming-count check so users get the clearer error message first.
+- `endSessionInternal_(sessionId, auth, adminOverride, sessionsData, chargersData)` — core session-end logic. Optional data params avoid redundant sheet reads.
+- `assertNotSuspended_(auth, suspensionsData)` / `getActiveSuspensionForUser_(email, suspensionsData)` — optional `suspensionsData` param avoids re-reading suspensions sheet.
 
 ## Frontend patterns
 
