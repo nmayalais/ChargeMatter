@@ -944,18 +944,18 @@ function createEngine(options) {
     try {
       initSheets_();
       var now = new Date();
-      markNoShowReservations_(now);
       var config = getConfig_();
       var reservationConfig = getReservationConfig_(config);
+      var chargersData = getSheetData_(SHEETS.chargers, CHARGERS_HEADERS);
+      var reservationsData = getSheetData_(SHEETS.reservations, RESERVATIONS_HEADERS);
+      markNoShowReservations_(now, reservationsData, chargersData, config);
       var sessionMoveGraceMinutes = parseInt(config.session_move_grace_minutes, 10);
       var overdueRepeatMinutes = parseInt(config.overdue_repeat_minutes, 10);
       sessionMoveGraceMinutes = isNaN(sessionMoveGraceMinutes) ? APP_DEFAULTS.sessionMoveGraceMinutes : sessionMoveGraceMinutes;
       overdueRepeatMinutes = isNaN(overdueRepeatMinutes) ? APP_DEFAULTS.overdueRepeatMinutes : overdueRepeatMinutes;
       var reminder10Enabled = isTrue_(config.reminder_10_enabled);
       var reminder5Enabled = isTrue_(config.reminder_5_enabled);
-      var chargersData = getSheetData_(SHEETS.chargers, CHARGERS_HEADERS);
       var sessionsData = getSheetData_(SHEETS.sessions, SESSIONS_HEADERS);
-      var reservationsData = getSheetData_(SHEETS.reservations, RESERVATIONS_HEADERS);
       var hasActiveSessions = sessionsData.rows.some(function(s) {
         return s.session_id && !isComplete_(s);
       });
@@ -2622,11 +2622,12 @@ function createEngine(options) {
     return false;
   }
 
-  function markNoShowReservations_(now) {
-    var reservationsData = getSheetData_(SHEETS.reservations, RESERVATIONS_HEADERS);
-    var config = getReservationConfig_(getConfig_());
-    var appName = getAppName_(getConfig_());
-    var chargersData = getSheetData_(SHEETS.chargers, CHARGERS_HEADERS);
+  function markNoShowReservations_(now, reservationsData, chargersData, rawConfig) {
+    reservationsData = reservationsData || getSheetData_(SHEETS.reservations, RESERVATIONS_HEADERS);
+    rawConfig = rawConfig || getConfig_();
+    var config = getReservationConfig_(rawConfig);
+    var appName = getAppName_(rawConfig);
+    chargersData = chargersData || getSheetData_(SHEETS.chargers, CHARGERS_HEADERS);
     var chargersById = {};
     chargersData.rows.forEach(function(charger) {
       chargersById[String(charger.charger_id)] = charger;
