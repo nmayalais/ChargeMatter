@@ -80,10 +80,7 @@ try {
       result = engine.getAvailabilitySummary();
       break;
     case 'timeline':
-      result = engine.getChargerTimeline(
-        requiredArg(parsed.args, 1, 'chargerId'),
-        parsed.args[2]
-      );
+      result = engine.getChargerTimeline(requiredArg(parsed.args, 1, 'chargerId'), parsed.args[2]);
       break;
     case 'calendar':
       result = engine.getCalendarAvailability(parsed.args[1], parsed.args[2]);
@@ -194,5 +191,7 @@ function deriveName(email) {
 }
 
 function printHelp() {
-  console.log(`EV Charging CLI\n\nUsage:\n  node cli/index.js <command> [args] [--store path] [--user email] [--name name] [--admin]\n\nCommands:\n  init\n  seed\n  board\n  start-session <chargerId>\n  end-session <sessionId>\n  reserve <chargerId> <startTimeIso>\n  update-reservation <reservationId> <chargerId> <startTimeIso>\n  cancel-reservation <reservationId>\n  check-in <reservationId>\n  next-slot\n  availability\n  timeline <chargerId> [dateIso]\n  calendar [startDateIso] [days]\n  send-reminders\n  notify-owner <chargerId>\n  post-message <message>\n  force-end <chargerId>\n  reset-charger <chargerId>\n  config-set <key> <value>\n  prop-set <key> <value>\n\nFlags:\n  --store <path>   Path to JSON store (default: data/store.json)\n  --user <email>   Acting user email (default: user@example.com)\n  --name <name>    Acting user name (optional)\n  --admin          Admin mode (bypass admin checks)\n  --raw            Print raw output without JSON formatting\n\nExamples:\n  node cli/index.js seed\n  node cli/index.js board --user alice@example.com\n  node cli/index.js reserve 1 2026-02-08T09:00:00-08:00\n`);
+  console.log(
+    `EV Charging CLI\n\nUsage:\n  node cli/index.js <command> [args] [--store path] [--user email] [--name name] [--admin]\n\nCommands:\n  init\n  seed\n  board\n  start-session <chargerId>\n  end-session <sessionId>\n  reserve <chargerId> <startTimeIso>\n  update-reservation <reservationId> <chargerId> <startTimeIso>\n  cancel-reservation <reservationId>\n  check-in <reservationId>\n  next-slot\n  availability\n  timeline <chargerId> [dateIso]\n  calendar [startDateIso] [days]\n  send-reminders\n  notify-owner <chargerId>\n  post-message <message>\n  force-end <chargerId>\n  reset-charger <chargerId>\n  config-set <key> <value>\n  prop-set <key> <value>\n\nFlags:\n  --store <path>   Path to JSON store (default: data/store.json)\n  --user <email>   Acting user email (default: user@example.com)\n  --name <name>    Acting user name (optional)\n  --admin          Admin mode (bypass admin checks)\n  --raw            Print raw output without JSON formatting\n\nExamples:\n  node cli/index.js seed\n  node cli/index.js board --user alice@example.com\n  node cli/index.js reserve 1 2026-02-08T09:00:00-08:00\n`
+  );
 }

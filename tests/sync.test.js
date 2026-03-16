@@ -27,15 +27,10 @@ function extractFunctionNames(src) {
 }
 
 // Functions that intentionally exist only in engine.js (test/CLI helpers)
-const ENGINE_ONLY = new Set([
-  'createEngine',
-]);
+const ENGINE_ONLY = new Set(['createEngine']);
 
 // Functions that intentionally exist only in Code.gs (GAS-specific entry points)
-const GAS_ONLY = new Set([
-  'doGet',
-  'doPost',
-]);
+const GAS_ONLY = new Set(['doGet', 'doPost']);
 
 describe('Code.gs / engine.js function sync', () => {
   let engineSrc, gasSrc;
@@ -49,9 +44,7 @@ describe('Code.gs / engine.js function sync', () => {
     const engineFns = extractFunctionNames(engineSrc);
     const gasFns = extractFunctionNames(gasSrc);
 
-    const missingInGas = [...engineFns].filter(
-      (fn) => !gasFns.has(fn) && !ENGINE_ONLY.has(fn)
-    );
+    const missingInGas = [...engineFns].filter((fn) => !gasFns.has(fn) && !ENGINE_ONLY.has(fn));
 
     expect(missingInGas).toEqual([]);
   });
@@ -60,9 +53,7 @@ describe('Code.gs / engine.js function sync', () => {
     const engineFns = extractFunctionNames(engineSrc);
     const gasFns = extractFunctionNames(gasSrc);
 
-    const missingInEngine = [...gasFns].filter(
-      (fn) => !engineFns.has(fn) && !GAS_ONLY.has(fn)
-    );
+    const missingInEngine = [...gasFns].filter((fn) => !engineFns.has(fn) && !GAS_ONLY.has(fn));
 
     expect(missingInEngine).toEqual([]);
   });

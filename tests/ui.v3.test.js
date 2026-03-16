@@ -17,7 +17,8 @@ function loadV3Dom(options = {}) {
     chargers: []
   };
   const runState = { success: null, failure: null };
-  const dom = new JSDOM(`<!doctype html><html><body>
+  const dom = new JSDOM(
+    `<!doctype html><html><body>
     <button id="refresh-btn">Refresh</button>
     <div id="user-meta"></div>
     <div id="suspension-banner"></div>
@@ -68,22 +69,32 @@ function loadV3Dom(options = {}) {
       <div id="help-popover-content"></div>
       <button class="help-popover__close"></button>
     </div>
-  </body></html>`, { runScripts: 'dangerously', url: 'http://localhost' });
+  </body></html>`,
+    { runScripts: 'dangerously', url: 'http://localhost' }
+  );
 
   const { window } = dom;
-  window.matchMedia = window.matchMedia || (() => ({
-    matches: false,
-    addEventListener() {},
-    removeEventListener() {},
-    addListener() {},
-    removeListener() {}
-  }));
+  window.matchMedia =
+    window.matchMedia ||
+    (() => ({
+      matches: false,
+      addEventListener() {},
+      removeEventListener() {},
+      addListener() {},
+      removeListener() {}
+    }));
   // Stub localStorage
   const store = {};
   window.localStorage = {
-    getItem(k) { return store[k] || null; },
-    setItem(k, v) { store[k] = String(v); },
-    removeItem(k) { delete store[k]; }
+    getItem(k) {
+      return store[k] || null;
+    },
+    setItem(k, v) {
+      store[k] = String(v);
+    },
+    removeItem(k) {
+      delete store[k];
+    }
   };
   window.APP_CONFIG = {
     userEmail: options.userEmail || 'test@example.com',
@@ -98,8 +109,14 @@ function loadV3Dom(options = {}) {
   window.google = {
     script: {
       run: {
-        withSuccessHandler(fn) { runState.success = fn; return this; },
-        withFailureHandler(fn) { runState.failure = fn; return this; },
+        withSuccessHandler(fn) {
+          runState.success = fn;
+          return this;
+        },
+        withFailureHandler(fn) {
+          runState.failure = fn;
+          return this;
+        },
         ...(options.runMethods || {})
       }
     }
@@ -168,7 +185,7 @@ describe('V3 UI regression tests', () => {
       const toasts = container.querySelectorAll('.toast');
       expect(toasts.length).toBe(3);
       // Oldest toast ("Toast 1") should have been removed
-      const texts = Array.from(toasts).map(t => t.textContent);
+      const texts = Array.from(toasts).map((t) => t.textContent);
       expect(texts).not.toContain('Toast 1');
       expect(texts).toContain('Toast 4');
     });
@@ -209,9 +226,15 @@ describe('V3 UI regression tests', () => {
         user: { isAdmin: true },
         config: {},
         reservations: [],
-        chargers: [{
-          id: '1', name: 'Charger 1', statusKey: 'free', status: 'Free', maxMinutes: 60
-        }]
+        chargers: [
+          {
+            id: '1',
+            name: 'Charger 1',
+            statusKey: 'free',
+            status: 'Free',
+            maxMinutes: 60
+          }
+        ]
       });
 
       // Setup global handlers so Escape listener is active
@@ -418,21 +441,23 @@ describe('V3 UI regression tests', () => {
       const slotStart = new Date('2026-03-11T04:00:00Z');
       const slotEnd = new Date('2026-03-11T07:00:00Z');
 
-      const slots = [{
-        chargerId: '1',
-        startTime: slotStart.toISOString(),
-        endTime: slotEnd.toISOString()
-      }];
+      const slots = [
+        {
+          chargerId: '1',
+          startTime: slotStart.toISOString(),
+          endTime: slotEnd.toISOString()
+        }
+      ];
 
       const groups = window.groupSlotsByWindow(slots);
 
       // The slot should be grouped under "today" categories (Next 2 hours, Later today, Tonight)
       // NOT under a different date heading — because in PST it's still March 10
-      const otherDateKeys = Object.keys(groups.find?.(g => g.label && g.label.match(/Mar/)) || {});
+      const otherDateKeys = Object.keys(groups.find?.((g) => g.label && g.label.match(/Mar/)) || {});
       // If it were incorrectly using UTC, the slot would appear under "Wed, Mar 11"
       // In PST, both "now" and slot start are on March 10, so it should be in tonight/next
-      const allLabels = groups.map(g => g.label);
-      const hasMar11 = allLabels.some(l => l && l.includes('Mar 11'));
+      const allLabels = groups.map((g) => g.label);
+      const hasMar11 = allLabels.some((l) => l && l.includes('Mar 11'));
       expect(hasMar11).toBe(false);
     });
   });

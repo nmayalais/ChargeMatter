@@ -3,9 +3,9 @@
 
   :root {
     color-scheme: light;
-    font-family: "Sora", "Avenir Next", "Segoe UI", sans-serif;
-    --font-display: "Fraunces", "Georgia", serif;
-    --font-body: "Sora", "Avenir Next", "Segoe UI", sans-serif;
+    font-family: 'Sora', 'Avenir Next', 'Segoe UI', sans-serif;
+    --font-display: 'Fraunces', 'Georgia', serif;
+    --font-body: 'Sora', 'Avenir Next', 'Segoe UI', sans-serif;
     --color-bg: #f4f1ed;
     --color-surface: #ffffff;
     --color-surface-muted: #fbf8f4;
@@ -58,8 +58,7 @@
     margin: 0;
     background:
       radial-gradient(circle at top right, rgba(240, 90, 42, 0.12), transparent 55%),
-      radial-gradient(circle at 15% 20%, rgba(20, 24, 32, 0.08), transparent 45%),
-      var(--color-bg);
+      radial-gradient(circle at 15% 20%, rgba(20, 24, 32, 0.08), transparent 45%), var(--color-bg);
     color: var(--color-text);
     font-family: var(--font-body);
   }
@@ -302,7 +301,9 @@
   .card.selected {
     border-color: var(--color-primary);
     border-width: 2px;
-    box-shadow: 0 0 0 3px rgba(var(--color-primary-rgb), 0.25), var(--shadow-soft);
+    box-shadow:
+      0 0 0 3px rgba(var(--color-primary-rgb), 0.25),
+      var(--shadow-soft);
   }
 
   .card-top,
@@ -897,7 +898,6 @@
     font-size: 13px;
   }
 
-
   .reservations {
     margin-bottom: var(--space-5);
     padding: var(--space-4);
@@ -1064,7 +1064,7 @@
     height: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom));
     background: var(--color-surface);
     border-top: 1.5px solid var(--color-border);
-    box-shadow: 0 -6px 20px rgba(15, 23, 42, 0.10);
+    box-shadow: 0 -6px 20px rgba(15, 23, 42, 0.1);
     padding: 8px 16px calc(env(safe-area-inset-bottom) + 6px);
     gap: var(--space-3);
     justify-content: space-around;
@@ -1544,7 +1544,7 @@
       right: var(--space-3);
       z-index: 25;
       border-radius: var(--radius-md);
-      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
     }
   }
 
@@ -1770,8 +1770,13 @@
   }
 
   @keyframes pulse-border {
-    0%, 100% { box-shadow: 0 0 0 0 rgba(180,35,24,0.3); }
-    50%       { box-shadow: 0 0 0 4px rgba(180,35,24,0); }
+    0%,
+    100% {
+      box-shadow: 0 0 0 0 rgba(180, 35, 24, 0.3);
+    }
+    50% {
+      box-shadow: 0 0 0 4px rgba(180, 35, 24, 0);
+    }
   }
 
   /* 1d. Skeleton card shimmer */
@@ -1785,8 +1790,12 @@
   }
 
   @keyframes shimmer {
-    0%   { background-position: 200% 0; }
-    100% { background-position: -200% 0; }
+    0% {
+      background-position: 200% 0;
+    }
+    100% {
+      background-position: -200% 0;
+    }
   }
 
   /* 1e. My Status Banner */

@@ -115,10 +115,7 @@ describe('Policy-aligned CLI logic', () => {
     const engine = createPolicyEngine(store);
 
     withLocalTime(2026, 2, 9, 5, 59, () => {
-      expectError(
-        () => engine.createReservation('1', localIso(2026, 2, 9, 9, 0)),
-        'Booking opens at'
-      );
+      expectError(() => engine.createReservation('1', localIso(2026, 2, 9, 9, 0)), 'Booking opens at');
     });
 
     withLocalTime(2026, 2, 9, 6, 1, () => {
@@ -267,10 +264,7 @@ describe('Policy-aligned CLI logic', () => {
     ]);
 
     withLocalTime(2026, 2, 9, 9, 10, () => {
-      expectError(
-        () => engine.startSession('1'),
-        'Charger is reserved by'
-      );
+      expectError(() => engine.startSession('1'), 'Charger is reserved by');
     });
 
     withLocalTime(2026, 2, 9, 9, 31, () => {

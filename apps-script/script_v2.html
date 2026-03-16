@@ -46,7 +46,7 @@
     notifyOwner: 'owner_notified',
     forceEnd: 'session_force_ended',
     resetCharger: 'charger_reset',
-    completeCheckedInReservation: 'reservation_completed_manually',
+    completeCheckedInReservation: 'reservation_completed_manually'
   };
 
   const _phKey = APP_CONFIG.posthogKey || '';
@@ -59,7 +59,7 @@
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(Object.assign({ api_key: _phKey }, payload))
-    }).catch(function() {});
+    }).catch(function () {});
   }
 
   function phCapture(event, props) {
@@ -68,7 +68,11 @@
       posthog.capture(event, props);
       return;
     }
-    _phSend({ event: event, distinct_id: _phDistinctId || APP_CONFIG.userEmail || 'anonymous', properties: props || {} });
+    _phSend({
+      event: event,
+      distinct_id: _phDistinctId || APP_CONFIG.userEmail || 'anonymous',
+      properties: props || {}
+    });
   }
 
   function phIdentify(email, name) {
@@ -81,12 +85,16 @@
     _phSend({ event: '$identify', distinct_id: email, properties: { $set: { email: email, name: name } } });
   }
 
-  window.onerror = function(msg, src, line, col, err) {
+  window.onerror = function (msg, src, line, col, err) {
     phCapture('js_error', { message: msg, source: src, line, col, stack: err && err.stack });
   };
 
-  window.onunhandledrejection = function(event) {
-    phCapture('js_error', { message: event.reason?.message || String(event.reason), stack: event.reason?.stack, type: 'unhandledrejection' });
+  window.onunhandledrejection = function (event) {
+    phCapture('js_error', {
+      message: event.reason?.message || String(event.reason),
+      stack: event.reason?.stack,
+      type: 'unhandledrejection'
+    });
   };
   // ────────────────────────────────────────────────────────────────────────
 
@@ -365,8 +373,7 @@
     setNotice('');
     const isFirstLoad = state.board === null;
     if (isFirstLoad) {
-      document.getElementById('board').innerHTML =
-        '<div class="skeleton-card"></div>'.repeat(4);
+      document.getElementById('board').innerHTML = '<div class="skeleton-card"></div>'.repeat(4);
     }
     setLoading(true);
     google.script.run
@@ -435,12 +442,16 @@
     const endAt = user.suspension.endAt ? new Date(user.suspension.endAt) : null;
     let endLabel = 'soon';
     if (endAt && !Number.isNaN(endAt.getTime())) {
-      endLabel = endAt.toLocaleDateString([], tzOptions({ weekday: 'short', month: 'short', day: 'numeric' })) +
-        ' at ' + endAt.toLocaleTimeString([], tzOptions({ hour: 'numeric', minute: '2-digit' }));
+      endLabel =
+        endAt.toLocaleDateString([], tzOptions({ weekday: 'short', month: 'short', day: 'numeric' })) +
+        ' at ' +
+        endAt.toLocaleTimeString([], tzOptions({ hour: 'numeric', minute: '2-digit' }));
     }
     banner.innerHTML =
       '<strong>Charging privileges suspended</strong>' +
-      'You cannot start sessions or make reservations until ' + endLabel + '. ' +
+      'You cannot start sessions or make reservations until ' +
+      endLabel +
+      '. ' +
       'Please contact Facilities if you have questions.';
     banner.classList.add('active');
   }
@@ -474,13 +485,18 @@
       if (countdown) {
         countdown.dataset.sessionEnd = session.endTime;
       }
-      const endBtn = createButton("I've moved my car", 'btn', () => {
-        setActionFeedback(endBtn, 'Ending...');
-        callServer('endSession', [session.sessionId], {
-          successMessage: 'Session ended. Thanks for checking out.',
-          successType: 'success'
-        });
-      }, { showLoading: true, loadingLabel: 'Ending...' });
+      const endBtn = createButton(
+        "I've moved my car",
+        'btn',
+        () => {
+          setActionFeedback(endBtn, 'Ending...');
+          callServer('endSession', [session.sessionId], {
+            successMessage: 'Session ended. Thanks for checking out.',
+            successType: 'success'
+          });
+        },
+        { showLoading: true, loadingLabel: 'Ending...' }
+      );
       banner.appendChild(endBtn);
       banner.classList.remove('is-hidden');
       return;
@@ -498,10 +514,15 @@
         eyebrow.textContent = 'Your reservation';
         detail.textContent = chargerName + ' · starts at ' + formatTime(userReservation.startTime);
         sub.textContent = '';
-        const checkInBtn = createButton('Check in', 'btn', () => {
-          setActionFeedback(checkInBtn, 'Checking in...');
-          callServer('checkInReservation', [userReservation.reservationId]);
-        }, { showLoading: true, loadingLabel: 'Checking in...' });
+        const checkInBtn = createButton(
+          'Check in',
+          'btn',
+          () => {
+            setActionFeedback(checkInBtn, 'Checking in...');
+            callServer('checkInReservation', [userReservation.reservationId]);
+          },
+          { showLoading: true, loadingLabel: 'Checking in...' }
+        );
         banner.appendChild(checkInBtn);
         banner.classList.remove('is-hidden');
         return;
@@ -721,7 +742,9 @@
     details.className = 'card-details';
 
     if (charger.session) {
-      details.appendChild(createInfoRow('In use by', formatUserLabel(charger.session.userName, charger.session.userEmail)));
+      details.appendChild(
+        createInfoRow('In use by', formatUserLabel(charger.session.userName, charger.session.userEmail))
+      );
       details.appendChild(createInfoRow('Ends at', formatTime(charger.session.endTime)));
       const countdown = createInfoRow('Countdown', '--', { hint: 'Time remaining in the current session.' });
       countdown.querySelector('.value').classList.add('countdown');
@@ -766,11 +789,15 @@
               // Tier 1: net-new users only (no charges or reservations today).
               const isNetNew = state.board?.user?.isNetNew === true;
               details.appendChild(
-                createInfoRow('Priority', isNetNew
-                  ? "You're eligible · Ends at " + formatTime(charger.walkup.allUsersOpenAt)
-                  : 'First-time drivers only · Opens wider at ' + formatTime(charger.walkup.allUsersOpenAt), {
-                  hint: 'Priority access is reserved for first-time drivers today — someone who has not charged or made a reservation yet. Returning drivers get priority next; everyone else after that.'
-                })
+                createInfoRow(
+                  'Priority',
+                  isNetNew
+                    ? "You're eligible · Ends at " + formatTime(charger.walkup.allUsersOpenAt)
+                    : 'First-time drivers only · Opens wider at ' + formatTime(charger.walkup.allUsersOpenAt),
+                  {
+                    hint: 'Priority access is reserved for first-time drivers today — someone who has not charged or made a reservation yet. Returning drivers get priority next; everyone else after that.'
+                  }
+                )
               );
             } else {
               // Tier 2: net-new OR returning users (charged or reserved today).
@@ -778,11 +805,18 @@
               const isNetNew = state.board?.user?.isNetNew === true;
               const isReturning = state.board?.user?.isReturning === true;
               details.appendChild(
-                createInfoRow('Priority', (isNetNew || isReturning)
-                  ? "You're eligible · Ends at " + formatTime(charger.walkup.returningUsersOpenAt)
-                  : 'Returning drivers priority · Opens to all at ' + formatTime(charger.walkup.returningUsersOpenAt), {
-                  hint: 'Priority access is open to returning drivers (charged or reserved today) and first-time drivers. Opens to everyone at ' + formatTime(charger.walkup.returningUsersOpenAt) + '.'
-                })
+                createInfoRow(
+                  'Priority',
+                  isNetNew || isReturning
+                    ? "You're eligible · Ends at " + formatTime(charger.walkup.returningUsersOpenAt)
+                    : 'Returning drivers priority · Opens to all at ' + formatTime(charger.walkup.returningUsersOpenAt),
+                  {
+                    hint:
+                      'Priority access is open to returning drivers (charged or reserved today) and first-time drivers. Opens to everyone at ' +
+                      formatTime(charger.walkup.returningUsersOpenAt) +
+                      '.'
+                  }
+                )
               );
             }
           }
@@ -1185,10 +1219,13 @@
       return;
     }
     const now = new Date(state.serverTime.getTime() + (Date.now() - state.lastFetch));
-    document.getElementById('last-updated').textContent = now.toLocaleTimeString([], tzOptions({
-      hour: 'numeric',
-      minute: '2-digit'
-    }));
+    document.getElementById('last-updated').textContent = now.toLocaleTimeString(
+      [],
+      tzOptions({
+        hour: 'numeric',
+        minute: '2-digit'
+      })
+    );
     document.querySelectorAll('.countdown').forEach((el) => {
       const endTime = new Date(el.dataset.endTime);
       if (Number.isNaN(endTime.getTime())) {
@@ -1254,16 +1291,34 @@
 
   function getDatePartsInTz(date) {
     if (!state.timezone) {
-      return { year: date.getFullYear(), month: date.getMonth() + 1, day: date.getDate(), hours: date.getHours(), minutes: date.getMinutes() };
+      return {
+        year: date.getFullYear(),
+        month: date.getMonth() + 1,
+        day: date.getDate(),
+        hours: date.getHours(),
+        minutes: date.getMinutes()
+      };
     }
     const parts = new Intl.DateTimeFormat('en-US', {
       timeZone: state.timezone,
-      year: 'numeric', month: 'numeric', day: 'numeric',
-      hour: 'numeric', minute: 'numeric', hour12: false
+      year: 'numeric',
+      month: 'numeric',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: 'numeric',
+      hour12: false
     }).formatToParts(date);
     const vals = {};
-    parts.forEach(function(p) { vals[p.type] = parseInt(p.value, 10); });
-    return { year: vals.year, month: vals.month, day: vals.day, hours: vals.hour === 24 ? 0 : vals.hour, minutes: vals.minute };
+    parts.forEach(function (p) {
+      vals[p.type] = parseInt(p.value, 10);
+    });
+    return {
+      year: vals.year,
+      month: vals.month,
+      day: vals.day,
+      hours: vals.hour === 24 ? 0 : vals.hour,
+      minutes: vals.minute
+    };
   }
 
   function formatTime(isoString) {
@@ -1318,9 +1373,7 @@
     if (parts.length < 2) {
       return '';
     }
-    return parts
-      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-      .join(' ');
+    return parts.map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(' ');
   }
 
   function formatUserLabel(userName, userEmail) {
@@ -1402,9 +1455,7 @@
       ? config.reservationEarlyStartMinutes
       : checkinEarlyMinutes;
     const earlyMinutes = Math.max(checkinEarlyMinutes, earlyStartMinutes);
-    const graceMinutes = Number.isFinite(config.reservationLateGraceMinutes)
-      ? config.reservationLateGraceMinutes
-      : 10;
+    const graceMinutes = Number.isFinite(config.reservationLateGraceMinutes) ? config.reservationLateGraceMinutes : 10;
     const start = new Date(reservation.startTime);
     const now = getClientNow();
     const earliest = new Date(start.getTime() - earlyMinutes * 60000);
@@ -1424,10 +1475,12 @@
 
   function getCurrentUserSession() {
     const chargers = state.board?.chargers || [];
-    return chargers
-      .map((charger) => ({ charger, session: charger.session }))
-      .filter((entry) => entry.session && sameUserEmail(entry.session.userEmail, getCurrentUserEmail()))
-      .sort((a, b) => new Date(a.session.endTime) - new Date(b.session.endTime))[0] || null;
+    return (
+      chargers
+        .map((charger) => ({ charger, session: charger.session }))
+        .filter((entry) => entry.session && sameUserEmail(entry.session.userEmail, getCurrentUserEmail()))
+        .sort((a, b) => new Date(a.session.endTime) - new Date(b.session.endTime))[0] || null
+    );
   }
 
   function findSessionForReservation(reservation) {
@@ -1743,7 +1796,7 @@
     if (state.slotsLoading) {
       return;
     }
-    const cacheFresh = state.slotsCache && (Date.now() - (state.slotsLastFetch || 0)) < SLOTS_CACHE_TTL_MS;
+    const cacheFresh = state.slotsCache && Date.now() - (state.slotsLastFetch || 0) < SLOTS_CACHE_TTL_MS;
     if (!force && cacheFresh) {
       renderSlotsList(state.slotsCache);
       return;
