@@ -5,44 +5,70 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-npm test              # Run all Jest tests
-npm run policy-check  # Run policy enforcement tests only
-npm run cli -- <cmd>  # Run the local CLI (see cli/CLAUDE.md)
-```
+# Web app (Next.js)
+cd web && npm run dev      # Start dev server
+cd web && npm run build    # Production build
+cd web && npm test         # Run vitest tests
+cd web && npm run lint     # ESLint check
+cd web && npm run lint:fix # ESLint auto-fix
+cd web && npm run format   # Prettier format
+cd web && npm run format:check  # Prettier check
 
-Run a single test file or pattern:
-```bash
-npx jest tests/cli.policy.test.js
-npx jest --testNamePattern "should suspend user"
+# Data migration
+cd web && npx tsx src/lib/db/seed.ts          # Seed default data
+cd web && npx tsx src/lib/db/migrate-data.ts  # Migrate from store.json
+cd web && npx drizzle-kit generate            # Generate migration SQL
+cd web && npx drizzle-kit migrate             # Apply migration to Neon
 ```
 
 ## Architecture
 
-Google Apps Script web app for managing EV charger reservations. No build step — Apps Script files deploy directly. A mirrored Node.js CLI enables local testing.
+Next.js web app for managing EV charger reservations, deployed on Vercel with Neon Postgres.
 
-**Critical rule:** `cli/engine.js` mirrors `apps-script/Code.gs`. Business logic changes must be applied to both files.
+| Layer | Technology |
+|-------|-----------|
+| Framework | Next.js (App Router, TypeScript) |
+| Database | Neon Postgres (Drizzle ORM) |
+| Auth | NextAuth.js v5 (Google Provider, JWT) |
+| API | Server Actions |
+| Cron | Vercel Cron (5-min cycle) |
+| Analytics | PostHog |
+| Styling | Tailwind CSS |
 
-| Concern | Production | Local/Testing |
-|---------|-----------|---------------|
-| Business logic | `apps-script/Code.gs` | `cli/engine.js` |
-| Data store | Google Sheets | `data/store.json` |
-| Runtime APIs | Apps Script built-ins | `cli/runtime.js` (mocks) |
-| Frontend | `apps-script/script_v3.html` (default), `script_v2.html` (fallback via `?ui=v2`) | N/A |
+## Project Structure
 
-## Data model
+```
+web/
+  src/
+    app/           — Next.js pages and API routes
+    actions/       — Server Actions (board, sessions, reservations, admin, slots)
+    components/    — React components
+    lib/           — Business logic, utilities, DB queries
+    types/         — TypeScript interfaces
+  drizzle/         — Database migrations
+archive/           — Previous Apps Script + CLI implementation (preserved for reference)
+```
 
-Six logical "sheets" (Google Sheets in prod, JSON locally):
+## Data Model
+
+Six Postgres tables (defined in `web/src/lib/db/schema.ts`):
 
 - **chargers** — config + active session reference
 - **sessions** — active/completed charging sessions
-- **reservations** — bookings with check-in and no-show data. `released_early` (bool) is stamped `true` when a checked-in session ends before the halfway point of the reservation window, preserving the user's net-new status and daily allotment.
-- **config** — key/value settings (grace periods, limits, etc.). Notable keys: `reservation_open_hour` supports `"H:MM"` format (e.g. `"5:45"`), `walkup_net_new_window_minutes` controls Option A priority window, `reminder_10_enabled` / `reminder_5_enabled` toggle the 10- and 5-minute session-end warnings (both default off), `force_end_on_checkin_enabled` (bool, default true) auto-ends overdue sessions when the next reservation holder checks in.
+- **reservations** — bookings with check-in and no-show data
+- **config** — key/value settings (grace periods, limits, etc.)
 - **strikes** — per-user no-show strike records
 - **suspensions** — temporary bans from strike threshold
 
+## Key Files
+
+- `web/src/lib/db/schema.ts` — Drizzle schema (source of truth for data model)
+- `web/src/actions/` — All server actions (the API layer)
+- `web/src/lib/board.ts` — Board building logic
+- `web/src/lib/config.ts` — App configuration with defaults
+- `web/src/components/dashboard.tsx` — Main UI orchestrator
+
 ## Subtree guidance
 
-Detailed context lives in subdirectory CLAUDE.md files, loaded automatically when working in those areas:
-- `apps-script/CLAUDE.md` — production Apps Script code and frontend
-- `cli/CLAUDE.md` — CLI commands, engine, store, and runtime mocks
-- `tests/CLAUDE.md` — test structure and patterns
+Detailed context lives in subdirectory CLAUDE.md files:
+- `web/CLAUDE.md` — Next.js app structure, conventions, and patterns
