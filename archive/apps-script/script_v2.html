@@ -1335,7 +1335,10 @@
     }
     const hour = Number(config.reservationOpenHour);
     const minute = Number(config.reservationOpenMinute);
-    if (Number.isNaN(hour) || Number.isNaN(minute)) {
+    if (Number.isNaN(hour) || hour < 0 || hour > 23) {
+      return null;
+    }
+    if (Number.isNaN(minute) || minute < 0 || minute > 59) {
       return null;
     }
     const now = getClientNow();

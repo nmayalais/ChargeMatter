@@ -1554,8 +1554,8 @@ function createEngine(options) {
       reservationCheckinEarlyMinutes: reservationConfig.checkinEarlyMinutes,
       reservationEarlyStartMinutes: reservationConfig.earlyStartMinutes,
       reservationLateGraceMinutes: reservationConfig.lateGraceMinutes,
-      reservationOpenHour: reservationConfig.openHour,
-      reservationOpenMinute: reservationConfig.openMinute,
+      reservationOpenHour: Number(reservationConfig.openHour) || 0,
+      reservationOpenMinute: Number(reservationConfig.openMinute) || 0,
       walkupNetNewWindowMinutes: reservationConfig.netNewWindowMinutes,
       walkupReturningWindowMinutes: reservationConfig.returningWindowMinutes
     };
@@ -2238,15 +2238,29 @@ function createEngine(options) {
     var netNewWindowMinutes = parseInt(config.walkup_net_new_window_minutes, 10);
     var returningWindowMinutes = parseInt(config.walkup_returning_window_minutes, 10);
     // Support "H:MM" format in reservation_open_hour (e.g. "5:45" sets hour=5, minute=45)
+    // Also handle Date objects: Google Sheets may interpret "5:45" as a TIME value
+    // (Date object rooted at Dec 30, 1899). After JSON round-tripping through CacheService,
+    // this becomes an ISO string like "1899-12-30T13:45:00.000Z" whose parseInt yields 1899.
     var openHour, openMinute;
-    var openHourStr = String(config.reservation_open_hour || '');
-    if (openHourStr.indexOf(':') !== -1) {
-      var parts = openHourStr.split(':');
-      openHour = parseInt(parts[0], 10);
-      openMinute = parseInt(parts[1], 10);
+    var rawOpenHour = config.reservation_open_hour;
+    if (rawOpenHour instanceof Date) {
+      openHour = rawOpenHour.getHours();
+      openMinute = rawOpenHour.getMinutes();
     } else {
-      openHour = parseInt(openHourStr, 10);
-      openMinute = parseInt(config.reservation_open_minute, 10);
+      var openHourStr = String(rawOpenHour || '');
+      // Detect ISO 8601 date strings (from JSON-serialized Date objects via CacheService)
+      if (/^\d{4}-\d{2}-\d{2}T/.test(openHourStr)) {
+        var parsed = new Date(openHourStr);
+        openHour = parsed.getHours();
+        openMinute = parsed.getMinutes();
+      } else if (openHourStr.indexOf(':') !== -1) {
+        var parts = openHourStr.split(':');
+        openHour = parseInt(parts[0], 10);
+        openMinute = parseInt(parts[1], 10);
+      } else {
+        openHour = parseInt(openHourStr, 10);
+        openMinute = parseInt(config.reservation_open_minute, 10);
+      }
     }
     var resolvedMaxPerDay = isNaN(maxPerDay) ? APP_DEFAULTS.reservationMaxPerDay : maxPerDay;
     resolvedMaxPerDay = Math.max(1, resolvedMaxPerDay);

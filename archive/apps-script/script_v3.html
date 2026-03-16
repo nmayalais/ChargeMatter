@@ -1541,7 +1541,8 @@
     if (!config) return false;
     const hour = Number(config.reservationOpenHour);
     const minute = Number(config.reservationOpenMinute);
-    if (Number.isNaN(hour) || Number.isNaN(minute)) return false;
+    if (Number.isNaN(hour) || hour < 0 || hour > 23) return false;
+    if (Number.isNaN(minute) || minute < 0 || minute > 59) return false;
     var dp = getDatePartsInTz(now);
     if (dp.hours < hour) return true;
     if (dp.hours === hour && dp.minutes < minute) return true;
@@ -1552,7 +1553,8 @@
     if (!config) return '';
     const hour = Number(config.reservationOpenHour);
     const minute = Number(config.reservationOpenMinute);
-    if (Number.isNaN(hour) || Number.isNaN(minute)) return '';
+    if (Number.isNaN(hour) || hour < 0 || hour > 23) return '';
+    if (Number.isNaN(minute) || minute < 0 || minute > 59) return '';
     const suffix = hour >= 12 ? 'PM' : 'AM';
     const displayHour = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
     const displayMinute = minute < 10 ? '0' + minute : String(minute);
