@@ -486,7 +486,10 @@ function createEngine(options) {
       initSheets_();
       var auth = requireAuthorizedUser_();
       var now = new Date();
+      var chargersData = getSheetData_(SHEETS.chargers, CHARGERS_HEADERS);
+      var sessionsData = getSheetData_(SHEETS.sessions, SESSIONS_HEADERS);
       var reservationsData = getSheetData_(SHEETS.reservations, RESERVATIONS_HEADERS);
+      var suspensionsData = getSheetData_(SHEETS.suspensions, SUSPENSIONS_HEADERS);
       var reservation = findById_(reservationsData.rows, 'reservation_id', reservationId);
       if (
         !reservation ||
@@ -497,7 +500,10 @@ function createEngine(options) {
         return buildBoardResponse_({
           auth: auth,
           now: now,
-          reservationsData: reservationsData
+          chargersData: chargersData,
+          sessionsData: sessionsData,
+          reservationsData: reservationsData,
+          suspensionsData: suspensionsData
         });
       }
       if (!auth.isAdmin && String(reservation.user_id).toLowerCase() !== auth.email.toLowerCase()) {
@@ -512,7 +518,10 @@ function createEngine(options) {
       return buildBoardResponse_({
         auth: auth,
         now: now,
-        reservationsData: reservationsData
+        chargersData: chargersData,
+        sessionsData: sessionsData,
+        reservationsData: reservationsData,
+        suspensionsData: suspensionsData
       });
     } finally {
       lock.releaseLock();
@@ -853,6 +862,8 @@ function createEngine(options) {
     var channelMention = getSlackChannelMention_(config);
     var chargersData = getSheetData_(SHEETS.chargers, CHARGERS_HEADERS);
     var sessionsData = getSheetData_(SHEETS.sessions, SESSIONS_HEADERS);
+    var reservationsData = getSheetData_(SHEETS.reservations, RESERVATIONS_HEADERS);
+    var suspensionsData = getSheetData_(SHEETS.suspensions, SUSPENSIONS_HEADERS);
     var charger = findById_(chargersData.rows, 'charger_id', chargerId);
     if (!charger || !charger.active_session_id) {
       throw new Error('No active session for this charger.');
@@ -875,7 +886,9 @@ function createEngine(options) {
       auth: auth,
       now: now,
       chargersData: chargersData,
-      sessionsData: sessionsData
+      sessionsData: sessionsData,
+      reservationsData: reservationsData,
+      suspensionsData: suspensionsData
     });
   }
 
@@ -1456,8 +1469,61 @@ function createEngine(options) {
             };
           }
         }
+        // Build todaySchedule
+        var todaySlots = buildSlotsForDay_(charger, now);
+        var chargerId = String(charger.charger_id || '');
+        var todaySchedule = todaySlots.map(function (slot) {
+          var slotStart = slot.start_time;
+          var slotEnd = slot.end_time;
+          var isCurrentSlot = now.getTime() >= slotStart.getTime() && now.getTime() < slotEnd.getTime();
+          var isPast = slotEnd.getTime() <= now.getTime();
+          var slotStatus = 'available';
+          var userName = null;
+          var userEmail = '';
+          var reservationId = null;
+          // Check for a reservation in this slot
+          var slotReservation = findReservationForSlot_(reservations, charger.charger_id, slotStart);
+          if (slotReservation) {
+            var resStatus = String(slotReservation.status || '').toLowerCase();
+            if (resStatus === 'checked_in') {
+              slotStatus = 'checked_in';
+            } else if (resStatus === 'active' || resStatus === 'confirmed') {
+              slotStatus = 'reserved';
+            }
+            userName = formatNameShort_(slotReservation.user_name, slotReservation.user_id);
+            userEmail = String(slotReservation.user_id || '');
+            reservationId = String(slotReservation.reservation_id || '');
+          }
+          // Check for walk-up session on current slot with no reservation
+          if (isCurrentSlot && session && !slotReservation) {
+            slotStatus = 'active';
+            userName = formatNameShort_(session.user_name, session.user_id);
+            userEmail = String(session.user_id || '');
+          }
+          // If there is a checked-in reservation with an active session, mark as active
+          if (isCurrentSlot && session && slotReservation && slotStatus === 'checked_in') {
+            slotStatus = 'active';
+          }
+          // Mark completed slots (past slots that had reservations)
+          if (isPast && slotStatus === 'reserved') {
+            slotStatus = 'completed';
+          }
+          return {
+            startTime: formatTime_(slotStart),
+            endTime: formatTime_(slotEnd),
+            status: slotStatus,
+            userName: userName,
+            userEmail: userEmail,
+            isCurrentSlot: isCurrentSlot,
+            isPast: isPast,
+            reservationId: reservationId
+          };
+        });
+        var bookedSlots = todaySchedule.filter(function (s) {
+          return s.status !== 'available' && !s.isPast;
+        }).length;
         return {
-          id: String(charger.charger_id || ''),
+          id: chargerId,
           name: charger.name || 'Charger ' + charger.charger_id,
           maxMinutes: Number(charger.max_minutes) || 0,
           status: statusLabel,
@@ -1465,7 +1531,10 @@ function createEngine(options) {
           session: session ? serializeSession_(session) : null,
           reservation: activeReservation ? serializeReservation_(activeReservation) : null,
           nextReservation: nextReservation ? serializeReservation_(nextReservation) : null,
-          walkup: walkup
+          walkup: walkup,
+          todaySchedule: todaySchedule,
+          totalSlots: todaySlots.length,
+          bookedSlots: bookedSlots
         };
       });
     return {
@@ -3003,6 +3072,28 @@ function createEngine(options) {
 
   function formatTime_(date) {
     return Utilities.formatDate(date, Session.getScriptTimeZone(), 'h:mm a');
+  }
+
+  function formatNameShort_(fullName, email) {
+    var name = String(fullName || '').trim();
+    if (!name && email) {
+      var local = String(email).split('@')[0] || '';
+      var parts = local.split(/[._-]/);
+      if (parts.length >= 2) {
+        name = parts[0] + ' ' + parts[1];
+      } else if (parts.length === 1) {
+        name = parts[0];
+      }
+    }
+    if (!name) {
+      return '';
+    }
+    var words = name.split(/\s+/);
+    var first = words[0].charAt(0).toUpperCase() + words[0].slice(1).toLowerCase();
+    if (words.length >= 2) {
+      return first + ' ' + words[words.length - 1].charAt(0).toUpperCase() + '.';
+    }
+    return first;
   }
 
   function formatDurationMinutes_(minutes) {
