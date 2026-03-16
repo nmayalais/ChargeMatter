@@ -13,6 +13,9 @@
     "format": "prettier --write 'apps-script/Code.gs' 'apps-script/**/*.html' 'cli/**/*.js' 'tests/**/*.js'",
     "format:check": "prettier --check 'apps-script/Code.gs' 'apps-script/**/*.html' 'cli/**/*.js' 'tests/**/*.js'"
   },
+  "jest": {
+    "testPathIgnorePatterns": ["/node_modules/", "/web/"]
+  },
   "devDependencies": {
     "eslint": "^8.57.1",
     "eslint-config-prettier": "^10.1.8",
