@@ -962,8 +962,11 @@
       var toggle = document.createElement('button');
       toggle.className = 'card-schedule-toggle';
       toggle.setAttribute('aria-expanded', 'false');
+      var summaryText = charger.totalSlots === 0
+        ? 'No more slots today'
+        : charger.bookedSlots + ' of ' + charger.totalSlots + ' slots booked';
       toggle.innerHTML = '<span class="schedule-label">Today\u2019s schedule</span>' +
-        '<span class="schedule-summary">' + charger.bookedSlots + ' of ' + charger.totalSlots + ' slots booked</span>' +
+        '<span class="schedule-summary">' + summaryText + '</span>' +
         '<span class="schedule-chevron">\u25BE</span>';
 
       // Schedule list (hidden by default)
@@ -1533,37 +1536,34 @@
     return date.toLocaleTimeString([], tzOptions({ hour: 'numeric', minute: '2-digit' }));
   }
 
-  function getReservationOpenTime(config) {
-    if (!config) {
-      return null;
-    }
+  function isBeforeReservationOpenTime(now) {
+    const config = state.board?.config;
+    if (!config) return false;
     const hour = Number(config.reservationOpenHour);
     const minute = Number(config.reservationOpenMinute);
-    if (Number.isNaN(hour) || Number.isNaN(minute)) {
-      return null;
-    }
-    const now = getClientNow();
-    const dp = getDatePartsInTz(now);
-    return new Date(dp.year, dp.month - 1, dp.day, hour, minute, 0);
+    if (Number.isNaN(hour) || Number.isNaN(minute)) return false;
+    var dp = getDatePartsInTz(now);
+    if (dp.hours < hour) return true;
+    if (dp.hours === hour && dp.minutes < minute) return true;
+    return false;
   }
 
   function formatReservationOpenTime(config) {
-    const openTime = getReservationOpenTime(config);
-    if (!openTime) {
-      return '';
-    }
-    return openTime.toLocaleTimeString([], tzOptions({ hour: 'numeric', minute: '2-digit' }));
+    if (!config) return '';
+    const hour = Number(config.reservationOpenHour);
+    const minute = Number(config.reservationOpenMinute);
+    if (Number.isNaN(hour) || Number.isNaN(minute)) return '';
+    const suffix = hour >= 12 ? 'PM' : 'AM';
+    const displayHour = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
+    const displayMinute = minute < 10 ? '0' + minute : String(minute);
+    return displayHour + ':' + displayMinute + ' ' + suffix;
   }
 
   function getReservationClosedMessage() {
     const config = state.board?.config;
-    const openTime = getReservationOpenTime(config);
-    if (!openTime) {
-      return '';
-    }
     const now = getClientNow();
-    if (now < openTime) {
-      return `Bookings open at ${formatReservationOpenTime(config)}.`;
+    if (isBeforeReservationOpenTime(now)) {
+      return 'Bookings open at ' + formatReservationOpenTime(config) + '.';
     }
     return '';
   }
@@ -2041,7 +2041,8 @@
     if (!slots.length) {
       const empty = document.createElement('div');
       empty.className = 'empty-state';
-      empty.textContent = getReservationClosedMessage() || 'No available slots found. Check back soon.';
+      var closedMsg = getReservationClosedMessage();
+      empty.textContent = closedMsg || 'All slots for today have passed or are booked.';
       container.appendChild(empty);
       return;
     }
