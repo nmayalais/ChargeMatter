@@ -7,10 +7,18 @@
     "test": "jest",
     "cli": "node cli/index.js",
     "policy-check": "jest --runTestsByPath tests/cli.policy.test.js",
-    "deploy": "cd apps-script && clasp push --force && clasp deploy -i AKfycbzG62vpV-i1M839wr_A_lzbHbJ3F1orTXMWbLxI_UeTbKnufeJ3RG6_X4nPU4XnB98 -d \"Deploy\""
+    "deploy": "cd apps-script && clasp push --force && clasp deploy -i AKfycbzG62vpV-i1M839wr_A_lzbHbJ3F1orTXMWbLxI_UeTbKnufeJ3RG6_X4nPU4XnB98 -d \"Deploy\"",
+    "lint": "eslint 'apps-script/Code.gs' 'apps-script/script_v*.html' 'cli/**/*.js' 'tests/**/*.js'",
+    "lint:fix": "eslint --fix 'apps-script/Code.gs' 'apps-script/script_v*.html' 'cli/**/*.js' 'tests/**/*.js'",
+    "format": "prettier --write 'apps-script/Code.gs' 'apps-script/**/*.html' 'cli/**/*.js' 'tests/**/*.js'",
+    "format:check": "prettier --check 'apps-script/Code.gs' 'apps-script/**/*.html' 'cli/**/*.js' 'tests/**/*.js'"
   },
   "devDependencies": {
+    "eslint": "^8.57.1",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-html": "^8.1.4",
     "jest": "^29.7.0",
-    "jsdom": "^24.0.0"
+    "jsdom": "^24.0.0",
+    "prettier": "^3.8.1"
   }
 }
