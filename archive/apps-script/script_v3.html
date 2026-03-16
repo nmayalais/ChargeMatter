@@ -432,6 +432,27 @@
       .getBoardData();
   }
 
+  // ── Schedule toggle state helpers ──────────────────────────────────────
+  function getExpandedScheduleIds() {
+    var expanded = [];
+    document.querySelectorAll('.card-schedule-toggle[aria-expanded="true"]').forEach(function(el) {
+      var card = el.closest('[data-charger-id]');
+      if (card) expanded.push(card.getAttribute('data-charger-id'));
+    });
+    return expanded;
+  }
+
+  function restoreExpandedSchedules(ids) {
+    if (!ids || !ids.length) return;
+    ids.forEach(function(id) {
+      var card = document.querySelector('[data-charger-id="' + id + '"]');
+      if (card) {
+        var toggle = card.querySelector('.card-schedule-toggle');
+        if (toggle) toggle.click();
+      }
+    });
+  }
+
   function renderBoard(data, options = {}) {
     state.board = data;
     state.reservations = data.reservations || [];
@@ -455,6 +476,9 @@
       }
     });
 
+    // Capture expanded schedule toggles before clearing DOM
+    var expandedScheduleIds = getExpandedScheduleIds();
+
     board.innerHTML = '';
     renderSuspensionBanner(data.user);
     renderMyStatusBanner();
@@ -476,6 +500,9 @@
       fragment.appendChild(card);
     });
     board.appendChild(fragment);
+
+    // Restore expanded schedule toggles after re-render
+    restoreExpandedSchedules(expandedScheduleIds);
 
     if (state.mode === 'reserve') {
       updateReservationUI(data);
@@ -835,7 +862,8 @@
       if (charger.nextReservation) {
         details.appendChild(
           createInfoRow('Next reservation', formatReservationSummary(charger.nextReservation), {
-            secondary: true
+            secondary: true,
+            className: 'info-row-next-reservation'
           })
         );
       }
@@ -847,7 +875,8 @@
       if (charger.nextReservation) {
         details.appendChild(
           createInfoRow('Next reservation', formatReservationSummary(charger.nextReservation), {
-            secondary: true
+            secondary: true,
+            className: 'info-row-next-reservation'
           })
         );
       }
@@ -917,10 +946,74 @@
       if (charger.nextReservation) {
         details.appendChild(
           createInfoRow('Next reservation', formatReservationSummary(charger.nextReservation), {
-            secondary: true
+            secondary: true,
+            className: 'info-row-next-reservation'
           })
         );
       }
+    }
+
+    // ── Today's Schedule toggle ──────────────────────────────────────────
+    if (charger.todaySchedule && charger.todaySchedule.length > 0) {
+      var scheduleSection = document.createElement('div');
+      scheduleSection.className = 'card-schedule';
+
+      // Toggle button
+      var toggle = document.createElement('button');
+      toggle.className = 'card-schedule-toggle';
+      toggle.setAttribute('aria-expanded', 'false');
+      toggle.innerHTML = '<span class="schedule-label">Today\u2019s schedule</span>' +
+        '<span class="schedule-summary">' + charger.bookedSlots + ' of ' + charger.totalSlots + ' slots booked</span>' +
+        '<span class="schedule-chevron">\u25BE</span>';
+
+      // Schedule list (hidden by default)
+      var list = document.createElement('div');
+      list.className = 'card-schedule-list';
+
+      var currentUserEmail = getCurrentUserEmail();
+      charger.todaySchedule.forEach(function(slot) {
+        var row = document.createElement('div');
+        row.className = 'schedule-slot';
+        if (slot.isCurrentSlot) row.classList.add('is-current');
+        if (slot.isPast) row.classList.add('is-past');
+        if (slot.status === 'available') row.classList.add('is-available');
+
+        // Determine display name
+        var displayName = slot.userName || 'Available';
+        if (slot.userEmail && sameUserEmail(slot.userEmail, currentUserEmail)) {
+          displayName = 'You';
+        }
+
+        // Status dot color
+        var dotClass = 'dot-' + (slot.status === 'available' ? 'free' :
+                                  slot.status === 'active' || slot.status === 'checked_in' ? 'in-use' :
+                                  slot.status === 'reserved' ? 'reserved' : 'free');
+
+        row.innerHTML =
+          '<span class="schedule-slot-time">' + slot.startTime + ' \u2013 ' + slot.endTime + '</span>' +
+          '<span class="schedule-slot-name">' + displayName + '</span>' +
+          '<span class="schedule-slot-dot ' + dotClass + '"></span>';
+
+        list.appendChild(row);
+      });
+
+      // Toggle behavior
+      toggle.addEventListener('click', function(e) {
+        e.stopPropagation();
+        var expanded = toggle.getAttribute('aria-expanded') === 'true';
+        toggle.setAttribute('aria-expanded', String(!expanded));
+        list.classList.toggle('expanded');
+        toggle.querySelector('.schedule-chevron').textContent = expanded ? '\u25BE' : '\u25B4';
+        // Hide/show "Next reservation" row when schedule expands
+        var nextResRow = card.querySelector('.info-row-next-reservation');
+        if (nextResRow) {
+          nextResRow.style.display = expanded ? '' : 'none';
+        }
+      });
+
+      scheduleSection.appendChild(toggle);
+      scheduleSection.appendChild(list);
+      details.appendChild(scheduleSection);
     }
 
     const actions = document.createElement('div');

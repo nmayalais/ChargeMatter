@@ -2396,4 +2396,133 @@
     color: #4b5563;
     border-color: #9ca3af;
   }
+
+  /* ── Today's Schedule toggle & list ────────────────────────────────────── */
+  .card-schedule {
+    margin-top: var(--space-2, 8px);
+  }
+
+  .card-schedule-toggle {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    padding: var(--space-3, 12px) 0;
+    border: none;
+    background: none;
+    cursor: pointer;
+    border-top: 1px dashed rgba(27, 31, 39, 0.12);
+    min-height: 44px;
+    font-family: inherit;
+    gap: var(--space-2, 8px);
+  }
+
+  .card-schedule-toggle:focus-visible {
+    outline: 2px solid var(--color-primary, #f05a2a);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  .schedule-label {
+    color: var(--color-muted, #5b6474);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-weight: 600;
+  }
+
+  .schedule-summary {
+    flex: 1;
+    text-align: right;
+    font-size: 13px;
+    color: var(--color-text, #1b1f27);
+  }
+
+  .schedule-chevron {
+    font-size: 12px;
+    color: var(--color-muted, #5b6474);
+    transition: transform 200ms ease;
+    width: 20px;
+    text-align: center;
+  }
+
+  /* Schedule list */
+  .card-schedule-list {
+    display: none;
+    padding-bottom: var(--space-2, 8px);
+  }
+
+  .card-schedule-list.expanded {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .schedule-slot {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2, 8px);
+    padding: 8px;
+    border-radius: 6px;
+    font-size: 13px;
+  }
+
+  .schedule-slot.is-current {
+    border-left: 3px solid var(--color-primary, #f05a2a);
+    padding-left: 5px;
+    background: rgba(240, 90, 42, 0.04);
+  }
+
+  .schedule-slot.is-past {
+    opacity: 0.45;
+  }
+
+  .schedule-slot.is-available {
+    color: var(--color-muted, #5b6474);
+  }
+
+  .schedule-slot-time {
+    flex: 0 0 120px;
+    font-variant-numeric: tabular-nums;
+    color: var(--color-muted, #5b6474);
+    font-size: 12px;
+  }
+
+  .schedule-slot-name {
+    flex: 1;
+    font-weight: 500;
+  }
+
+  .schedule-slot.is-available .schedule-slot-name {
+    font-weight: 400;
+    font-style: italic;
+  }
+
+  .schedule-slot-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .dot-free {
+    background: var(--status-free-bg, #e1f7e9);
+    border: 1.5px solid var(--status-free-border, #9ad7b7);
+  }
+
+  .dot-in-use {
+    background: var(--status-in_use-bg, #e8f0ff);
+    border: 1.5px solid var(--status-in_use-border, #adc3ff);
+  }
+
+  .dot-reserved {
+    background: var(--status-reserved-bg, #f2ebff);
+    border: 1.5px solid var(--status-reserved-border, #c9b8ff);
+  }
+
+  /* Reduced motion */
+  @media (prefers-reduced-motion: reduce) {
+    .schedule-chevron {
+      transition: none;
+    }
+  }
 </style>
