@@ -77,6 +77,12 @@ export function HelpButton({ helpKey, className = '', label }: HelpButtonProps) 
   const popoverRef = useRef<HTMLDivElement>(null);
 
   const content = HELP_CONTENT[helpKey];
+
+  const close = useCallback(() => {
+    setIsOpen(false);
+    triggerRef.current?.focus();
+  }, []);
+
   if (!content) return null;
 
   const toggle = () => {
@@ -86,11 +92,6 @@ export function HelpButton({ helpKey, className = '', label }: HelpButtonProps) 
       trackEvent(ANALYTICS_EVENTS.helpPopoverOpened, { help_key: helpKey });
     }
   };
-
-  const close = useCallback(() => {
-    setIsOpen(false);
-    triggerRef.current?.focus();
-  }, []);
 
   return (
     <span className={`relative inline-flex ${className}`}>

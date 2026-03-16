@@ -40,8 +40,9 @@ function formatDelta(diffMs: number): { text: string; overdue: boolean } {
  * Shows time remaining or overdue duration relative to the given endTime.
  */
 export function SessionTimer({ endTime, label, className }: SessionTimerProps) {
-  const endMs = useRef(new Date(endTime).getTime());
-  const [delta, setDelta] = useState(() => formatDelta(endMs.current - Date.now()));
+  const initialEndMs = new Date(endTime).getTime();
+  const endMs = useRef(initialEndMs);
+  const [delta, setDelta] = useState(() => formatDelta(initialEndMs - Date.now()));
 
   useEffect(() => {
     endMs.current = new Date(endTime).getTime();

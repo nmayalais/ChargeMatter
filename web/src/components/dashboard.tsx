@@ -46,6 +46,26 @@ export function Dashboard({ initialData, user }: DashboardProps) {
     }
   }, [addToast, user.email, user.name, boardData.user.isAdmin]);
 
+  // Auto-refresh every 2 minutes (matching V3's stale-board threshold)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      refresh();
+    }, 2 * 60 * 1000);
+
+    return () => clearInterval(interval);
+  }, [refresh]);
+
+  // Refresh when tab becomes visible after being hidden
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        refresh();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [refresh]);
+
   const handleBoardUpdate = useCallback((data: BoardData) => {
     setBoardData(data);
   }, []);

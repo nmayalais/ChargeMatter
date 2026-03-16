@@ -86,16 +86,12 @@ const STEPS: OnboardingStep[] = [
 ];
 
 export function useOnboarding() {
-  const [shouldShow, setShouldShow] = useState(false);
-
-  useEffect(() => {
+  const [shouldShow, setShouldShow] = useState(() => {
     if (typeof window !== 'undefined') {
-      const seen = localStorage.getItem(STORAGE_KEY);
-      if (!seen) {
-        setShouldShow(true);
-      }
+      return !localStorage.getItem(STORAGE_KEY);
     }
-  }, []);
+    return false;
+  });
 
   const dismiss = useCallback(() => {
     setShouldShow(false);
