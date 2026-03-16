@@ -1519,9 +1519,9 @@ function createEngine(options) {
             reservationId: reservationId
           };
         });
-        var bookedSlots = todaySchedule.filter(function (s) {
-          return s.status !== 'available' && !s.isPast;
-        }).length;
+        var futureSlots = todaySchedule.filter(function (s) { return !s.isPast; });
+        var totalSlots = futureSlots.length;
+        var bookedSlots = futureSlots.filter(function (s) { return s.status !== 'available'; }).length;
         return {
           id: chargerId,
           name: charger.name || 'Charger ' + charger.charger_id,
@@ -1533,7 +1533,7 @@ function createEngine(options) {
           nextReservation: nextReservation ? serializeReservation_(nextReservation) : null,
           walkup: walkup,
           todaySchedule: todaySchedule,
-          totalSlots: todaySlots.length,
+          totalSlots: totalSlots,
           bookedSlots: bookedSlots
         };
       });
