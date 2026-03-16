@@ -1,5 +1,5 @@
 node_modules/
-data/
+archive/
+web/
 package-lock.json
-apps-script/appsscript.json
 *.md

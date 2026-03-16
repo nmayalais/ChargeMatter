@@ -22,7 +22,7 @@
   },
   "overrides": [
     {
-      "files": ["apps-script/Code.gs"],
+      "files": ["archive/apps-script/Code.gs"],
       "env": {
         "browser": false
       },
@@ -41,7 +41,7 @@
       }
     },
     {
-      "files": ["apps-script/script_v2.html", "apps-script/script_v3.html"],
+      "files": ["archive/apps-script/script_v2.html", "archive/apps-script/script_v3.html"],
       "env": {
         "browser": true
       },
@@ -55,14 +55,14 @@
       }
     },
     {
-      "files": ["cli/**/*.js"],
+      "files": ["archive/cli/**/*.js"],
       "env": {
         "node": true,
         "commonjs": true
       }
     },
     {
-      "files": ["tests/**/*.js"],
+      "files": ["archive/tests/**/*.js"],
       "env": {
         "node": true,
         "commonjs": true,

@@ -1,17 +1,13 @@
 {
   "name": "ev-parking-agent",
   "private": true,
-  "version": "0.1.0",
-  "type": "commonjs",
+  "version": "0.2.0",
   "scripts": {
-    "test": "jest",
-    "cli": "node cli/index.js",
-    "policy-check": "jest --runTestsByPath tests/cli.policy.test.js",
-    "deploy": "cd apps-script && clasp push --force && clasp deploy -i AKfycbzG62vpV-i1M839wr_A_lzbHbJ3F1orTXMWbLxI_UeTbKnufeJ3RG6_X4nPU4XnB98 -d \"Deploy\"",
-    "lint": "eslint 'apps-script/Code.gs' 'apps-script/script_v*.html' 'cli/**/*.js' 'tests/**/*.js'",
-    "lint:fix": "eslint --fix 'apps-script/Code.gs' 'apps-script/script_v*.html' 'cli/**/*.js' 'tests/**/*.js'",
-    "format": "prettier --write 'apps-script/Code.gs' 'apps-script/**/*.html' 'cli/**/*.js' 'tests/**/*.js'",
-    "format:check": "prettier --check 'apps-script/Code.gs' 'apps-script/**/*.html' 'cli/**/*.js' 'tests/**/*.js'"
+    "test": "cd web && npm test",
+    "lint": "cd web && npm run lint",
+    "format": "cd web && npm run format:check",
+    "test:legacy": "jest --testPathIgnorePatterns='web/'",
+    "deploy:legacy": "cd archive/apps-script && clasp push --force && clasp deploy -i AKfycbzG62vpV-i1M839wr_A_lzbHbJ3F1orTXMWbLxI_UeTbKnufeJ3RG6_X4nPU4XnB98 -d \"Deploy\""
   },
   "jest": {
     "testPathIgnorePatterns": ["/node_modules/", "/web/"]
