@@ -163,7 +163,9 @@ function formatDate(date, timeZone, format) {
       timeZone,
       year: 'numeric',
       month: '2-digit'
-    }).format(safeDate).replace(/\//g, '-');
+    })
+      .format(safeDate)
+      .replace(/\//g, '-');
   }
 
   if (format === 'yyyy-MM-dd') {
@@ -172,7 +174,9 @@ function formatDate(date, timeZone, format) {
       year: 'numeric',
       month: '2-digit',
       day: '2-digit'
-    }).format(safeDate).replace(/\//g, '-');
+    })
+      .format(safeDate)
+      .replace(/\//g, '-');
   }
 
   if (format === 'MMM d') {

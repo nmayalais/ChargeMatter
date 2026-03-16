@@ -104,8 +104,7 @@ describe('sendReminders transient error handling', () => {
     // This matches the 2/18/26 6:36 AM failure — already recognised as transient,
     // so it was retried. It still failed because the outage lasted all 3 attempts.
     // This test confirms that pattern continues to work after any future changes.
-    const errorMessage =
-      "We're sorry, a server error occurred. Please wait a bit and try again.";
+    const errorMessage = "We're sorry, a server error occurred. Please wait a bit and try again.";
     const store = buildStoreThrowingOnce(errorMessage);
     const engine = createTestEngine(store);
 

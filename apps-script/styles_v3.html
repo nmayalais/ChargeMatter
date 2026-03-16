@@ -3,9 +3,9 @@
 
   :root {
     color-scheme: light;
-    font-family: "Sora", "Avenir Next", "Segoe UI", sans-serif;
-    --font-display: "Fraunces", "Georgia", serif;
-    --font-body: "Sora", "Avenir Next", "Segoe UI", sans-serif;
+    font-family: 'Sora', 'Avenir Next', 'Segoe UI', sans-serif;
+    --font-display: 'Fraunces', 'Georgia', serif;
+    --font-body: 'Sora', 'Avenir Next', 'Segoe UI', sans-serif;
     --color-bg: #f4f1ed;
     --color-surface: #ffffff;
     --color-surface-muted: #fbf8f4;
@@ -59,8 +59,7 @@
     margin: 0;
     background:
       radial-gradient(circle at top right, rgba(240, 90, 42, 0.12), transparent 55%),
-      radial-gradient(circle at 15% 20%, rgba(20, 24, 32, 0.08), transparent 45%),
-      var(--color-bg);
+      radial-gradient(circle at 15% 20%, rgba(20, 24, 32, 0.08), transparent 45%), var(--color-bg);
     color: var(--color-text);
     font-family: var(--font-body);
   }
@@ -132,7 +131,10 @@
     font-weight: 600;
     cursor: pointer;
     min-height: var(--tap-target);
-    transition: background 150ms ease, color 150ms ease, border-color 150ms ease;
+    transition:
+      background 150ms ease,
+      color 150ms ease,
+      border-color 150ms ease;
   }
 
   .mode-tab.active {
@@ -257,10 +259,18 @@
     animation: chip-in 300ms ease both;
   }
 
-  .summary-item:nth-child(1) { animation-delay: 0ms; }
-  .summary-item:nth-child(2) { animation-delay: 60ms; }
-  .summary-item:nth-child(3) { animation-delay: 120ms; }
-  .summary-item:nth-child(4) { animation-delay: 180ms; }
+  .summary-item:nth-child(1) {
+    animation-delay: 0ms;
+  }
+  .summary-item:nth-child(2) {
+    animation-delay: 60ms;
+  }
+  .summary-item:nth-child(3) {
+    animation-delay: 120ms;
+  }
+  .summary-item:nth-child(4) {
+    animation-delay: 180ms;
+  }
 
   .summary-item strong {
     font-size: 18px;
@@ -307,13 +317,18 @@
     gap: var(--space-3);
     position: relative;
     overflow: hidden;
-    transition: transform 200ms ease, box-shadow 200ms ease, border-color 200ms ease;
+    transition:
+      transform 200ms ease,
+      box-shadow 200ms ease,
+      border-color 200ms ease;
   }
 
   .card.selected {
     border-color: var(--color-primary);
     border-width: 2px;
-    box-shadow: 0 0 0 3px rgba(var(--color-primary-rgb), 0.25), var(--shadow-soft);
+    box-shadow:
+      0 0 0 3px rgba(var(--color-primary-rgb), 0.25),
+      var(--shadow-soft);
     transform: scale(1.005);
   }
 
@@ -564,7 +579,10 @@
     cursor: pointer;
     min-height: var(--tap-target);
     letter-spacing: 0.01em;
-    transition: filter 150ms ease, transform 100ms ease, background 150ms ease;
+    transition:
+      filter 150ms ease,
+      transform 100ms ease,
+      background 150ms ease;
   }
 
   .btn:active:not(:disabled) {
@@ -827,7 +845,9 @@
     border-radius: var(--radius-md);
     background: var(--color-surface-muted);
     border: 1px solid rgba(27, 31, 39, 0.08);
-    transition: box-shadow 200ms ease, border-color 200ms ease;
+    transition:
+      box-shadow 200ms ease,
+      border-color 200ms ease;
   }
 
   .reservation-item.highlight {
@@ -906,7 +926,9 @@
     border: 1px solid rgba(27, 31, 39, 0.1);
     background: var(--color-surface-muted);
     cursor: pointer;
-    transition: box-shadow 200ms ease, border-color 200ms ease;
+    transition:
+      box-shadow 200ms ease,
+      border-color 200ms ease;
   }
 
   .slot-info {
@@ -940,7 +962,6 @@
     color: var(--color-muted);
     font-size: 13px;
   }
-
 
   .reservations {
     margin-bottom: var(--space-5);
@@ -1082,7 +1103,9 @@
     transform: translateY(100%);
     pointer-events: none;
     opacity: 0;
-    transition: transform 280ms cubic-bezier(0.34, 1.56, 0.64, 1), opacity 200ms ease;
+    transition:
+      transform 280ms cubic-bezier(0.34, 1.56, 0.64, 1),
+      opacity 200ms ease;
   }
 
   .sticky-bar.active {
@@ -1116,7 +1139,7 @@
     height: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom));
     background: var(--color-surface);
     border-top: 1.5px solid var(--color-border);
-    box-shadow: 0 -6px 20px rgba(15, 23, 42, 0.10);
+    box-shadow: 0 -6px 20px rgba(15, 23, 42, 0.1);
     padding: 8px 16px calc(env(safe-area-inset-bottom) + 6px);
     gap: var(--space-3);
     justify-content: space-around;
@@ -1133,7 +1156,10 @@
     min-height: 48px;
     border-radius: var(--radius-md);
     letter-spacing: 0.01em;
-    transition: background 150ms ease, color 150ms ease, border-color 150ms ease;
+    transition:
+      background 150ms ease,
+      color 150ms ease,
+      border-color 150ms ease;
   }
 
   .mobile-tab.active {
@@ -1602,7 +1628,7 @@
       right: var(--space-3);
       z-index: 25;
       border-radius: var(--radius-md);
-      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
     }
   }
 
@@ -1631,7 +1657,10 @@
     font-size: 13px;
     font-weight: 600;
     cursor: pointer;
-    transition: background 150ms ease, color 150ms ease, border-color 150ms ease;
+    transition:
+      background 150ms ease,
+      color 150ms ease,
+      border-color 150ms ease;
   }
 
   .tab-btn.active {
@@ -1830,8 +1859,13 @@
   }
 
   @keyframes pulse-border {
-    0%, 100% { box-shadow: 0 0 0 0 rgba(180,35,24,0.3); }
-    50%       { box-shadow: 0 0 0 4px rgba(180,35,24,0); }
+    0%,
+    100% {
+      box-shadow: 0 0 0 0 rgba(180, 35, 24, 0.3);
+    }
+    50% {
+      box-shadow: 0 0 0 4px rgba(180, 35, 24, 0);
+    }
   }
 
   /* Skeleton card shimmer */
@@ -1845,8 +1879,12 @@
   }
 
   @keyframes shimmer {
-    0%   { background-position: 200% 0; }
-    100% { background-position: -200% 0; }
+    0% {
+      background-position: 200% 0;
+    }
+    100% {
+      background-position: -200% 0;
+    }
   }
 
   /* My Status Banner */
@@ -1912,53 +1950,107 @@
   /* ── v3 Keyframes ──────────────────────────────────────────────────────────── */
 
   @keyframes sticky-bar-in {
-    from { transform: translateY(100%); opacity: 0.5; }
-    to   { transform: translateY(0);   opacity: 1; }
+    from {
+      transform: translateY(100%);
+      opacity: 0.5;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
   }
 
   @keyframes details-expand {
-    from { opacity: 0; transform: translateY(-4px); }
-    to   { opacity: 1; transform: translateY(0); }
+    from {
+      opacity: 0;
+      transform: translateY(-4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
 
   @keyframes mode-fade-in {
-    from { opacity: 0; transform: translateY(8px); }
-    to   { opacity: 1; transform: translateY(0); }
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
 
   @keyframes notice-in {
-    from { opacity: 0; transform: translateY(-4px); }
-    to   { opacity: 1; transform: translateY(0); }
+    from {
+      opacity: 0;
+      transform: translateY(-4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
 
   @keyframes banner-fade-in {
-    from { opacity: 0; transform: translateY(-6px); }
-    to   { opacity: 1; transform: translateY(0); }
+    from {
+      opacity: 0;
+      transform: translateY(-6px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
 
   @keyframes chip-in {
-    from { opacity: 0; transform: translateY(4px) scale(0.96); }
-    to   { opacity: 1; transform: translateY(0)  scale(1); }
+    from {
+      opacity: 0;
+      transform: translateY(4px) scale(0.96);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
   }
 
   @keyframes menu-in {
-    from { opacity: 0; transform: translateY(-4px) scale(0.97); }
-    to   { opacity: 1; transform: translateY(0)  scale(1); }
+    from {
+      opacity: 0;
+      transform: translateY(-4px) scale(0.97);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
   }
 
   @keyframes dialog-in {
-    from { opacity: 0; transform: scale(0.96) translateY(8px); }
-    to   { opacity: 1; transform: scale(1)    translateY(0); }
+    from {
+      opacity: 0;
+      transform: scale(0.96) translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1) translateY(0);
+    }
   }
 
   @keyframes backdrop-in {
-    from { opacity: 0; }
-    to   { opacity: 1; }
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
   }
 
   /* ── Reduced-motion preference ─────────────────────────────────────────── */
   @media (prefers-reduced-motion: reduce) {
-    *, *::before, *::after {
+    *,
+    *::before,
+    *::after {
       animation-duration: 0.01ms !important;
       animation-iteration-count: 1 !important;
       transition-duration: 0.01ms !important;
@@ -1966,30 +2058,58 @@
   }
 
   @keyframes highlight-pulse {
-    0%   { box-shadow: 0 0 0 0   rgba(var(--color-primary-rgb), 0.4); }
-    60%  { box-shadow: 0 0 0 6px rgba(var(--color-primary-rgb), 0); }
-    100% { box-shadow: 0 0 0 2px rgba(var(--color-primary-rgb), 0.12); }
+    0% {
+      box-shadow: 0 0 0 0 rgba(var(--color-primary-rgb), 0.4);
+    }
+    60% {
+      box-shadow: 0 0 0 6px rgba(var(--color-primary-rgb), 0);
+    }
+    100% {
+      box-shadow: 0 0 0 2px rgba(var(--color-primary-rgb), 0.12);
+    }
   }
 
   /* ── 10. Staggered fade-in for board cards ───────────────────────────────── */
 
   @keyframes fade-up {
-    from { opacity: 0; transform: translateY(12px); }
-    to   { opacity: 1; transform: translateY(0); }
+    from {
+      opacity: 0;
+      transform: translateY(12px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
 
   .board .card {
     animation: fade-up 300ms ease both;
   }
 
-  .board .card:nth-child(1) { animation-delay: 0ms; }
-  .board .card:nth-child(2) { animation-delay: 60ms; }
-  .board .card:nth-child(3) { animation-delay: 120ms; }
-  .board .card:nth-child(4) { animation-delay: 180ms; }
-  .board .card:nth-child(5) { animation-delay: 240ms; }
-  .board .card:nth-child(6) { animation-delay: 300ms; }
-  .board .card:nth-child(7) { animation-delay: 360ms; }
-  .board .card:nth-child(8) { animation-delay: 420ms; }
+  .board .card:nth-child(1) {
+    animation-delay: 0ms;
+  }
+  .board .card:nth-child(2) {
+    animation-delay: 60ms;
+  }
+  .board .card:nth-child(3) {
+    animation-delay: 120ms;
+  }
+  .board .card:nth-child(4) {
+    animation-delay: 180ms;
+  }
+  .board .card:nth-child(5) {
+    animation-delay: 240ms;
+  }
+  .board .card:nth-child(6) {
+    animation-delay: 300ms;
+  }
+  .board .card:nth-child(7) {
+    animation-delay: 360ms;
+  }
+  .board .card:nth-child(8) {
+    animation-delay: 420ms;
+  }
 
   /* ── 3. Toast notifications ──────────────────────────────────────────────── */
 
@@ -2008,13 +2128,25 @@
   }
 
   @keyframes toast-in {
-    from { opacity: 0; transform: translateY(-16px); }
-    to   { opacity: 1; transform: translateY(0); }
+    from {
+      opacity: 0;
+      transform: translateY(-16px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
 
   @keyframes toast-out {
-    from { opacity: 1; transform: translateY(0); }
-    to   { opacity: 0; transform: translateY(-16px); }
+    from {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    to {
+      opacity: 0;
+      transform: translateY(-16px);
+    }
   }
 
   .toast {
@@ -2055,8 +2187,12 @@
   /* ── 12. Card status flash on re-render ──────────────────────────────────── */
 
   @keyframes flash-in {
-    0%   { background: var(--status-color, var(--color-primary-soft)); }
-    100% { background: var(--color-surface); }
+    0% {
+      background: var(--status-color, var(--color-primary-soft));
+    }
+    100% {
+      background: var(--color-surface);
+    }
   }
 
   .card.status-changed {
@@ -2072,7 +2208,7 @@
     align-items: center;
     justify-content: center;
   }
-  .onboarding-overlay[aria-hidden="false"] {
+  .onboarding-overlay[aria-hidden='false'] {
     display: flex;
   }
   .onboarding-backdrop {
@@ -2165,7 +2301,9 @@
     cursor: pointer;
     vertical-align: middle;
     margin-left: var(--space-2);
-    transition: border-color 200ms ease, color 200ms ease;
+    transition:
+      border-color 200ms ease,
+      color 200ms ease;
     padding: 0;
     line-height: 1;
   }
@@ -2189,7 +2327,9 @@
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
     opacity: 0;
     pointer-events: none;
-    transition: opacity 200ms ease, transform 200ms ease;
+    transition:
+      opacity 200ms ease,
+      transform 200ms ease;
   }
   .help-popover.active {
     opacity: 1;

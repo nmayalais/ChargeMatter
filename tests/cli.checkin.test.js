@@ -93,10 +93,22 @@ function pushReservation(store, overrides = {}) {
   const checkedInAt = overrides.checkedInAt || '';
 
   store.sheets.reservations.rows.push([
-    id, chargerId, userId, 'Driver',
-    start, end, status, checkedInAt,
-    '', '', '', '',
-    start, start, '', ''
+    id,
+    chargerId,
+    userId,
+    'Driver',
+    start,
+    end,
+    status,
+    checkedInAt,
+    '',
+    '',
+    '',
+    '',
+    start,
+    start,
+    '',
+    ''
   ]);
   return id;
 }
@@ -110,9 +122,23 @@ function pushSession(store, overrides = {}) {
   const end = overrides.end || localDate(2026, 3, 10, 9, 0);
 
   store.sheets.sessions.rows.push([
-    id, chargerId, userId, 'Driver',
-    start, end, 'active', true, false, false,
-    false, false, false, '', '', '', ''
+    id,
+    chargerId,
+    userId,
+    'Driver',
+    start,
+    end,
+    'active',
+    true,
+    false,
+    false,
+    false,
+    false,
+    false,
+    '',
+    '',
+    '',
+    ''
   ]);
 
   // Mark the charger as occupied
@@ -127,7 +153,6 @@ function pushSession(store, overrides = {}) {
 // ---------------------------------------------------------------------------
 
 describe('checkInReservation', () => {
-
   // -------------------------------------------------------------------------
   // Happy paths
   // -------------------------------------------------------------------------
@@ -163,8 +188,8 @@ describe('checkInReservation', () => {
       });
 
       const resRow = store.sheets.reservations.rows.find((r) => r[0] === resId);
-      expect(resRow[6]).toBe('checked_in');   // status column
-      expect(resRow[7]).toBeTruthy();          // checked_in_at column
+      expect(resRow[6]).toBe('checked_in'); // status column
+      expect(resRow[7]).toBeTruthy(); // checked_in_at column
     });
 
     test('creates an active session on the correct charger after on-time check-in', () => {
@@ -176,9 +201,7 @@ describe('checkInReservation', () => {
         engine.checkInReservation(resId);
       });
 
-      const session = store.sheets.sessions.rows.find(
-        (r) => r[2] === 'driver@example.com' && r[6] === 'active'
-      );
+      const session = store.sheets.sessions.rows.find((r) => r[2] === 'driver@example.com' && r[6] === 'active');
       expect(session).toBeTruthy();
       expect(String(session[1])).toBe('1'); // charger_id
     });
@@ -218,9 +241,7 @@ describe('checkInReservation', () => {
         engine.checkInReservation(resId);
       });
 
-      const session = store.sheets.sessions.rows.find(
-        (r) => r[2] === 'driver@example.com' && r[6] === 'active'
-      );
+      const session = store.sheets.sessions.rows.find((r) => r[2] === 'driver@example.com' && r[6] === 'active');
       expect(session).toBeTruthy();
       // end_time should match the reservation's end_time (9:00 AM)
       const sessionEnd = session[5];
@@ -308,7 +329,7 @@ describe('checkInReservation', () => {
       });
     });
 
-    test('admin can check in to another user\'s reservation', () => {
+    test("admin can check in to another user's reservation", () => {
       const store = buildStore();
       const resId = pushReservation(store); // owned by driver@example.com
       const engine = createAdminEngine(store);
@@ -402,10 +423,13 @@ describe('checkInReservation', () => {
       const resId = pushReservation(store);
       // Add an active suspension for the user
       store.sheets.suspensions.rows.push([
-        'susp-1', 'driver@example.com', 'Driver',
+        'susp-1',
+        'driver@example.com',
+        'Driver',
         localDate(2026, 3, 9, 0, 0),
         localDate(2026, 3, 11, 23, 59),
-        'no-show strikes', true,
+        'no-show strikes',
+        true,
         localDate(2026, 3, 9, 0, 0)
       ]);
       const engine = createUserEngine(store);
@@ -430,7 +454,7 @@ describe('checkInReservation', () => {
         chargerId: '1',
         userId: 'other@example.com',
         start: localDate(2026, 3, 10, 7, 0),
-        end: localDate(2026, 3, 10, 8, 0)  // ends exactly at reservation start
+        end: localDate(2026, 3, 10, 8, 0) // ends exactly at reservation start
       });
       const engine = createUserEngine(store);
 
@@ -517,7 +541,6 @@ describe('checkInReservation', () => {
   // -------------------------------------------------------------------------
 
   describe('force-end overdue session on check-in', () => {
-
     test('happy path: overdue session is force-ended and check-in succeeds', () => {
       const store = buildStore();
       // Person A: active session 7:00–8:00 on Charger 1
@@ -544,21 +567,19 @@ describe('checkInReservation', () => {
 
       // Person A's session should be complete with ended_at set
       const sessionA = store.sheets.sessions.rows.find((r) => r[0] === 'session-a');
-      expect(sessionA[6]).toBe('complete');   // status
-      expect(sessionA[9]).toBe(true);         // complete flag
-      expect(sessionA[16]).toBeTruthy();      // ended_at
+      expect(sessionA[6]).toBe('complete'); // status
+      expect(sessionA[9]).toBe(true); // complete flag
+      expect(sessionA[16]).toBeTruthy(); // ended_at
 
       // Person B should have a new active session
-      const sessionB = store.sheets.sessions.rows.find(
-        (r) => r[2] === 'personb@example.com' && r[6] === 'active'
-      );
+      const sessionB = store.sheets.sessions.rows.find((r) => r[2] === 'personb@example.com' && r[6] === 'active');
       expect(sessionB).toBeTruthy();
-      expect(String(sessionB[1])).toBe('1');  // charger_id
+      expect(String(sessionB[1])).toBe('1'); // charger_id
 
       // Person B's reservation should be checked_in
       const resRow = store.sheets.reservations.rows.find((r) => r[0] === 'res-b');
       expect(resRow[6]).toBe('checked_in');
-      expect(resRow[7]).toBeTruthy();         // checked_in_at
+      expect(resRow[7]).toBeTruthy(); // checked_in_at
     });
 
     test('late strike recorded when past grace period', () => {
@@ -586,9 +607,9 @@ describe('checkInReservation', () => {
 
       const strikes = store.sheets.strikes.rows;
       expect(strikes.length).toBe(1);
-      expect(strikes[0][1]).toBe('persona@example.com');  // user_id
-      expect(strikes[0][3]).toBe('late');                  // type
-      expect(strikes[0][5]).toBe('session-a');             // source_id
+      expect(strikes[0][1]).toBe('persona@example.com'); // user_id
+      expect(strikes[0][3]).toBe('late'); // type
+      expect(strikes[0][5]).toBe('session-a'); // source_id
     });
 
     test('no strike within grace period', () => {
@@ -694,7 +715,7 @@ describe('checkInReservation', () => {
       expect(sessionA[6]).toBe('active');
     });
 
-    test('Person A\'s reservation is also completed after force-end', () => {
+    test("Person A's reservation is also completed after force-end", () => {
       const store = buildStore();
       // Person A: checked-in reservation 7:00–8:00
       pushReservation(store, {
@@ -732,7 +753,7 @@ describe('checkInReservation', () => {
       expect(resA[6]).toBe('complete');
     });
 
-    test('admin can trigger force-end when checking in another user\'s reservation', () => {
+    test("admin can trigger force-end when checking in another user's reservation", () => {
       const store = buildStore();
       pushSession(store, {
         id: 'session-a',
@@ -759,9 +780,7 @@ describe('checkInReservation', () => {
       expect(sessionA[6]).toBe('complete');
 
       // Person B should have new active session
-      const sessionB = store.sheets.sessions.rows.find(
-        (r) => r[2] === 'personb@example.com' && r[6] === 'active'
-      );
+      const sessionB = store.sheets.sessions.rows.find((r) => r[2] === 'personb@example.com' && r[6] === 'active');
       expect(sessionB).toBeTruthy();
     });
 
@@ -782,9 +801,7 @@ describe('checkInReservation', () => {
       });
 
       // Person B should have an active session
-      const sessionB = store.sheets.sessions.rows.find(
-        (r) => r[2] === 'personb@example.com' && r[6] === 'active'
-      );
+      const sessionB = store.sheets.sessions.rows.find((r) => r[2] === 'personb@example.com' && r[6] === 'active');
       expect(sessionB).toBeTruthy();
     });
 
@@ -847,9 +864,7 @@ describe('checkInReservation', () => {
       expect(sessionA[7]).toBe(true); // still active flag
 
       // Person B should have active session on Charger 2
-      const sessionB = store.sheets.sessions.rows.find(
-        (r) => r[2] === 'personb@example.com' && r[6] === 'active'
-      );
+      const sessionB = store.sheets.sessions.rows.find((r) => r[2] === 'personb@example.com' && r[6] === 'active');
       expect(sessionB).toBeTruthy();
       expect(String(sessionB[1])).toBe('2');
     });

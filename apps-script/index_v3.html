@@ -1,10 +1,9 @@
-<!DOCTYPE html>
+<!doctype html>
 <html>
   <head>
-    <base target="_top">
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-    <?!= include('styles_v3'); ?>
-    <? if (posthogKey) { ?>
+    <base target="_top" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <?!= include('styles_v3'); ?> <? if (posthogKey) { ?>
     <script async src="https://us-assets.i.posthog.com/static/array.js" crossorigin="anonymous"></script>
     <script>
       if (window.posthog) {
@@ -45,11 +44,11 @@
       </div>
 
       <? if (slackChannelUrl) { ?>
-        <div class="channel-actions" id="channel-actions">
-          <a class="btn ghost" href="<?= slackChannelUrl ?>" target="_blank" rel="noopener">
-            Open <?= slackChannelLabel || 'the Slack channel' ?> in Slack
-          </a>
-        </div>
+      <div class="channel-actions" id="channel-actions">
+        <a class="btn ghost" href="<?= slackChannelUrl ?>" target="_blank" rel="noopener">
+          Open <?= slackChannelLabel || 'the Slack channel' ?> in Slack
+        </a>
+      </div>
       <? } ?>
 
       <section class="notice" id="notice" aria-live="polite"></section>
@@ -59,7 +58,12 @@
       <section class="mode mode-now active" id="mode-now">
         <div class="board-header">
           <div>
-            <div class="section-title">Availability <button class="help-trigger" data-help="availability" aria-label="What is this?" aria-expanded="false">?</button></div>
+            <div class="section-title">
+              Availability
+              <button class="help-trigger" data-help="availability" aria-label="What is this?" aria-expanded="false">
+                ?
+              </button>
+            </div>
             <div class="section-subtitle">See what's available and start charging.</div>
           </div>
         </div>
@@ -67,9 +71,7 @@
           Live totals across all chargers. Overdue means a session passed its max time.
         </div>
         <div class="summary" id="summary"></div>
-        <div class="mode-helper">
-          Primary actions live on each card. Tap for details.
-        </div>
+        <div class="mode-helper">Primary actions live on each card. Tap for details.</div>
         <main class="board" id="board"></main>
       </section>
 
@@ -106,18 +108,20 @@
         <div>Last updated: <span id="last-updated">--</span></div>
         <div class="user-meta" id="user-meta"></div>
         <div class="legend">
-          <button class="help-trigger" data-help="legend" aria-label="What do these mean?" aria-expanded="false">?</button>
+          <button class="help-trigger" data-help="legend" aria-label="What do these mean?" aria-expanded="false">
+            ?
+          </button>
           <span class="legend-item status-free" title="Available now">Free</span>
           <span class="legend-item status-in_use" title="Currently charging">In use</span>
           <span class="legend-item status-reserved" title="Reserved for a future time">Reserved</span>
           <span class="legend-item status-overdue" title="Past the max session time">Overdue</span>
         </div>
         <? if (slackChannelUrl) { ?>
-          <div class="footer-links">
-            <a class="footer-link" href="<?= slackChannelUrl ?>" target="_blank" rel="noopener">
-              Open <?= slackChannelLabel || 'the Slack channel' ?> in Slack
-            </a>
-          </div>
+        <div class="footer-links">
+          <a class="footer-link" href="<?= slackChannelUrl ?>" target="_blank" rel="noopener">
+            Open <?= slackChannelLabel || 'the Slack channel' ?> in Slack
+          </a>
+        </div>
         <? } ?>
       </footer>
     </div>
@@ -125,7 +129,13 @@
     <div class="toast-container" id="toast-container" aria-live="polite"></div>
 
     <div class="confirm-backdrop" id="confirm-backdrop" aria-hidden="true">
-      <div class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="confirm-title" aria-describedby="confirm-message">
+      <div
+        class="confirm-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="confirm-title"
+        aria-describedby="confirm-message"
+      >
         <div class="confirm-header">
           <div class="confirm-title" id="confirm-title">Confirm action</div>
         </div>
@@ -162,14 +172,21 @@
             <li><strong>Book a Slot</strong> — Reserve a charger for later today</li>
           </ul>
         </div>
-        <div class="onboarding-step" data-step="2" style="display:none">
+        <div class="onboarding-step" data-step="2" style="display: none">
           <div class="onboarding-title">Using a charger</div>
-          <p class="onboarding-text">When a charger shows <strong>Free</strong>, tap it and hit <strong>Start Charging</strong>. You'll get a notification when your session is ending.</p>
-          <p class="onboarding-text">If a charger is <strong>In Use</strong> by someone else, you can reserve a slot for later.</p>
+          <p class="onboarding-text">
+            When a charger shows <strong>Free</strong>, tap it and hit <strong>Start Charging</strong>. You'll get a
+            notification when your session is ending.
+          </p>
+          <p class="onboarding-text">
+            If a charger is <strong>In Use</strong> by someone else, you can reserve a slot for later.
+          </p>
         </div>
-        <div class="onboarding-step" data-step="3" style="display:none">
+        <div class="onboarding-step" data-step="3" style="display: none">
           <div class="onboarding-title">Reservations & check-in</div>
-          <p class="onboarding-text">After booking a slot, you'll need to <strong>check in</strong> when your time arrives:</p>
+          <p class="onboarding-text">
+            After booking a slot, you'll need to <strong>check in</strong> when your time arrives:
+          </p>
           <ol class="onboarding-list">
             <li>Drive to the charger and plug in</li>
             <li>Open this app and tap <strong>Check In</strong></li>
@@ -177,14 +194,24 @@
           </ol>
           <p class="onboarding-text">If you don't check in within the grace period, your reservation is released.</p>
         </div>
-        <div class="onboarding-step" data-step="4" style="display:none">
+        <div class="onboarding-step" data-step="4" style="display: none">
           <div class="onboarding-title">You're all set!</div>
-          <p class="onboarding-text">Look for the status banner at the top — it always shows your current session or upcoming reservation.</p>
-          <p class="onboarding-text">Questions? Check the <strong>(?)</strong> icons throughout the app for quick explanations.</p>
+          <p class="onboarding-text">
+            Look for the status banner at the top — it always shows your current session or upcoming reservation.
+          </p>
+          <p class="onboarding-text">
+            Questions? Check the <strong>(?)</strong> icons throughout the app for quick explanations.
+          </p>
         </div>
         <div class="onboarding-nav">
           <div class="onboarding-dots" role="tablist" aria-label="Onboarding steps">
-            <span class="onboarding-dot active" data-step="1" role="tab" aria-label="Step 1 of 4" aria-selected="true"></span>
+            <span
+              class="onboarding-dot active"
+              data-step="1"
+              role="tab"
+              aria-label="Step 1 of 4"
+              aria-selected="true"
+            ></span>
             <span class="onboarding-dot" data-step="2" role="tab" aria-label="Step 2 of 4" aria-selected="false"></span>
             <span class="onboarding-dot" data-step="3" role="tab" aria-label="Step 3 of 4" aria-selected="false"></span>
             <span class="onboarding-dot" data-step="4" role="tab" aria-label="Step 4 of 4" aria-selected="false"></span>

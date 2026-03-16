@@ -1,0 +1,73 @@
+{
+  "root": true,
+  "env": {
+    "es2020": true
+  },
+  "parserOptions": {
+    "ecmaVersion": 2020,
+    "sourceType": "script"
+  },
+  "plugins": ["html"],
+  "extends": ["eslint:recommended", "prettier"],
+  "rules": {
+    "no-var": "off",
+    "prefer-const": "off",
+    "no-unused-vars": ["warn", { "args": "none", "varsIgnorePattern": "^_" }],
+    "no-redeclare": "warn",
+    "no-empty": ["error", { "allowEmptyCatch": true }],
+    "eqeqeq": ["warn", "smart"],
+    "no-throw-literal": "error",
+    "no-prototype-builtins": "off",
+    "curly": ["warn", "multi-line"]
+  },
+  "overrides": [
+    {
+      "files": ["apps-script/Code.gs"],
+      "env": {
+        "browser": false
+      },
+      "globals": {
+        "SpreadsheetApp": "readonly",
+        "HtmlService": "readonly",
+        "MailApp": "readonly",
+        "UrlFetchApp": "readonly",
+        "PropertiesService": "readonly",
+        "CacheService": "readonly",
+        "Session": "readonly",
+        "Utilities": "readonly",
+        "Logger": "readonly",
+        "LockService": "readonly",
+        "ScriptApp": "readonly"
+      }
+    },
+    {
+      "files": ["apps-script/script_v2.html", "apps-script/script_v3.html"],
+      "env": {
+        "browser": true
+      },
+      "globals": {
+        "google": "readonly",
+        "posthog": "readonly",
+        "APP_CONFIG": "readonly"
+      },
+      "rules": {
+        "no-unused-vars": "off"
+      }
+    },
+    {
+      "files": ["cli/**/*.js"],
+      "env": {
+        "node": true,
+        "commonjs": true
+      }
+    },
+    {
+      "files": ["tests/**/*.js"],
+      "env": {
+        "node": true,
+        "commonjs": true,
+        "jest": true
+      }
+    }
+  ]
+}

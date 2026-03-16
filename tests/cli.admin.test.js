@@ -18,14 +18,30 @@ function buildStore() {
     sheets: {
       chargers: {
         headers: CHARGERS_HEADERS,
-        rows: [
-          ['1', 'Charger 1', 60, '06:00,07:00,08:00', 'session-1']
-        ]
+        rows: [['1', 'Charger 1', 60, '06:00,07:00,08:00', 'session-1']]
       },
       sessions: {
         headers: SESSIONS_HEADERS,
         rows: [
-          ['session-1', '1', 'driver@example.com', 'Driver', new Date(), new Date(Date.now() + 3600000), 'active', true, false, false, false, false, false, '', '', '', '']
+          [
+            'session-1',
+            '1',
+            'driver@example.com',
+            'Driver',
+            new Date(),
+            new Date(Date.now() + 3600000),
+            'active',
+            true,
+            false,
+            false,
+            false,
+            false,
+            false,
+            '',
+            '',
+            '',
+            ''
+          ]
         ]
       },
       reservations: {

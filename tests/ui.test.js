@@ -12,7 +12,8 @@ function loadScriptIntoDom(options = {}) {
     chargers: []
   };
   const runState = { success: null, failure: null };
-  const dom = new JSDOM(`<!doctype html><html><body>
+  const dom = new JSDOM(
+    `<!doctype html><html><body>
     <button id="refresh-btn">Refresh</button>
     <div id="user-meta"></div>
     <div id="my-status-banner" class="my-status-banner is-hidden">
@@ -47,16 +48,20 @@ function loadScriptIntoDom(options = {}) {
         <button id="confirm-ok"></button>
       </div>
     </div>
-  </body></html>`, { runScripts: 'dangerously', url: 'http://localhost' });
+  </body></html>`,
+    { runScripts: 'dangerously', url: 'http://localhost' }
+  );
 
   const { window } = dom;
-  window.matchMedia = window.matchMedia || (() => ({
-    matches: false,
-    addEventListener() {},
-    removeEventListener() {},
-    addListener() {},
-    removeListener() {}
-  }));
+  window.matchMedia =
+    window.matchMedia ||
+    (() => ({
+      matches: false,
+      addEventListener() {},
+      removeEventListener() {},
+      addListener() {},
+      removeListener() {}
+    }));
   window.APP_CONFIG = {
     userEmail: options.userEmail || 'test@example.com',
     userName: options.userName || 'Test User',
@@ -65,8 +70,14 @@ function loadScriptIntoDom(options = {}) {
   window.google = {
     script: {
       run: {
-        withSuccessHandler(fn) { runState.success = fn; return this; },
-        withFailureHandler(fn) { runState.failure = fn; return this; },
+        withSuccessHandler(fn) {
+          runState.success = fn;
+          return this;
+        },
+        withFailureHandler(fn) {
+          runState.failure = fn;
+          return this;
+        },
         ...(options.runMethods || {})
       }
     }
@@ -99,7 +110,12 @@ function buildBoardData(overrides = {}) {
     reservations: [],
     chargers: [
       { id: '1', name: 'Charger 1', statusKey: 'free', status: 'Free', maxMinutes: 60 },
-      { id: '2', name: 'Charger 2', statusKey: 'reserved', status: 'Reserved', maxMinutes: 90,
+      {
+        id: '2',
+        name: 'Charger 2',
+        statusKey: 'reserved',
+        status: 'Reserved',
+        maxMinutes: 90,
         reservation: { userName: 'Alex', userEmail: 'alex@example.com', startTime: now.toISOString() }
       }
     ],
@@ -670,10 +686,16 @@ describe('UI behaviors', () => {
         user: {},
         config: {},
         reservations: [],
-        chargers: [{
-          id: '1', name: 'Charger 1', statusKey: 'in_use', status: 'In use', maxMinutes: 60,
-          session: { sessionId: 's1', userEmail: 'alex@example.com', endTime }
-        }]
+        chargers: [
+          {
+            id: '1',
+            name: 'Charger 1',
+            statusKey: 'in_use',
+            status: 'In use',
+            maxMinutes: 60,
+            session: { sessionId: 's1', userEmail: 'alex@example.com', endTime }
+          }
+        ]
       });
 
       const banner = window.document.getElementById('my-status-banner');
@@ -698,13 +720,15 @@ describe('UI behaviors', () => {
         serverTime: now.toISOString(),
         user: {},
         config: {},
-        reservations: [{
-          reservationId: 'res-1',
-          chargerId: '1',
-          startTime: now.toISOString(),
-          endTime: new Date(now.getTime() + 3600000).toISOString(),
-          status: 'active'
-        }],
+        reservations: [
+          {
+            reservationId: 'res-1',
+            chargerId: '1',
+            startTime: now.toISOString(),
+            endTime: new Date(now.getTime() + 3600000).toISOString(),
+            status: 'active'
+          }
+        ],
         chargers: [{ id: '1', name: 'Charger 1', statusKey: 'reserved', status: 'Reserved', maxMinutes: 60 }]
       });
 
@@ -726,13 +750,15 @@ describe('UI behaviors', () => {
         serverTime: now.toISOString(),
         user: {},
         config: {},
-        reservations: [{
-          reservationId: 'res-future',
-          chargerId: '1',
-          startTime: futureStart,
-          endTime: new Date(now.getTime() + 3 * 60 * 60000).toISOString(),
-          status: 'active'
-        }],
+        reservations: [
+          {
+            reservationId: 'res-future',
+            chargerId: '1',
+            startTime: futureStart,
+            endTime: new Date(now.getTime() + 3 * 60 * 60000).toISOString(),
+            status: 'active'
+          }
+        ],
         chargers: [{ id: '1', name: 'Charger 1', statusKey: 'reserved', status: 'Reserved', maxMinutes: 60 }]
       });
 
@@ -769,10 +795,16 @@ describe('UI behaviors', () => {
         user: {},
         config: {},
         reservations: [],
-        chargers: [{
-          id: '1', name: 'Charger 1', statusKey: 'in_use', status: 'In use', maxMinutes: 60,
-          session: { sessionId: 's1', userEmail: 'alex@example.com', endTime }
-        }]
+        chargers: [
+          {
+            id: '1',
+            name: 'Charger 1',
+            statusKey: 'in_use',
+            status: 'In use',
+            maxMinutes: 60,
+            session: { sessionId: 's1', userEmail: 'alex@example.com', endTime }
+          }
+        ]
       });
 
       const countdown = window.document.querySelector('.my-status-banner__countdown');
@@ -831,13 +863,13 @@ describe('UI behaviors', () => {
       activeWindow = window;
       const notice = window.document.getElementById('notice');
 
-      window.setNotice('First.', 'success');        // timer T1 fires at t=4000
-      jest.advanceTimersByTime(3000);               // t=3000, T1 not fired
-      window.setNotice('Second.', 'success');       // T1 cancelled, T2 fires at t=7000
-      jest.advanceTimersByTime(2000);               // t=5000, T2 not fired
-      expect(notice.textContent).toBe('Second.');  // first timer was cancelled
+      window.setNotice('First.', 'success'); // timer T1 fires at t=4000
+      jest.advanceTimersByTime(3000); // t=3000, T1 not fired
+      window.setNotice('Second.', 'success'); // T1 cancelled, T2 fires at t=7000
+      jest.advanceTimersByTime(2000); // t=5000, T2 not fired
+      expect(notice.textContent).toBe('Second.'); // first timer was cancelled
 
-      jest.advanceTimersByTime(2000);               // t=7000, T2 fires
+      jest.advanceTimersByTime(2000); // t=7000, T2 fires
       expect(notice.textContent).toBe('');
     });
   });
@@ -863,7 +895,11 @@ describe('UI behaviors', () => {
       activeWindow = window;
 
       window.renderBoard({
-        serverTime: now.toISOString(), user: {}, config: {}, reservations: [], chargers: []
+        serverTime: now.toISOString(),
+        user: {},
+        config: {},
+        reservations: [],
+        chargers: []
       });
       window.__state.isLoading = false;
 
@@ -892,7 +928,11 @@ describe('UI behaviors', () => {
       activeWindow = window;
 
       window.renderBoard({
-        serverTime: now.toISOString(), user: {}, config: {}, reservations: [], chargers: []
+        serverTime: now.toISOString(),
+        user: {},
+        config: {},
+        reservations: [],
+        chargers: []
       });
       window.__state.isLoading = false;
       window.__state.hiddenAt = Date.now() - 61000; // simulate 61 s hidden
@@ -910,7 +950,11 @@ describe('UI behaviors', () => {
       activeWindow = window;
 
       window.renderBoard({
-        serverTime: now.toISOString(), user: {}, config: {}, reservations: [], chargers: []
+        serverTime: now.toISOString(),
+        user: {},
+        config: {},
+        reservations: [],
+        chargers: []
       });
       window.__state.isLoading = false;
       window.__state.hiddenAt = Date.now() - 30000; // simulate 30 s hidden
@@ -932,17 +976,23 @@ describe('UI behaviors', () => {
         user: { ...userOverrides },
         config: {},
         reservations: [],
-        chargers: [{
-          id: '1', name: 'Charger 1', statusKey: 'free', status: 'Free', maxMinutes: 60,
-          walkup: {
-            isOpen: true,
-            isOpenToAll: false,
-            endTime: new Date(now.getTime() + 60 * 60000).toISOString(),
-            allUsersOpenAt: new Date(now.getTime() + 15 * 60000).toISOString(),
-            returningUsersOpenAt: new Date(now.getTime() + 10 * 60000).toISOString(),
-            ...walkupOverrides
+        chargers: [
+          {
+            id: '1',
+            name: 'Charger 1',
+            statusKey: 'free',
+            status: 'Free',
+            maxMinutes: 60,
+            walkup: {
+              isOpen: true,
+              isOpenToAll: false,
+              endTime: new Date(now.getTime() + 60 * 60000).toISOString(),
+              allUsersOpenAt: new Date(now.getTime() + 15 * 60000).toISOString(),
+              returningUsersOpenAt: new Date(now.getTime() + 10 * 60000).toISOString(),
+              ...walkupOverrides
+            }
           }
-        }]
+        ]
       };
     }
 
@@ -981,5 +1031,4 @@ describe('UI behaviors', () => {
       expect(getPriorityValue(window)).toContain('Opens to all at');
     });
   });
-
 });

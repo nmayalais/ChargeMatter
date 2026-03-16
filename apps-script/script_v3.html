@@ -48,7 +48,7 @@
     notifyOwner: 'owner_notified',
     forceEnd: 'session_force_ended',
     resetCharger: 'charger_reset',
-    completeCheckedInReservation: 'reservation_completed_manually',
+    completeCheckedInReservation: 'reservation_completed_manually'
   };
 
   const _phKey = APP_CONFIG.posthogKey || '';
@@ -61,7 +61,7 @@
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(Object.assign({ api_key: _phKey }, payload))
-    }).catch(function() {});
+    }).catch(function () {});
   }
 
   function phCapture(event, props) {
@@ -70,7 +70,11 @@
       posthog.capture(event, props);
       return;
     }
-    _phSend({ event: event, distinct_id: _phDistinctId || APP_CONFIG.userEmail || 'anonymous', properties: props || {} });
+    _phSend({
+      event: event,
+      distinct_id: _phDistinctId || APP_CONFIG.userEmail || 'anonymous',
+      properties: props || {}
+    });
   }
 
   function phIdentify(email, name) {
@@ -83,12 +87,16 @@
     _phSend({ event: '$identify', distinct_id: email, properties: { $set: { email: email, name: name } } });
   }
 
-  window.onerror = function(msg, src, line, col, err) {
+  window.onerror = function (msg, src, line, col, err) {
     phCapture('js_error', { message: msg, source: src, line, col, stack: err && err.stack });
   };
 
-  window.onunhandledrejection = function(event) {
-    phCapture('js_error', { message: event.reason?.message || String(event.reason), stack: event.reason?.stack, type: 'unhandledrejection' });
+  window.onunhandledrejection = function (event) {
+    phCapture('js_error', {
+      message: event.reason?.message || String(event.reason),
+      stack: event.reason?.stack,
+      type: 'unhandledrejection'
+    });
   };
   // ────────────────────────────────────────────────────────────────────────
 
@@ -289,9 +297,9 @@
     toast.textContent = message;
     container.appendChild(toast);
     // Auto-dismiss after 4 seconds
-    setTimeout(function() {
+    setTimeout(function () {
       toast.classList.add('toast-exit');
-      setTimeout(function() {
+      setTimeout(function () {
         if (toast.parentNode) toast.remove();
       }, 300);
     }, 4000);
@@ -405,8 +413,7 @@
     setNotice('');
     const isFirstLoad = state.board === null;
     if (isFirstLoad) {
-      document.getElementById('board').innerHTML =
-        '<div class="skeleton-card"></div>'.repeat(4);
+      document.getElementById('board').innerHTML = '<div class="skeleton-card"></div>'.repeat(4);
     }
     setLoading(true);
     google.script.run
@@ -439,7 +446,7 @@
     var prevStatuses = {};
     var hasPrevData = false;
     var existingCards = document.querySelectorAll('#board .card');
-    existingCards.forEach(function(card) {
+    existingCards.forEach(function (card) {
       var id = card.dataset.chargerId;
       var statusEl = card.querySelector('.status-pill');
       if (id && statusEl) {
@@ -493,12 +500,16 @@
     const endAt = user.suspension.endAt ? new Date(user.suspension.endAt) : null;
     let endLabel = 'soon';
     if (endAt && !Number.isNaN(endAt.getTime())) {
-      endLabel = endAt.toLocaleDateString([], tzOptions({ weekday: 'short', month: 'short', day: 'numeric' })) +
-        ' at ' + endAt.toLocaleTimeString([], tzOptions({ hour: 'numeric', minute: '2-digit' }));
+      endLabel =
+        endAt.toLocaleDateString([], tzOptions({ weekday: 'short', month: 'short', day: 'numeric' })) +
+        ' at ' +
+        endAt.toLocaleTimeString([], tzOptions({ hour: 'numeric', minute: '2-digit' }));
     }
     banner.innerHTML =
       '<strong>Charging privileges suspended</strong>' +
-      'You cannot start sessions or make reservations until ' + endLabel + '. ' +
+      'You cannot start sessions or make reservations until ' +
+      endLabel +
+      '. ' +
       'Please contact Facilities if you have questions.';
     banner.classList.add('active');
   }
@@ -547,13 +558,18 @@
       if (countdown) {
         countdown.dataset.sessionEnd = session.endTime;
       }
-      const endBtn = createButton('End Session', 'btn', () => {
-        setActionFeedback(endBtn, 'Ending...');
-        callServer('endSession', [session.sessionId], {
-          successMessage: 'Session ended. The charger is now free for others.',
-          successType: 'success'
-        });
-      }, { showLoading: true, loadingLabel: 'Ending...' });
+      const endBtn = createButton(
+        'End Session',
+        'btn',
+        () => {
+          setActionFeedback(endBtn, 'Ending...');
+          callServer('endSession', [session.sessionId], {
+            successMessage: 'Session ended. The charger is now free for others.',
+            successType: 'success'
+          });
+        },
+        { showLoading: true, loadingLabel: 'Ending...' }
+      );
       banner.appendChild(endBtn);
       banner.classList.remove('is-hidden');
       return;
@@ -571,10 +587,18 @@
         eyebrow.textContent = 'Your reservation';
         detail.textContent = chargerName + ' · starts at ' + formatTime(userReservation.startTime);
         sub.textContent = "You're in the check-in window! Tap Check In to start charging.";
-        const checkInBtn = createButton('Check in', 'btn', () => {
-          setActionFeedback(checkInBtn, 'Checking in...');
-          callServer('checkInReservation', [userReservation.reservationId], { successMessage: 'Checked in! Your charging session is now active.', successType: 'success' });
-        }, { showLoading: true, loadingLabel: 'Checking in...' });
+        const checkInBtn = createButton(
+          'Check in',
+          'btn',
+          () => {
+            setActionFeedback(checkInBtn, 'Checking in...');
+            callServer('checkInReservation', [userReservation.reservationId], {
+              successMessage: 'Checked in! Your charging session is now active.',
+              successType: 'success'
+            });
+          },
+          { showLoading: true, loadingLabel: 'Checking in...' }
+        );
         banner.appendChild(checkInBtn);
         banner.classList.remove('is-hidden');
         return;
@@ -704,7 +728,10 @@
         }).then((confirmed) => {
           if (confirmed) {
             setActionFeedback(forceBtn, 'Ending...');
-            callServer('forceEnd', [charger.id], { successMessage: 'Session force-ended. The charger is now free.', successType: 'success' });
+            callServer('forceEnd', [charger.id], {
+              successMessage: 'Session force-ended. The charger is now free.',
+              successType: 'success'
+            });
           }
           closeMenu(list);
         });
@@ -725,7 +752,10 @@
         }).then((confirmed) => {
           if (confirmed) {
             setActionFeedback(resetBtn, 'Resetting...');
-            callServer('resetCharger', [charger.id], { successMessage: 'Charger reset. It should now show the correct status.', successType: 'success' });
+            callServer('resetCharger', [charger.id], {
+              successMessage: 'Charger reset. It should now show the correct status.',
+              successType: 'success'
+            });
           }
           closeMenu(list);
         });
@@ -794,7 +824,9 @@
     details.className = 'card-details';
 
     if (charger.session) {
-      details.appendChild(createInfoRow('In use by', formatUserLabel(charger.session.userName, charger.session.userEmail)));
+      details.appendChild(
+        createInfoRow('In use by', formatUserLabel(charger.session.userName, charger.session.userEmail))
+      );
       details.appendChild(createInfoRow('Ends at', formatTime(charger.session.endTime)));
       const countdown = createInfoRow('Countdown', '--', { hint: 'Time remaining in the current session.' });
       countdown.querySelector('.value').classList.add('countdown');
@@ -839,11 +871,17 @@
               // Tier 1: net-new users only (no charges or reservations today).
               const isNetNew = state.board?.user?.isNetNew === true;
               details.appendChild(
-                createInfoRow('Priority', isNetNew
-                  ? "You haven't charged today \u2014 you get first pick!"
-                  : 'Reserved for first-time users today. Opens to you at ' + formatTime(charger.walkup.allUsersOpenAt) + '.', {
-                  hint: 'Priority access is reserved for first-time drivers today — someone who has not charged or made a reservation yet. Returning drivers get priority next; everyone else after that.'
-                })
+                createInfoRow(
+                  'Priority',
+                  isNetNew
+                    ? "You haven't charged today \u2014 you get first pick!"
+                    : 'Reserved for first-time users today. Opens to you at ' +
+                        formatTime(charger.walkup.allUsersOpenAt) +
+                        '.',
+                  {
+                    hint: 'Priority access is reserved for first-time drivers today — someone who has not charged or made a reservation yet. Returning drivers get priority next; everyone else after that.'
+                  }
+                )
               );
             } else {
               // Tier 2: net-new OR returning users (charged or reserved today).
@@ -851,11 +889,20 @@
               const isNetNew = state.board?.user?.isNetNew === true;
               const isReturning = state.board?.user?.isReturning === true;
               details.appendChild(
-                createInfoRow('Priority', (isNetNew || isReturning)
-                  ? "You're eligible for this slot!"
-                  : 'Priority window active. Opens to everyone at ' + formatTime(charger.walkup.returningUsersOpenAt) + '.', {
-                  hint: 'Priority access is open to returning drivers (charged or reserved today) and first-time drivers. Opens to everyone at ' + formatTime(charger.walkup.returningUsersOpenAt) + '.'
-                })
+                createInfoRow(
+                  'Priority',
+                  isNetNew || isReturning
+                    ? "You're eligible for this slot!"
+                    : 'Priority window active. Opens to everyone at ' +
+                        formatTime(charger.walkup.returningUsersOpenAt) +
+                        '.',
+                  {
+                    hint:
+                      'Priority access is open to returning drivers (charged or reserved today) and first-time drivers. Opens to everyone at ' +
+                      formatTime(charger.walkup.returningUsersOpenAt) +
+                      '.'
+                  }
+                )
               );
             }
           }
@@ -931,7 +978,11 @@
           }).then((confirmed) => {
             if (confirmed) {
               setActionFeedback(cancelBtn, 'Canceling...');
-              callServer('cancelReservation', [charger.reservation.reservationId], { refreshSlots: true, successMessage: 'Reservation cancelled. The slot is available for others.', successType: 'success' });
+              callServer('cancelReservation', [charger.reservation.reservationId], {
+                refreshSlots: true,
+                successMessage: 'Reservation cancelled. The slot is available for others.',
+                successType: 'success'
+              });
             }
           });
         });
@@ -1230,7 +1281,11 @@
           }).then((confirmed) => {
             if (confirmed) {
               setActionFeedback(cancelBtn, 'Canceling...');
-              callServer('cancelReservation', [reservation.reservationId], { refreshSlots: true, successMessage: 'Reservation cancelled. The slot is available for others.', successType: 'success' });
+              callServer('cancelReservation', [reservation.reservationId], {
+                refreshSlots: true,
+                successMessage: 'Reservation cancelled. The slot is available for others.',
+                successType: 'success'
+              });
             }
           });
         });
@@ -1240,7 +1295,10 @@
       if (shouldShowCheckIn(reservation)) {
         const checkInBtn = createButton('Check in', 'btn secondary', () => {
           setActionFeedback(checkInBtn, 'Checking in...');
-          callServer('checkInReservation', [reservation.reservationId], { successMessage: 'Checked in! Your charging session is now active.', successType: 'success' });
+          callServer('checkInReservation', [reservation.reservationId], {
+            successMessage: 'Checked in! Your charging session is now active.',
+            successType: 'success'
+          });
         });
         actions.appendChild(checkInBtn);
       }
@@ -1272,10 +1330,13 @@
       return;
     }
     const now = new Date(state.serverTime.getTime() + (Date.now() - state.lastFetch));
-    document.getElementById('last-updated').textContent = now.toLocaleTimeString([], tzOptions({
-      hour: 'numeric',
-      minute: '2-digit'
-    }));
+    document.getElementById('last-updated').textContent = now.toLocaleTimeString(
+      [],
+      tzOptions({
+        hour: 'numeric',
+        minute: '2-digit'
+      })
+    );
     document.querySelectorAll('.countdown').forEach((el) => {
       const endTime = new Date(el.dataset.endTime);
       if (Number.isNaN(endTime.getTime())) {
@@ -1341,16 +1402,34 @@
 
   function getDatePartsInTz(date) {
     if (!state.timezone) {
-      return { year: date.getFullYear(), month: date.getMonth() + 1, day: date.getDate(), hours: date.getHours(), minutes: date.getMinutes() };
+      return {
+        year: date.getFullYear(),
+        month: date.getMonth() + 1,
+        day: date.getDate(),
+        hours: date.getHours(),
+        minutes: date.getMinutes()
+      };
     }
     const parts = new Intl.DateTimeFormat('en-US', {
       timeZone: state.timezone,
-      year: 'numeric', month: 'numeric', day: 'numeric',
-      hour: 'numeric', minute: 'numeric', hour12: false
+      year: 'numeric',
+      month: 'numeric',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: 'numeric',
+      hour12: false
     }).formatToParts(date);
     const vals = {};
-    parts.forEach(function(p) { vals[p.type] = parseInt(p.value, 10); });
-    return { year: vals.year, month: vals.month, day: vals.day, hours: vals.hour === 24 ? 0 : vals.hour, minutes: vals.minute };
+    parts.forEach(function (p) {
+      vals[p.type] = parseInt(p.value, 10);
+    });
+    return {
+      year: vals.year,
+      month: vals.month,
+      day: vals.day,
+      hours: vals.hour === 24 ? 0 : vals.hour,
+      minutes: vals.minute
+    };
   }
 
   function formatTime(isoString) {
@@ -1405,9 +1484,7 @@
     if (parts.length < 2) {
       return '';
     }
-    return parts
-      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-      .join(' ');
+    return parts.map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(' ');
   }
 
   function formatUserLabel(userName, userEmail) {
@@ -1489,9 +1566,7 @@
       ? config.reservationEarlyStartMinutes
       : checkinEarlyMinutes;
     const earlyMinutes = Math.max(checkinEarlyMinutes, earlyStartMinutes);
-    const graceMinutes = Number.isFinite(config.reservationLateGraceMinutes)
-      ? config.reservationLateGraceMinutes
-      : 10;
+    const graceMinutes = Number.isFinite(config.reservationLateGraceMinutes) ? config.reservationLateGraceMinutes : 10;
     const start = new Date(reservation.startTime);
     const now = getClientNow();
     const earliest = new Date(start.getTime() - earlyMinutes * 60000);
@@ -1511,10 +1586,12 @@
 
   function getCurrentUserSession() {
     const chargers = state.board?.chargers || [];
-    return chargers
-      .map((charger) => ({ charger, session: charger.session }))
-      .filter((entry) => entry.session && sameUserEmail(entry.session.userEmail, getCurrentUserEmail()))
-      .sort((a, b) => new Date(a.session.endTime) - new Date(b.session.endTime))[0] || null;
+    return (
+      chargers
+        .map((charger) => ({ charger, session: charger.session }))
+        .filter((entry) => entry.session && sameUserEmail(entry.session.userEmail, getCurrentUserEmail()))
+        .sort((a, b) => new Date(a.session.endTime) - new Date(b.session.endTime))[0] || null
+    );
   }
 
   function findSessionForReservation(reservation) {
@@ -1598,7 +1675,7 @@
     // Remove active from both, force reflow, then add to target — restarts CSS animation
     modeNow.classList.remove('active');
     modeReserve.classList.remove('active');
-    var target = (mode === 'now') ? modeNow : modeReserve;
+    var target = mode === 'now' ? modeNow : modeReserve;
     void target.offsetWidth; // force reflow to restart animation
     target.classList.add('active');
     clearSelection();
@@ -1631,7 +1708,11 @@
       }
       return {
         label: 'Notify owner',
-        action: () => callServer('notifyOwner', [charger.id], { successMessage: 'Notification sent! The driver has been asked to wrap up.', successType: 'success' }),
+        action: () =>
+          callServer('notifyOwner', [charger.id], {
+            successMessage: 'Notification sent! The driver has been asked to wrap up.',
+            successType: 'success'
+          }),
         needsServer: true,
         loadingLabel: 'Notifying...',
         helpText: 'Sends a friendly reminder to wrap up.'
@@ -1640,7 +1721,11 @@
     if (charger.statusKey === 'overdue') {
       return {
         label: 'Notify owner',
-        action: () => callServer('notifyOwner', [charger.id], { successMessage: 'Notification sent! The driver has been asked to wrap up.', successType: 'success' }),
+        action: () =>
+          callServer('notifyOwner', [charger.id], {
+            successMessage: 'Notification sent! The driver has been asked to wrap up.',
+            successType: 'success'
+          }),
         needsServer: true,
         loadingLabel: 'Notifying...',
         helpText: 'Sends a friendly reminder to wrap up.'
@@ -1651,7 +1736,11 @@
         if (!charger.reservation.checkedInAt && shouldShowCheckIn(charger.reservation)) {
           return {
             label: 'Check in',
-            action: () => callServer('checkInReservation', [charger.reservation.reservationId], { successMessage: 'Checked in! Your charging session is now active.', successType: 'success' }),
+            action: () =>
+              callServer('checkInReservation', [charger.reservation.reservationId], {
+                successMessage: 'Checked in! Your charging session is now active.',
+                successType: 'success'
+              }),
             needsServer: true,
             loadingLabel: 'Checking in...',
             helpText: 'Confirms your arrival and starts your charging session.'
@@ -1690,10 +1779,11 @@
     }
     return {
       label: 'Start charging',
-      action: () => callServer('startSession', [charger.id], {
-        successMessage: "Charging started! You'll be notified when your session is ending.",
-        successType: 'success'
-      }),
+      action: () =>
+        callServer('startSession', [charger.id], {
+          successMessage: "Charging started! You'll be notified when your session is ending.",
+          successType: 'success'
+        }),
       needsServer: true,
       loadingLabel: 'Starting...',
       helpText: helpText
@@ -1844,7 +1934,7 @@
     if (state.slotsLoading) {
       return;
     }
-    const cacheFresh = state.slotsCache && (Date.now() - (state.slotsLastFetch || 0)) < SLOTS_CACHE_TTL_MS;
+    const cacheFresh = state.slotsCache && Date.now() - (state.slotsLastFetch || 0) < SLOTS_CACHE_TTL_MS;
     if (!force && cacheFresh) {
       renderSlotsList(state.slotsCache);
       return;
@@ -1982,7 +2072,7 @@
     if (state.editingReservationId) {
       callServer('updateReservation', [state.editingReservationId, slot.chargerId, slot.startTime], {
         refreshSlots: true,
-        successMessage: "Reservation updated! Come back 15 min before your slot to check in.",
+        successMessage: 'Reservation updated! Come back 15 min before your slot to check in.',
         successType: 'success'
       });
     } else {
@@ -2119,8 +2209,10 @@
     var totalSteps = steps.length;
 
     function showStep(n) {
-      steps.forEach(function(s) { s.style.display = 'none'; });
-      dots.forEach(function(d) {
+      steps.forEach(function (s) {
+        s.style.display = 'none';
+      });
+      dots.forEach(function (d) {
         d.classList.remove('active');
         d.setAttribute('aria-selected', 'false');
       });
@@ -2131,7 +2223,7 @@
         dot.classList.add('active');
         dot.setAttribute('aria-selected', 'true');
       }
-      nextBtn.textContent = (n === totalSteps) ? 'Get Started' : 'Next';
+      nextBtn.textContent = n === totalSteps ? 'Get Started' : 'Next';
     }
 
     function dismiss() {
@@ -2143,14 +2235,16 @@
     }
 
     // Tab trap: keep focus inside the onboarding card
-    overlay.addEventListener('keydown', function(e) {
+    overlay.addEventListener('keydown', function (e) {
       if (e.key === 'Escape') {
         e.stopImmediatePropagation();
         dismiss();
         return;
       }
       if (e.key === 'Tab' && card) {
-        var focusable = card.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+        var focusable = card.querySelectorAll(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+        );
         if (focusable.length === 0) return;
         var first = focusable[0];
         var last = focusable[focusable.length - 1];
@@ -2168,8 +2262,11 @@
       }
     });
 
-    nextBtn.addEventListener('click', function() {
-      if (currentStep >= totalSteps) { dismiss(); return; }
+    nextBtn.addEventListener('click', function () {
+      if (currentStep >= totalSteps) {
+        dismiss();
+        return;
+      }
       currentStep++;
       showStep(currentStep);
     });
@@ -2183,14 +2280,18 @@
     overlay.setAttribute('aria-hidden', 'false');
     showStep(1);
     // Move focus to the Next button
-    setTimeout(function() { nextBtn.focus(); }, 0);
+    setTimeout(function () {
+      nextBtn.focus();
+    }, 0);
   }
 
   // ── Help Popovers ────────────────────────────────────────────────────
   (function initHelpPopovers() {
     var HELP_CONTENT = {
-      availability: 'This board shows all EV chargers in real time. Green means free — tap a charger to start charging. Blue means someone is using it. Purple means reserved for an upcoming slot.',
-      legend: '<strong>Free</strong> = available to use now<br><strong>In Use</strong> = someone is actively charging<br><strong>Reserved</strong> = booked for an upcoming time slot<br><strong>Overdue</strong> = session has exceeded the maximum time limit'
+      availability:
+        'This board shows all EV chargers in real time. Green means free — tap a charger to start charging. Blue means someone is using it. Purple means reserved for an upcoming slot.',
+      legend:
+        '<strong>Free</strong> = available to use now<br><strong>In Use</strong> = someone is actively charging<br><strong>Reserved</strong> = booked for an upcoming time slot<br><strong>Overdue</strong> = session has exceeded the maximum time limit'
     };
 
     var popover = document.getElementById('help-popover');
@@ -2202,7 +2303,7 @@
     if (!popover) return;
 
     function updateTriggerAria(expanded) {
-      document.querySelectorAll('.help-trigger[aria-expanded]').forEach(function(t) {
+      document.querySelectorAll('.help-trigger[aria-expanded]').forEach(function (t) {
         t.setAttribute('aria-expanded', 'false');
       });
       if (expanded && activeTrigger) {
@@ -2225,7 +2326,10 @@
       activeKey = key;
       updateTriggerAria(true);
       // Move focus to close button
-      if (closeBtn) setTimeout(function() { closeBtn.focus(); }, 0);
+      if (closeBtn)
+        setTimeout(function () {
+          closeBtn.focus();
+        }, 0);
     }
 
     function hide() {
@@ -2240,7 +2344,7 @@
       activeTrigger = null;
     }
 
-    document.addEventListener('click', function(e) {
+    document.addEventListener('click', function (e) {
       var trigger = e.target.closest('.help-trigger');
       if (trigger) {
         e.preventDefault();
@@ -2254,7 +2358,7 @@
     });
 
     // Escape key closes popover (stop propagation so global handler doesn't also fire)
-    document.addEventListener('keydown', function(e) {
+    document.addEventListener('keydown', function (e) {
       if (e.key === 'Escape' && popover.classList.contains('active')) {
         e.stopImmediatePropagation();
         hide();
