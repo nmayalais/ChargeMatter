@@ -1,16 +1,24 @@
 import { auth } from '@/lib/auth';
 import { redirect } from 'next/navigation';
+import { getBoardData } from '@/actions/board';
+import { Dashboard } from '@/components/dashboard';
 
 export default async function Home() {
   const session = await auth();
-  if (!session) {
+  if (!session?.user?.email) {
     redirect('/api/auth/signin');
   }
 
+  const boardData = await getBoardData({
+    email: session.user.email,
+    name: session.user.name ?? '',
+    isAdmin: false,
+  });
+
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center">
-      <h1 className="text-2xl font-bold">EV Charging</h1>
-      <p className="mt-2 text-gray-600">Signed in as {session.user?.email}</p>
-    </main>
+    <Dashboard
+      initialData={boardData}
+      user={{ email: session.user.email, name: session.user.name }}
+    />
   );
 }
