@@ -138,6 +138,7 @@ function pushSession(store, overrides = {}) {
     '',
     '',
     '',
+    '',
     ''
   ]);
 

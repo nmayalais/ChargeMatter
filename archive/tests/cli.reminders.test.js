@@ -7,6 +7,11 @@ jest.mock('../cli/runtime', () => {
     createRuntime: (options) => {
       const rt = actual.createRuntime(options);
       rt.Utilities.sleep = jest.fn();
+      rt.UrlFetchApp.fetch = jest.fn(() => ({
+        getContentText() {
+          return JSON.stringify({ ok: true });
+        }
+      }));
       return rt;
     }
   };
@@ -109,5 +114,100 @@ describe('sendReminders transient error handling', () => {
     const engine = createTestEngine(store);
 
     expect(() => engine.sendReminders()).not.toThrow();
+  });
+});
+
+describe('Notification cutoff', () => {
+  function buildCutoffStore(configOverrides = []) {
+    const store = buildBaseStore();
+    // Add charger with active overdue session for sendReminders tests
+    store.sheets.chargers.rows.push(['1', 'Charger 1', 60, '06:00,07:00,08:00', 'session-1']);
+    const pastStart = new Date(Date.now() - 7200000); // 2 hours ago
+    const pastEnd = new Date(Date.now() - 3600000); // 1 hour ago
+    store.sheets.sessions.rows.push([
+      'session-1', '1', 'driver@example.com', 'Driver',
+      pastStart, pastEnd, 'active', true, true, false,
+      false, false, false, '', '', '', ''
+    ]);
+    store.sheets.config.rows.push(['slack_webhook_url', 'https://hooks.example.com/test']);
+    configOverrides.forEach(([key, value]) => {
+      store.sheets.config.rows.push([key, value]);
+    });
+    return store;
+  }
+
+  test('overdue notification suppressed after cutoff hour', () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date(2026, 2, 19, 20, 0, 0)); // 8 PM
+    try {
+      const store = buildCutoffStore();
+      const engine = createTestEngine(store);
+      engine.sendReminders();
+      // After cutoff: session marked overdue but no Slack notification sent
+      const fetchCalls = engine.runtime.UrlFetchApp.fetch.mock.calls;
+      expect(fetchCalls.length).toBe(0);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test('notification still sends before cutoff hour', () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date(2026, 2, 19, 14, 0, 0)); // 2 PM
+    try {
+      const store = buildCutoffStore();
+      // Set session times relative to the fake now
+      const now = new Date();
+      store.sheets.sessions.rows[0][4] = new Date(now.getTime() - 7200000); // start 2h ago
+      store.sheets.sessions.rows[0][5] = new Date(now.getTime() - 3600000); // end 1h ago
+      const engine = createTestEngine(store);
+      engine.sendReminders();
+      const fetchCalls = engine.runtime.UrlFetchApp.fetch.mock.calls;
+      expect(fetchCalls.length).toBeGreaterThan(0);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test('notification_cutoff_hour: 0 disables cutoff', () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date(2026, 2, 19, 20, 0, 0)); // 8 PM
+    try {
+      const store = buildCutoffStore([['notification_cutoff_hour', '0']]);
+      const now = new Date();
+      store.sheets.sessions.rows[0][4] = new Date(now.getTime() - 7200000);
+      store.sheets.sessions.rows[0][5] = new Date(now.getTime() - 3600000);
+      const engine = createTestEngine(store);
+      engine.sendReminders();
+      const fetchCalls = engine.runtime.UrlFetchApp.fetch.mock.calls;
+      expect(fetchCalls.length).toBeGreaterThan(0);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test('no-show notification suppressed after cutoff', () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date(2026, 2, 19, 20, 30, 0)); // 8:30 PM
+    try {
+      const store = buildCutoffStore();
+      // Replace session with a no-show reservation scenario
+      store.sheets.chargers.rows[0][4] = ''; // no active session
+      store.sheets.sessions.rows = [];
+      const now = new Date();
+      const resStart = new Date(now.getTime() - 3600000); // started 1h ago
+      const resEnd = new Date(now.getTime() + 7200000); // ends in 2h
+      store.sheets.reservations.rows.push([
+        'res-1', '1', 'driver@example.com', 'Driver',
+        resStart, resEnd, 'confirmed', resStart, // checked_in_at
+        '', '', '', '', now, now, '', ''
+      ]);
+      const engine = createTestEngine(store);
+      engine.sendReminders();
+      const fetchCalls = engine.runtime.UrlFetchApp.fetch.mock.calls;
+      expect(fetchCalls.length).toBe(0);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });

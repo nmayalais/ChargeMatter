@@ -294,6 +294,7 @@ describe('Policy-aligned CLI logic', () => {
       '',
       '',
       '',
+      '',
       ''
     ]);
     store.sheets.chargers.rows[0][4] = sessionId;
@@ -381,7 +382,8 @@ describe('Policy-aligned CLI logic', () => {
         '',
         '',
         '',
-        localDate(2026, 2, 9, 8, 30)
+        localDate(2026, 2, 9, 8, 30),
+        ''
       ]);
       const engine = createPolicyEngine(store);
 
@@ -591,5 +593,192 @@ describe('Policy-aligned CLI logic', () => {
       expect(suspensions.length).toBe(1);
       expect(String(suspensions[0][1])).toBe('driver@example.com');
     });
+  });
+});
+
+describe('Short session policy', () => {
+  test('walk-up allowed when reserved charger is occupied by someone else', () => {
+    const store = buildPolicyStore();
+    // User has reservation on charger 1 at 09:00
+    // But charger 1 is occupied by another driver
+    store.sheets.reservations.rows.push([
+      'res-1', '1', 'driver@example.com', 'Driver',
+      localDate(2026, 3, 19, 9, 0), localDate(2026, 3, 19, 12, 0),
+      'confirmed', '', '', '', '', '', localDate(2026, 3, 19, 6, 15), localDate(2026, 3, 19, 6, 15), '', ''
+    ]);
+    // Charger 1 has someone else's active session
+    store.sheets.chargers.rows[0][4] = 'other-session';
+    store.sheets.sessions.rows.push([
+      'other-session', '1', 'other@example.com', 'Other',
+      localDate(2026, 3, 19, 9, 0), localDate(2026, 3, 19, 12, 0),
+      'active', true, false, false, false, false, false, '', '', '', '', ''
+    ]);
+    const engine = createPolicyEngine(store);
+    // User tries walk-up on charger 2 during the open window (after grace + net-new window)
+    withLocalTime(2026, 3, 19, 9, 45, () => {
+      const board = engine.startSession('2');
+      expect(board).toBeTruthy();
+    });
+  });
+
+  test('walk-up blocked when reserved charger is free', () => {
+    const store = buildPolicyStore();
+    store.sheets.reservations.rows.push([
+      'res-1', '1', 'driver@example.com', 'Driver',
+      localDate(2026, 3, 19, 9, 0), localDate(2026, 3, 19, 12, 0),
+      'confirmed', '', '', '', '', '', localDate(2026, 3, 19, 6, 15), localDate(2026, 3, 19, 6, 15), '', ''
+    ]);
+    // Charger 1 is free (no active session)
+    const engine = createPolicyEngine(store);
+    withLocalTime(2026, 3, 19, 9, 45, () => {
+      expectError(() => engine.startSession('2'), 'You already have a reservation on');
+    });
+  });
+
+  test('session < 10 min marked released_early', () => {
+    const store = buildPolicyStore();
+    const engine = createPolicyEngine(store);
+    let sessionId;
+    // Start a session
+    withLocalTime(2026, 3, 19, 9, 45, () => {
+      const board = engine.startSession('1');
+      const charger = board.chargers.find(c => c.id === '1');
+      sessionId = charger.session.sessionId;
+    });
+    // End after 5 minutes
+    withLocalTime(2026, 3, 19, 9, 50, () => {
+      engine.endSession(sessionId);
+    });
+    // Check session has released_early
+    const session = store.sheets.sessions.rows.find(r => r[0] === sessionId);
+    expect(session).toBeTruthy();
+    // Find the released_early column index
+    const releasedEarlyIdx = SESSIONS_HEADERS.indexOf('released_early');
+    expect(String(session[releasedEarlyIdx])).toBe('true');
+  });
+
+  test('session >= 10 min NOT marked released_early', () => {
+    const store = buildPolicyStore();
+    const engine = createPolicyEngine(store);
+    let sessionId;
+    withLocalTime(2026, 3, 19, 9, 45, () => {
+      const board = engine.startSession('1');
+      const charger = board.chargers.find(c => c.id === '1');
+      sessionId = charger.session.sessionId;
+    });
+    // End after 15 minutes
+    withLocalTime(2026, 3, 19, 10, 0, () => {
+      engine.endSession(sessionId);
+    });
+    const session = store.sheets.sessions.rows.find(r => r[0] === sessionId);
+    const releasedEarlyIdx = SESSIONS_HEADERS.indexOf('released_early');
+    // Should NOT have released_early set
+    expect(session[releasedEarlyIdx]).toBeFalsy();
+  });
+
+  test('short session user stays net-new (can walk-up again)', () => {
+    const store = buildPolicyStore();
+    const engine = createPolicyEngine(store);
+    let sessionId;
+    // Start and quickly end a session on charger 1
+    withLocalTime(2026, 3, 19, 9, 45, () => {
+      const board = engine.startSession('1');
+      const charger = board.chargers.find(c => c.id === '1');
+      sessionId = charger.session.sessionId;
+    });
+    withLocalTime(2026, 3, 19, 9, 50, () => {
+      engine.endSession(sessionId);
+    });
+    // User should still be able to start a new walk-up session on charger 2
+    // During net-new window for the 12:00 slot
+    withLocalTime(2026, 3, 19, 12, 31, () => {
+      const board = engine.startSession('2');
+      expect(board).toBeTruthy();
+    });
+  });
+
+  test('short session user not counted as returning', () => {
+    const store = buildPolicyStore();
+    // We need to verify that a short session doesn't make the user "returning"
+    // This means during Tier 1 (net-new only window), the user should still qualify
+    const engine = createPolicyEngine(store);
+    let sessionId;
+    // Start and quickly end a session on charger 1
+    withLocalTime(2026, 3, 19, 9, 45, () => {
+      const board = engine.startSession('1');
+      const charger = board.chargers.find(c => c.id === '1');
+      sessionId = charger.session.sessionId;
+    });
+    withLocalTime(2026, 3, 19, 9, 50, () => {
+      engine.endSession(sessionId);
+    });
+    // During net-new window of a different slot, user should qualify as net-new
+    withLocalTime(2026, 3, 19, 12, 31, () => {
+      // If user were counted as returning (not net-new), this would fail
+      // because the net-new window is 12:30-12:40 and only net-new users allowed
+      const board = engine.startSession('2');
+      expect(board).toBeTruthy();
+    });
+  });
+
+  test('associated reservation also marked released_early on short session', () => {
+    const store = buildPolicyStore();
+    const engine = createPolicyEngine(store);
+    let reservationId;
+    // Create a reservation
+    withLocalTime(2026, 3, 19, 6, 15, () => {
+      const board = engine.createReservation('4', localIso(2026, 3, 19, 8, 0));
+      reservationId = board.reservations[0].reservationId;
+    });
+    // Check in
+    withLocalTime(2026, 3, 19, 8, 5, () => {
+      engine.checkInReservation(reservationId);
+    });
+    // End after 5 minutes (short session)
+    withLocalTime(2026, 3, 19, 8, 10, () => {
+      engine.endSessionForReservation(reservationId);
+    });
+    // Check that reservation has released_early
+    const res = store.sheets.reservations.rows.find(r => r[0] === reservationId);
+    const releasedEarlyIdx = RESERVATIONS_HEADERS.indexOf('released_early');
+    expect(String(res[releasedEarlyIdx])).toBe('true');
+  });
+
+  test('session_min_minutes: 0 disables the feature', () => {
+    const store = buildPolicyStore();
+    store.sheets.config.rows.push(['session_min_minutes', '0']);
+    const engine = createPolicyEngine(store);
+    let sessionId;
+    withLocalTime(2026, 3, 19, 9, 45, () => {
+      const board = engine.startSession('1');
+      const charger = board.chargers.find(c => c.id === '1');
+      sessionId = charger.session.sessionId;
+    });
+    withLocalTime(2026, 3, 19, 9, 50, () => {
+      engine.endSession(sessionId);
+    });
+    const session = store.sheets.sessions.rows.find(r => r[0] === sessionId);
+    const releasedEarlyIdx = SESSIONS_HEADERS.indexOf('released_early');
+    // With session_min_minutes=0, should NOT mark as released_early
+    expect(session[releasedEarlyIdx]).toBeFalsy();
+  });
+
+  test('session_min_minutes config override respected', () => {
+    const store = buildPolicyStore();
+    store.sheets.config.rows.push(['session_min_minutes', '20']);
+    const engine = createPolicyEngine(store);
+    let sessionId;
+    withLocalTime(2026, 3, 19, 9, 45, () => {
+      const board = engine.startSession('1');
+      const charger = board.chargers.find(c => c.id === '1');
+      sessionId = charger.session.sessionId;
+    });
+    // End after 15 minutes — under the custom 20-min threshold
+    withLocalTime(2026, 3, 19, 10, 0, () => {
+      engine.endSession(sessionId);
+    });
+    const session = store.sheets.sessions.rows.find(r => r[0] === sessionId);
+    const releasedEarlyIdx = SESSIONS_HEADERS.indexOf('released_early');
+    expect(String(session[releasedEarlyIdx])).toBe('true');
   });
 });

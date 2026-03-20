@@ -101,6 +101,7 @@ describe('Reservation session matching', () => {
       '',
       '',
       '',
+      '',
       ''
     ]);
 
@@ -171,6 +172,7 @@ describe('Reservation session matching', () => {
       false,
       false,
       false,
+      '',
       '',
       '',
       '',

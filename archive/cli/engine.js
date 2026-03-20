@@ -24,7 +24,8 @@ const SESSIONS_HEADERS = [
   'overdue_last_sent_at',
   'grace_notified_at',
   'late_strike_at',
-  'ended_at'
+  'ended_at',
+  'released_early'
 ];
 
 const RESERVATIONS_HEADERS = [
@@ -110,6 +111,8 @@ function createEngine(options) {
     reservationOpenMinute: 45,
     walkupNetNewWindowMinutes: 10,
     walkupReturningWindowMinutes: 10,
+    notificationCutoffHour: 19,
+    sessionMinMinutes: 10,
     forceEndOnCheckinEnabled: true
   };
 
@@ -224,10 +227,13 @@ function createEngine(options) {
       var conflictingReservation = findUserReservationAtTime_(reservationsData.rows, auth.email, now, chargerId);
       if (conflictingReservation) {
         var reservedCharger = findById_(chargersData.rows, 'charger_id', conflictingReservation.charger_id);
-        var reservedName = reservedCharger
-          ? reservedCharger.name || 'Charger ' + reservedCharger.charger_id
-          : 'another charger';
-        throw new Error('You already have a reservation on ' + reservedName + ' at this time.');
+        var reservedChargerOccupied = reservedCharger && reservedCharger.active_session_id;
+        if (!reservedChargerOccupied) {
+          var reservedName = reservedCharger
+            ? reservedCharger.name || 'Charger ' + reservedCharger.charger_id
+            : 'another charger';
+          throw new Error('You already have a reservation on ' + reservedName + ' at this time.');
+        }
       }
       var resConfig = getReservationConfig_(config);
       var slot = findSlotForTime_(charger, now);
@@ -996,6 +1002,50 @@ function createEngine(options) {
     }
   }
 
+  function resetAllChargersAtMidnight() {
+    var lock = LockService.getScriptLock();
+    if (!lock.tryLock(30000)) {
+      return;
+    }
+    try {
+      initSheets_();
+      var now = new Date();
+      var chargersData = getSheetData_(SHEETS.chargers, CHARGERS_HEADERS);
+      var sessionsData = getSheetData_(SHEETS.sessions, SESSIONS_HEADERS);
+      var reservationsData = getSheetData_(SHEETS.reservations, RESERVATIONS_HEADERS);
+      chargersData.rows.forEach(function (charger) {
+        if (!charger.charger_id || !charger.active_session_id) {
+          return;
+        }
+        var session = findById_(sessionsData.rows, 'session_id', charger.active_session_id);
+        if (session && !isComplete_(session)) {
+          updateRow_(sessionsData.sheet, sessionsData.headerMap, session._row, {
+            status: 'complete',
+            active: false,
+            overdue: false,
+            complete: true,
+            ended_at: now
+          });
+          completeReservationForSession_(session, now, reservationsData);
+        }
+        updateRow_(chargersData.sheet, chargersData.headerMap, charger._row, {
+          active_session_id: ''
+        });
+      });
+    } finally {
+      lock.releaseLock();
+    }
+  }
+
+  function installMidnightResetTrigger() {
+    ScriptApp.newTrigger('resetAllChargersAtMidnight')
+      .timeBased()
+      .atHour(0)
+      .nearMinute(0)
+      .everyDays(1)
+      .create();
+  }
+
   function sendReminders() {
     try {
       runWithRetries_(sendRemindersCore_, 'sendReminders');
@@ -1251,13 +1301,23 @@ function createEngine(options) {
     }
     var now = new Date();
     var sessionEnd = toDate_(session.end_time);
-    updateRow_(sessionsData.sheet, sessionsData.headerMap, session._row, {
+    var sessionStart = toDate_(session.start_time);
+    var config = getConfig_();
+    var sessionMinMinutes = Number(config.session_min_minutes);
+    if (isNaN(sessionMinMinutes)) sessionMinMinutes = APP_DEFAULTS.sessionMinMinutes;
+    var durationMs = sessionStart ? (now.getTime() - sessionStart.getTime()) : Infinity;
+    var isShortSession = sessionMinMinutes > 0 && durationMs < sessionMinMinutes * 60000;
+    var sessionUpdates = {
       status: 'complete',
       active: false,
       overdue: false,
       complete: true,
       ended_at: now
-    });
+    };
+    if (isShortSession) {
+      sessionUpdates.released_early = true;
+    }
+    updateRow_(sessionsData.sheet, sessionsData.headerMap, session._row, sessionUpdates);
     var charger = findById_(chargersData.rows, 'charger_id', session.charger_id);
     if (charger && String(charger.active_session_id) === String(sessionId)) {
       updateRow_(chargersData.sheet, chargersData.headerMap, charger._row, {
@@ -1271,7 +1331,7 @@ function createEngine(options) {
         notifyChannel_(earlyText);
       }
     }
-    completeReservationForSession_(session, now, null);
+    completeReservationForSession_(session, now, null, isShortSession);
   }
 
   function forceEndOverdueSessionForCheckin_(chargerId, chargersData, sessionsData, now, config) {
@@ -1334,7 +1394,7 @@ function createEngine(options) {
     return session;
   }
 
-  function completeReservationForSession_(session, now, reservationsData) {
+  function completeReservationForSession_(session, now, reservationsData, forceEarlyRelease) {
     if (!reservationsData) {
       reservationsData = getSheetData_(SHEETS.reservations, RESERVATIONS_HEADERS);
     }
@@ -1373,7 +1433,7 @@ function createEngine(options) {
         return;
       }
       var halfwayTime = new Date(resStart.getTime() + (resEnd.getTime() - resStart.getTime()) / 2);
-      var releasedEarly = now.getTime() < halfwayTime.getTime();
+      var releasedEarly = forceEarlyRelease || now.getTime() < halfwayTime.getTime();
       updateRow_(reservationsData.sheet, reservationsData.headerMap, reservation._row, {
         status: 'complete',
         end_time: now,
@@ -1855,6 +1915,10 @@ function createEngine(options) {
       if (!sessionStart || dayKey_(sessionStart) !== todayKey) {
         return false;
       }
+      // A short session (released_early) does not disqualify.
+      if (isTrue_(session.released_early)) {
+        return false;
+      }
       // A session from an early-released reservation does not disqualify.
       var sessionChargerId = String(session.charger_id || '');
       var sessionEnd = toDate_(session.end_time);
@@ -1929,6 +1993,10 @@ function createEngine(options) {
       }
       var sessionStart = toDate_(session.start_time);
       if (!sessionStart || dayKey_(sessionStart) !== todayKey) {
+        return false;
+      }
+      // A short session (released_early) does not count as returning.
+      if (isTrue_(session.released_early)) {
         return false;
       }
       // A session from an early-released reservation does not count as returning.
@@ -3207,6 +3275,12 @@ function createEngine(options) {
 
   function notifyChannel_(text, email) {
     var config = getConfig_();
+    var cutoffHour = Number(config.notification_cutoff_hour);
+    if (isNaN(cutoffHour)) cutoffHour = APP_DEFAULTS.notificationCutoffHour;
+    var currentHour = new Date().getHours();
+    if (cutoffHour > 0 && currentHour >= cutoffHour) {
+      return false;
+    }
     var sentSlack = false;
     var sentEmail = false;
     var slackText = text;
@@ -3419,6 +3493,8 @@ function createEngine(options) {
     postChannelMessage,
     forceEnd,
     resetCharger,
+    resetAllChargersAtMidnight,
+    installMidnightResetTrigger,
     getNextAvailableSlot,
     getAvailabilitySummary,
     getChargerTimeline,
