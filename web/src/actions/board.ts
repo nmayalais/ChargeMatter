@@ -1,7 +1,7 @@
 'use server';
 
 import { getConfig } from '@/lib/config';
-import { getChargers, getAllSessions, getAllReservations } from '@/lib/queries';
+import { getChargers, getAllSessions, getAllReservations, getOnboardingComplete } from '@/lib/queries';
 import { getActiveSuspensionForUser } from '@/lib/auth-helpers';
 import { buildBoard, isNetNewUser, isReturningUser } from '@/lib/board';
 import { getUpcomingReservationsForUser } from '@/lib/user-reservations';
@@ -20,13 +20,14 @@ export async function getBoardData(auth: Auth): Promise<BoardData> {
   const now = new Date();
 
   // Fetch all data in parallel
-  const [configMap, chargerRows, sessionRows, reservationRows, suspension] =
+  const [configMap, chargerRows, sessionRows, reservationRows, suspension, onboardingComplete] =
     await Promise.all([
       getConfig(),
       getChargers(),
       getAllSessions(),
       getAllReservations(),
       getActiveSuspensionForUser(auth.email),
+      getOnboardingComplete(auth.email.toLowerCase()),
     ]);
 
   // Build the board
@@ -70,5 +71,6 @@ export async function getBoardData(auth: Auth): Promise<BoardData> {
     serverTime: board.serverTime,
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     config: board.config,
+    onboardingComplete,
   };
 }

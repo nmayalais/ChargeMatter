@@ -11,6 +11,7 @@ import { AdminPanel } from './admin-panel';
 import { Onboarding, useOnboarding } from './onboarding';
 import { HelpButton } from './help-popover';
 import { getBoardData } from '@/actions/board';
+import { markOnboardingComplete } from '@/actions/preferences';
 import { identifyUser } from './analytics';
 
 interface DashboardProps {
@@ -23,7 +24,14 @@ export function Dashboard({ initialData, user }: DashboardProps) {
   const [boardData, setBoardData] = useState(initialData);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const { toasts, addToast, removeToast } = useToast();
-  const { shouldShow: showOnboarding, dismiss: dismissOnboarding, retrigger: retriggerOnboarding } = useOnboarding();
+  const handleMarkComplete = useCallback(() => {
+    markOnboardingComplete({ email: user.email, name: user.name ?? '', isAdmin: boardData.user.isAdmin });
+  }, [user.email, user.name, boardData.user.isAdmin]);
+
+  const { shouldShow: showOnboarding, dismiss: dismissOnboarding, retrigger: retriggerOnboarding } = useOnboarding(
+    initialData.onboardingComplete,
+    handleMarkComplete,
+  );
 
   // Identify user for analytics on mount
   useEffect(() => {

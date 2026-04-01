@@ -6,6 +6,7 @@ import type {
   strikes,
   suspensions,
   config,
+  userPreferences,
 } from '@/lib/db/schema';
 
 /** Row types inferred from the Drizzle schema */
@@ -15,6 +16,7 @@ export type Reservation = InferSelectModel<typeof reservations>;
 export type Strike = InferSelectModel<typeof strikes>;
 export type Suspension = InferSelectModel<typeof suspensions>;
 export type ConfigRow = InferSelectModel<typeof config>;
+export type UserPreferences = InferSelectModel<typeof userPreferences>;
 
 /** Auth context passed through request handlers */
 export interface Auth {
@@ -97,4 +99,5 @@ export interface BoardData {
   serverTime: string;
   timezone: string;
   config: Record<string, unknown>;
+  onboardingComplete: boolean;
 }

@@ -5,7 +5,7 @@ import { reservations, sessions, chargers } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import { getConfig, getReservationConfig } from '@/lib/config';
 import { assertNotSuspended } from '@/lib/auth-helpers';
-import { getChargers, getAllSessions, getAllReservations } from '@/lib/queries';
+import { getChargers, getAllSessions, getAllReservations, getOnboardingComplete } from '@/lib/queries';
 import { buildBoard } from '@/lib/board';
 import { getReservationOpenTime } from '@/lib/availability';
 import { getUpcomingReservationsForUser } from '@/lib/user-reservations';
@@ -34,12 +34,13 @@ import type { Auth, BoardData, Charger, Session, Reservation } from '@/types';
  */
 async function buildBoardResponse(auth: Auth): Promise<BoardData> {
   const now = new Date();
-  const [configMap, chargerRows, sessionRows, reservationRows] =
+  const [configMap, chargerRows, sessionRows, reservationRows, onboardingComplete] =
     await Promise.all([
       getConfig(),
       getChargers(),
       getAllSessions(),
       getAllReservations(),
+      getOnboardingComplete(auth.email.toLowerCase()),
     ]);
 
   const board = buildBoard({
@@ -63,6 +64,7 @@ async function buildBoardResponse(auth: Auth): Promise<BoardData> {
     serverTime: board.serverTime,
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     config: board.config,
+    onboardingComplete,
   };
 }
 

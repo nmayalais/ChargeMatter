@@ -1,5 +1,5 @@
 import { db } from '@/lib/db';
-import { chargers, sessions, reservations, config } from '@/lib/db/schema';
+import { chargers, sessions, reservations, config, userPreferences } from '@/lib/db/schema';
 import { eq, not, inArray } from 'drizzle-orm';
 import type { Charger, Session, Reservation } from '@/types';
 
@@ -47,4 +47,28 @@ export async function getAllReservations(): Promise<Reservation[]> {
  */
 export async function getConfigRows() {
   return db.select().from(config);
+}
+
+/**
+ * Returns true if the user has completed the onboarding tour.
+ */
+export async function getOnboardingComplete(userId: string): Promise<boolean> {
+  const rows = await db
+    .select({ onboardingComplete: userPreferences.onboardingComplete })
+    .from(userPreferences)
+    .where(eq(userPreferences.userId, userId));
+  return rows[0]?.onboardingComplete ?? false;
+}
+
+/**
+ * Marks the onboarding tour as complete for the given user (upsert).
+ */
+export async function setOnboardingComplete(userId: string): Promise<void> {
+  await db
+    .insert(userPreferences)
+    .values({ userId, onboardingComplete: true })
+    .onConflictDoUpdate({
+      target: userPreferences.userId,
+      set: { onboardingComplete: true, updatedAt: new Date() },
+    });
 }

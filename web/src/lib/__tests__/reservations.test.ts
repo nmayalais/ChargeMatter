@@ -49,11 +49,13 @@ vi.mock('@/lib/db', () => ({
 const mockGetChargers = vi.fn().mockResolvedValue([]);
 const mockGetAllSessions = vi.fn().mockResolvedValue([]);
 const mockGetAllReservations = vi.fn().mockResolvedValue([]);
+const mockGetOnboardingComplete = vi.fn().mockResolvedValue(false);
 
 vi.mock('@/lib/queries', () => ({
   getChargers: (...args: unknown[]) => mockGetChargers(...args),
   getAllSessions: (...args: unknown[]) => mockGetAllSessions(...args),
   getAllReservations: (...args: unknown[]) => mockGetAllReservations(...args),
+  getOnboardingComplete: (...args: unknown[]) => mockGetOnboardingComplete(...args),
 }));
 
 // Mock config

@@ -98,3 +98,9 @@ export const suspensions = pgTable(
   },
   (table) => [index('idx_suspensions_user_active').on(table.userId)]
 );
+
+export const userPreferences = pgTable('user_preferences', {
+  userId: text('user_id').primaryKey(),
+  onboardingComplete: boolean('onboarding_complete').notNull().default(false),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});

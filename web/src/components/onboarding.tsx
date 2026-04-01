@@ -85,8 +85,10 @@ const STEPS: OnboardingStep[] = [
   },
 ];
 
-export function useOnboarding() {
+export function useOnboarding(serverComplete: boolean, onMarkComplete: () => void) {
   const [shouldShow, setShouldShow] = useState(() => {
+    // Server flag is the source of truth; localStorage is a fast-path cache
+    if (serverComplete) return false;
     if (typeof window !== 'undefined') {
       return !localStorage.getItem(STORAGE_KEY);
     }
@@ -98,7 +100,8 @@ export function useOnboarding() {
     if (typeof window !== 'undefined') {
       localStorage.setItem(STORAGE_KEY, '1');
     }
-  }, []);
+    onMarkComplete();
+  }, [onMarkComplete]);
 
   const retrigger = useCallback(() => {
     setShouldShow(true);

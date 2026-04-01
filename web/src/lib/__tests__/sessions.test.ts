@@ -37,12 +37,14 @@ const mockGetChargers = vi.fn<() => Promise<Charger[]>>();
 const mockGetAllSessions = vi.fn<() => Promise<Session[]>>();
 const mockGetAllReservations = vi.fn<() => Promise<Reservation[]>>();
 const mockGetActiveSessions = vi.fn<() => Promise<Session[]>>();
+const mockGetOnboardingComplete = vi.fn<() => Promise<boolean>>().mockResolvedValue(false);
 
 vi.mock('@/lib/queries', () => ({
   getChargers: (...args: unknown[]) => mockGetChargers(...(args as [])),
   getAllSessions: (...args: unknown[]) => mockGetAllSessions(...(args as [])),
   getAllReservations: (...args: unknown[]) => mockGetAllReservations(...(args as [])),
   getActiveSessions: (...args: unknown[]) => mockGetActiveSessions(...(args as [])),
+  getOnboardingComplete: (...args: unknown[]) => mockGetOnboardingComplete(...(args as [])),
 }));
 
 // Mock config module

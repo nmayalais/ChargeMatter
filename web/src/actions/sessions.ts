@@ -5,7 +5,7 @@ import { sessions, chargers, reservations } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import { getConfig, getReservationConfig } from '@/lib/config';
 import { assertNotSuspended } from '@/lib/auth-helpers';
-import { getChargers, getAllSessions, getAllReservations, getActiveSessions } from '@/lib/queries';
+import { getChargers, getAllSessions, getAllReservations, getActiveSessions, getOnboardingComplete } from '@/lib/queries';
 import { buildBoard, isNetNewUser, isReturningUser, findReservationForSlot } from '@/lib/board';
 import { getUpcomingReservationsForUser } from '@/lib/user-reservations';
 import { getActiveSuspensionForUser } from '@/lib/auth-helpers';
@@ -32,13 +32,14 @@ import type { Auth, BoardData, Session, Reservation } from '@/types';
  * from engine.js. Re-reads mutated tables to reflect the latest state.
  */
 async function buildBoardResponse(auth: Auth, now: Date): Promise<BoardData> {
-  const [configMap, chargerRows, sessionRows, reservationRows, suspension] =
+  const [configMap, chargerRows, sessionRows, reservationRows, suspension, onboardingComplete] =
     await Promise.all([
       getConfig(),
       getChargers(),
       getAllSessions(),
       getAllReservations(),
       getActiveSuspensionForUser(auth.email),
+      getOnboardingComplete(auth.email.toLowerCase()),
     ]);
 
   const board = buildBoard({
@@ -69,6 +70,7 @@ async function buildBoardResponse(auth: Auth, now: Date): Promise<BoardData> {
     serverTime: board.serverTime,
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     config: board.config,
+    onboardingComplete,
   };
 }
 
