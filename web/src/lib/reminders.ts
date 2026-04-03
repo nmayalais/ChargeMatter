@@ -24,6 +24,7 @@ import {
 } from '@/lib/utils';
 import {
   notifyChannel,
+  notifyUser,
   getSlackChannelMention,
   type NotifyChannelConfig,
 } from '@/lib/notifications';
@@ -204,9 +205,9 @@ export async function processSessionReminders(now: Date): Promise<ReminderResult
         updates.complete = false;
       }
 
-      // 10-minute reminder
+      // 10-minute reminder — DM only (personal, pre-emptive)
       if (reminder10Enabled && !session.reminder10Sent && minutesToEnd <= 10 && minutesToEnd > 5) {
-        const sent = await notifyChannel(
+        const sent = await notifyUser(
           buildSessionReminderText('tminus10', session, charger, endTime, appName, channelMention, sessionMoveGraceMinutes),
           notifyConfig,
           session.userId,
@@ -217,9 +218,9 @@ export async function processSessionReminders(now: Date): Promise<ReminderResult
         }
       }
 
-      // 5-minute reminder
+      // 5-minute reminder — DM only (personal, pre-emptive)
       if (reminder5Enabled && !session.reminder5Sent && minutesToEnd <= 5 && minutesToEnd > 0) {
-        const sent = await notifyChannel(
+        const sent = await notifyUser(
           buildSessionReminderText('tminus5', session, charger, endTime, appName, channelMention, sessionMoveGraceMinutes),
           notifyConfig,
           session.userId,
@@ -329,9 +330,9 @@ export async function processSessionReminders(now: Date): Promise<ReminderResult
 
       const resUpdates: Record<string, unknown> = {};
 
-      // 5 minutes before start reminder
+      // 5 minutes before start reminder — DM only (personal)
       if (!reservation.reminder5BeforeSent && minutesToStart <= 5 && minutesToStart > 0) {
-        const sent = await notifyChannel(
+        const sent = await notifyUser(
           buildReservationReminderText('upcoming', reservation, charger, startTime, reservationConfig.lateGraceMinutes, appName),
           notifyConfig,
           reservation.userId,
@@ -342,13 +343,13 @@ export async function processSessionReminders(now: Date): Promise<ReminderResult
         }
       }
 
-      // 5 minutes after start (late) reminder
+      // 5 minutes after start (late) reminder — DM only (personal, still actionable)
       if (
         !reservation.reminder5AfterSent &&
         minutesSinceStart >= 5 &&
         minutesSinceStart < reservationConfig.lateGraceMinutes
       ) {
-        const sent = await notifyChannel(
+        const sent = await notifyUser(
           buildReservationReminderText('late', reservation, charger, startTime, reservationConfig.lateGraceMinutes, appName),
           notifyConfig,
           reservation.userId,

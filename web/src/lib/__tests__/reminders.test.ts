@@ -42,9 +42,11 @@ vi.mock('@/lib/strikes', () => ({
 }));
 
 const mockNotifyChannel = vi.fn().mockResolvedValue(true);
+const mockNotifyUser = vi.fn().mockResolvedValue(true);
 
 vi.mock('@/lib/notifications', () => ({
   notifyChannel: (...args: unknown[]) => mockNotifyChannel(...args),
+  notifyUser: (...args: unknown[]) => mockNotifyUser(...args),
   getSlackChannelMention: vi.fn((name: string) => `#${name}`),
 }));
 
@@ -149,7 +151,7 @@ describe('processSessionReminders', () => {
       const result = await processSessionReminders(now);
 
       expect(result.reminders10Sent).toBe(1);
-      expect(mockNotifyChannel).toHaveBeenCalledWith(
+      expect(mockNotifyUser).toHaveBeenCalledWith(
         expect.stringContaining('ends in 10 minutes'),
         expect.any(Object),
         'user@example.com',
@@ -198,7 +200,7 @@ describe('processSessionReminders', () => {
       const result = await processSessionReminders(now);
 
       expect(result.reminders5Sent).toBe(1);
-      expect(mockNotifyChannel).toHaveBeenCalledWith(
+      expect(mockNotifyUser).toHaveBeenCalledWith(
         expect.stringContaining('ends in 5 minutes'),
         expect.any(Object),
         'user@example.com',
@@ -397,7 +399,7 @@ describe('processSessionReminders', () => {
       const result = await processSessionReminders(now);
 
       expect(result.reservationUpcomingReminders).toBe(1);
-      expect(mockNotifyChannel).toHaveBeenCalledWith(
+      expect(mockNotifyUser).toHaveBeenCalledWith(
         expect.stringContaining('starts in 5 minutes'),
         expect.any(Object),
         'user@example.com',
@@ -414,7 +416,7 @@ describe('processSessionReminders', () => {
       const result = await processSessionReminders(now);
 
       expect(result.reservationLateReminders).toBe(1);
-      expect(mockNotifyChannel).toHaveBeenCalledWith(
+      expect(mockNotifyUser).toHaveBeenCalledWith(
         expect.stringContaining('will be released'),
         expect.any(Object),
         'user@example.com',

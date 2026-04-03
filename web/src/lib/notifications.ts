@@ -122,6 +122,46 @@ export async function sendEmailNotification(
 }
 
 // ---------------------------------------------------------------------------
+// Slack DM (direct message via bot token)
+// ---------------------------------------------------------------------------
+
+/**
+ * Send a direct message to a Slack user identified by email.
+ * Opens (or reuses) the DM channel via conversations.open, then posts.
+ * Returns true on success, false on failure (never throws).
+ */
+export async function sendSlackDM(
+  token: string,
+  email: string,
+  text: string,
+): Promise<boolean> {
+  if (!token || !email) return false;
+
+  try {
+    const userId = await lookupSlackUserId(token, email);
+    if (!userId) return false;
+
+    const openResponse = await fetch('https://slack.com/api/conversations.open', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ users: userId }),
+    });
+
+    if (!openResponse.ok) return false;
+    const openData = await openResponse.json();
+    if (!openData.ok || !openData.channel?.id) return false;
+
+    return sendSlackChannelMessage(token, openData.channel.id, text);
+  } catch (err) {
+    console.error('[SLACK DM] Failed to send DM:', err);
+    return false;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Unified channel notification (mirrors notifyChannel_ from engine.js)
 // ---------------------------------------------------------------------------
 
@@ -192,6 +232,31 @@ export async function notifyChannel(
   }
 
   return sentSlack || sentEmail;
+}
+
+// ---------------------------------------------------------------------------
+// Direct user notification (DM-first, email fallback)
+// ---------------------------------------------------------------------------
+
+/**
+ * Send a notification directly to a user via Slack DM, falling back to email.
+ * Use this for personal reminders that should not flood the channel.
+ *
+ * Returns true if at least one notification was sent.
+ */
+export async function notifyUser(
+  text: string,
+  config: NotifyChannelConfig,
+  targetEmail?: string,
+): Promise<boolean> {
+  if (!targetEmail) return false;
+
+  if (config.slackBotToken) {
+    const sent = await sendSlackDM(config.slackBotToken, targetEmail, text);
+    if (sent) return true;
+  }
+
+  return sendEmailNotification(targetEmail, `${config.appName} notification`, text);
 }
 
 // ---------------------------------------------------------------------------

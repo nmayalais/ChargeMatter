@@ -38,6 +38,7 @@ vi.mock('@/actions/board', () => ({
 // Mock notifications
 vi.mock('@/lib/notifications', () => ({
   notifyChannel: vi.fn(),
+  notifyUser: vi.fn(),
   buildMoveCarMessage: vi.fn(
     (appName: string, chargerName: string, channelMention: string) =>
       `${appName}: Someone is waiting for ${chargerName}. Please move your car and post any delays in ${channelMention}.`,
@@ -48,7 +49,7 @@ vi.mock('@/lib/notifications', () => ({
 import { resetCharger, forceEndSession, notifyOwner } from '@/actions/admin';
 import { getConfig } from '@/lib/config';
 import { getBoardData } from '@/actions/board';
-import { notifyChannel } from '@/lib/notifications';
+import { notifyChannel, notifyUser } from '@/lib/notifications';
 import type { Auth } from '@/types';
 
 // ---------------------------------------------------------------------------
@@ -251,16 +252,23 @@ describe('notifyOwner', () => {
     const session = makeSession({ userId: 'driver@example.com' });
 
     setupDbMocks([[charger], [session]]);
+    (notifyUser as ReturnType<typeof vi.fn>).mockResolvedValue(true);
     (notifyChannel as ReturnType<typeof vi.fn>).mockResolvedValue(true);
 
     const result = await notifyOwner('charger-1', nonAdminAuth);
 
     expect(result.success).toBe(true);
     expect(result.message).toBe('Notification sent to the session owner.');
-    expect(notifyChannel).toHaveBeenCalledWith(
+    // Owner gets a DM with the full message
+    expect(notifyUser).toHaveBeenCalledWith(
       expect.stringContaining('Someone is waiting for Charger A'),
       expect.objectContaining({ appName: 'EV Charging' }),
       'driver@example.com',
+    );
+    // Channel gets a brief mention-free note
+    expect(notifyChannel).toHaveBeenCalledWith(
+      expect.stringContaining('A request was sent to move a car at Charger A'),
+      expect.objectContaining({ appName: 'EV Charging' }),
     );
   });
 
@@ -269,7 +277,8 @@ describe('notifyOwner', () => {
     const session = makeSession();
 
     setupDbMocks([[charger], [session]]);
-    (notifyChannel as ReturnType<typeof vi.fn>).mockResolvedValue(false);
+    (notifyUser as ReturnType<typeof vi.fn>).mockResolvedValue(false);
+    (notifyChannel as ReturnType<typeof vi.fn>).mockResolvedValue(true);
 
     const result = await notifyOwner('charger-1', nonAdminAuth);
 

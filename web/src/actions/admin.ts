@@ -8,6 +8,7 @@ import { assertAdmin } from '@/lib/auth-helpers';
 import { isComplete } from '@/lib/utils';
 import {
   notifyChannel,
+  notifyUser,
   buildMoveCarMessage,
   getSlackChannelMention,
   type NotifyChannelConfig,
@@ -193,15 +194,21 @@ export async function notifyOwner(
   const appName = configMap.app_name || 'EV Charging';
 
   const message = buildMoveCarMessage(appName, chargerName, channelMention);
+  const channelMessage = `${appName}: A request was sent to move a car at ${chargerName}.`;
 
   const notifyConfig = buildNotifyConfig(configMap);
-  const sent = await notifyChannel(message, notifyConfig, session.userId);
+
+  // DM the owner directly so only they get pinged
+  const dmSent = await notifyUser(message, notifyConfig, session.userId);
+
+  // Post a brief, mention-free note to the channel so everyone knows action was taken
+  await notifyChannel(channelMessage, notifyConfig);
 
   const board = await getBoardData(auth);
 
   return {
-    success: sent,
-    message: sent
+    success: dmSent,
+    message: dmSent
       ? 'Notification sent to the session owner.'
       : 'Unable to send notification. Please contact the owner directly.',
     board,
