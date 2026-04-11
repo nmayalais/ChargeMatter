@@ -14,6 +14,45 @@ export function isTrue(val: unknown): boolean {
 // Date / time helpers
 // ---------------------------------------------------------------------------
 
+/** The business timezone — all calendar-day logic uses this, not the server timezone. */
+export const APP_TIMEZONE = 'America/Los_Angeles';
+
+/**
+ * Extract date/time parts of `date` as they appear in Pacific Time.
+ * Uses Intl.DateTimeFormat so DST is handled automatically.
+ */
+function pacificParts(date: Date): {
+  year: number;
+  month: number; // 0-indexed
+  day: number;
+  hours: number;
+  minutes: number;
+  seconds: number;
+  weekday: string; // 'Sun', 'Mon', …
+} {
+  const fmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: APP_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+    weekday: 'short',
+  });
+  const parts = Object.fromEntries(fmt.formatToParts(date).map((p) => [p.type, p.value]));
+  return {
+    year: parseInt(parts.year, 10),
+    month: parseInt(parts.month, 10) - 1, // 0-indexed
+    day: parseInt(parts.day, 10),
+    hours: parseInt(parts.hour, 10) % 24, // hour12:false can produce '24' for midnight
+    minutes: parseInt(parts.minute, 10),
+    seconds: parseInt(parts.second, 10),
+    weekday: parts.weekday,
+  };
+}
+
 /** Return a new Date `minutes` ahead of `date`. */
 export function addMinutes(date: Date, minutes: number): Date {
   return new Date(date.getTime() + minutes * 60_000);
@@ -27,39 +66,47 @@ export function toDate(value: unknown): Date | null {
   return isNaN(parsed.getTime()) ? null : parsed;
 }
 
-/** Return midnight (local) for the given date. */
+/**
+ * Return the UTC timestamp that represents midnight Pacific Time on the
+ * same calendar day as `date` in Pacific Time.
+ */
 export function startOfDay(date: Date): Date {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const { year, month, day } = pacificParts(date);
+  // Find the Pacific UTC offset for this date by checking where noon UTC lands in Pacific.
+  // Noon UTC is always within the same Pacific calendar day, so the offset is stable.
+  const noonUtc = new Date(Date.UTC(year, month, day, 12, 0, 0));
+  const { hours: pacificNoonHour } = pacificParts(noonUtc);
+  // PST (UTC-8): noon UTC = 4 AM Pacific → offset = 8h
+  // PDT (UTC-7): noon UTC = 5 AM Pacific → offset = 7h
+  const pacificOffsetHours = 12 - pacificNoonHour;
+  return new Date(Date.UTC(year, month, day, pacificOffsetHours, 0, 0));
 }
 
-/** "yyyy-MM-dd" key for grouping by day (local time). */
+/** "yyyy-MM-dd" key for grouping by day (Pacific Time). */
 export function dayKey(date: Date): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
+  const { year, month, day } = pacificParts(date);
+  return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
 
-/** "yyyy-MM" key for monthly grouping (local time). */
+/** "yyyy-MM" key for monthly grouping (Pacific Time). */
 export function monthKey(date: Date): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  return `${y}-${m}`;
+  const { year, month } = pacificParts(date);
+  return `${year}-${String(month + 1).padStart(2, '0')}`;
 }
 
-/** Check whether two dates fall on the same calendar day (local time). */
+/** Check whether two dates fall on the same calendar day (Pacific Time). */
 export function isSameDay(first: Date, second: Date): boolean {
   return dayKey(first) === dayKey(second);
 }
 
-/** Add business days (skip weekends). */
+/** Add business days (skip weekends, using Pacific Time for day-of-week). */
 export function addBusinessDays(date: Date, days: number): Date {
-  const result = new Date(date.getTime());
+  let result = new Date(date.getTime());
   let remaining = Math.max(0, days);
   while (remaining > 0) {
-    result.setDate(result.getDate() + 1);
-    const dow = result.getDay();
-    if (dow !== 0 && dow !== 6) {
+    result = new Date(result.getTime() + 86_400_000);
+    const { weekday } = pacificParts(result);
+    if (weekday !== 'Sun' && weekday !== 'Sat') {
       remaining -= 1;
     }
   }
@@ -75,22 +122,22 @@ export function padTime(val: number): string {
   return String(val).padStart(2, '0');
 }
 
-/** Format a Date as "h:mm AM/PM". */
+/** Format a Date as "h:mm AM/PM" in Pacific Time. */
 export function formatTime(date: Date): string {
-  let hours = date.getHours();
-  const minutes = date.getMinutes();
+  const { hours, minutes } = pacificParts(date);
   const ampm = hours >= 12 ? 'PM' : 'AM';
-  hours = hours % 12 || 12;
-  return `${hours}:${padTime(minutes)} ${ampm}`;
+  const h = hours % 12 || 12;
+  return `${h}:${padTime(minutes)} ${ampm}`;
 }
 
-/** Format a Date as "MMM d, yyyy" (e.g. "Mar 15, 2026"). */
+/** Format a Date as "MMM d, yyyy" (e.g. "Mar 15, 2026") in Pacific Time. */
 export function formatDate(date: Date): string {
   const months = [
     'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
     'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
   ];
-  return `${months[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`;
+  const { year, month, day } = pacificParts(date);
+  return `${months[month]} ${day}, ${year}`;
 }
 
 /** Format a Date as "MMM d, yyyy h:mm AM/PM". */
@@ -179,12 +226,12 @@ export function findSlotForTime(
 }
 
 /**
- * Check if a given time is a valid slot start for a charger.
+ * Check if a given time is a valid slot start for a charger (Pacific Time).
  */
 export function isSlotStart(slotStartsStr: string, startTime: Date): boolean {
   const parsed = parseSlotStarts(slotStartsStr);
-  const minutes = startTime.getHours() * 60 + startTime.getMinutes();
-  return parsed.includes(minutes);
+  const { hours, minutes } = pacificParts(startTime);
+  return parsed.includes(hours * 60 + minutes);
 }
 
 // ---------------------------------------------------------------------------

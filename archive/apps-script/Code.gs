@@ -169,7 +169,7 @@ function buildBoardResponse_(opts) {
     chargers: board.chargers,
     reservations: userReservations,
     serverTime: board.serverTime,
-    timezone: Session.getScriptTimeZone(),
+    timezone: 'America/Los_Angeles',
     config: {
       appName: board.appName,
       slackChannelName: board.slackChannelName,
@@ -2115,7 +2115,7 @@ function findUserReservationAtTime_(reservations, userEmail, moment, excludeChar
 }
 
 function monthKey_(date) {
-  return Utilities.formatDate(date, Session.getScriptTimeZone(), 'yyyy-MM');
+  return Utilities.formatDate(date, 'America/Los_Angeles', 'yyyy-MM');
 }
 
 function addBusinessDays_(date, days) {
@@ -2160,7 +2160,7 @@ function assertNotSuspended_(auth, suspensionsData) {
   if (suspension) {
     var endAt = toDate_(suspension.end_at);
     var endDisplay = endAt
-      ? formatTime_(endAt) + ' on ' + Utilities.formatDate(endAt, Session.getScriptTimeZone(), 'MMM d')
+      ? formatTime_(endAt) + ' on ' + Utilities.formatDate(endAt, 'America/Los_Angeles', 'MMM d')
       : 'soon';
     throw new Error('Charging privileges suspended until ' + endDisplay + '.');
   }
@@ -2544,7 +2544,7 @@ function validateReservation_(params) {
 }
 
 function dayKey_(date) {
-  return Utilities.formatDate(date, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  return Utilities.formatDate(date, 'America/Los_Angeles', 'yyyy-MM-dd');
 }
 
 function isSameDay_(first, second) {
@@ -2892,7 +2892,7 @@ function buildTimelineForCharger_(charger, day, reservations) {
     return {
       chargerId: String(charger.charger_id),
       chargerName: charger.name || 'Charger ' + charger.charger_id,
-      date: Utilities.formatDate(start, Session.getScriptTimeZone(), 'yyyy-MM-dd'),
+      date: Utilities.formatDate(start, 'America/Los_Angeles', 'yyyy-MM-dd'),
       blocks: []
     };
   }
@@ -2914,7 +2914,7 @@ function buildTimelineForCharger_(charger, day, reservations) {
   return {
     chargerId: String(charger.charger_id),
     chargerName: charger.name || 'Charger ' + charger.charger_id,
-    date: Utilities.formatDate(start, Session.getScriptTimeZone(), 'yyyy-MM-dd'),
+    date: Utilities.formatDate(start, 'America/Los_Angeles', 'yyyy-MM-dd'),
     blocks: blocks
   };
 }
@@ -2945,7 +2945,7 @@ function buildCalendarDay_(day, chargers, reservations) {
     });
   });
   return {
-    date: Utilities.formatDate(start, Session.getScriptTimeZone(), 'yyyy-MM-dd'),
+    date: Utilities.formatDate(start, 'America/Los_Angeles', 'yyyy-MM-dd'),
     totalSlots: totalSlots,
     availableSlots: availableSlots
   };
@@ -3158,7 +3158,7 @@ function buildReservationReminderText_(type, reservation, charger, startTime, co
 }
 
 function formatTime_(date) {
-  return Utilities.formatDate(date, Session.getScriptTimeZone(), 'h:mm a');
+  return Utilities.formatDate(date, 'America/Los_Angeles', 'h:mm a');
 }
 
 function formatNameShort_(fullName, email) {

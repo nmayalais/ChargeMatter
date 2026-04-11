@@ -6,6 +6,7 @@ export default defineConfig({
     environment: 'node',
     globals: true,
     include: ['src/**/*.test.ts'],
+    env: { TZ: 'UTC' }, // simulate Vercel's UTC runtime so local-time bugs surface in tests
   },
   resolve: {
     alias: {

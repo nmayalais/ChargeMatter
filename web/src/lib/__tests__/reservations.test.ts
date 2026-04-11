@@ -152,8 +152,8 @@ function makeSession(overrides: Partial<Session> = {}): Session {
     chargerId: 'C1',
     userId: 'user@example.com',
     userName: 'User',
-    startTime: new Date('2026-03-15T08:00:00'),
-    endTime: new Date('2026-03-15T09:00:00'),
+    startTime: new Date('2026-03-15T15:00:00Z'),
+    endTime: new Date('2026-03-15T16:00:00Z'),
     status: 'active',
     active: true,
     overdue: false,
@@ -175,8 +175,8 @@ function makeReservation(overrides: Partial<Reservation> = {}): Reservation {
     chargerId: 'C1',
     userId: 'user@example.com',
     userName: 'User',
-    startTime: new Date('2026-03-15T10:00:00'),
-    endTime: new Date('2026-03-15T11:00:00'),
+    startTime: new Date('2026-03-15T17:00:00Z'),
+    endTime: new Date('2026-03-15T18:00:00Z'),
     status: 'active',
     checkedInAt: null,
     noShowAt: null,
@@ -224,10 +224,10 @@ function restoreTime() {
 describe('createReservation', () => {
   it('creates a reservation successfully', async () => {
     // Now is 8:30, booking the 9:00 slot (future, same day, valid slot)
-    mockNow('2026-03-15T08:30:00');
+    mockNow('2026-03-15T15:30:00Z');
     try {
       const auth = makeAuth();
-      const result = await createReservation(auth, 'C1', '2026-03-15T09:00:00');
+      const result = await createReservation(auth, 'C1', '2026-03-15T16:00:00Z');
       expect(result).toBeDefined();
       expect(mockInsert).toHaveBeenCalled();
       expect(mockAssertNotSuspended).toHaveBeenCalledWith('user@example.com');
@@ -237,14 +237,14 @@ describe('createReservation', () => {
   });
 
   it('rejects when user is suspended', async () => {
-    mockNow('2026-03-15T08:30:00');
+    mockNow('2026-03-15T15:30:00Z');
     try {
       mockAssertNotSuspended.mockRejectedValue(
         new Error('Charging privileges suspended until 5:00 PM on Mar 16, 2026.'),
       );
       const auth = makeAuth();
       await expect(
-        createReservation(auth, 'C1', '2026-03-15T09:00:00'),
+        createReservation(auth, 'C1', '2026-03-15T16:00:00Z'),
       ).rejects.toThrow('Charging privileges suspended');
     } finally {
       restoreTime();
@@ -252,7 +252,7 @@ describe('createReservation', () => {
   });
 
   it('rejects when max upcoming exceeded', async () => {
-    mockNow('2026-03-15T08:30:00');
+    mockNow('2026-03-15T15:30:00Z');
     try {
       // Set max_per_day to 2 so per-day doesn't trigger, but max_upcoming is 1
       mockGetConfig.mockResolvedValue({
@@ -264,13 +264,13 @@ describe('createReservation', () => {
       mockGetAllReservations.mockResolvedValue([
         makeReservation({
           id: 'R-existing',
-          startTime: new Date('2026-03-15T11:00:00'),
-          endTime: new Date('2026-03-15T12:00:00'),
+          startTime: new Date('2026-03-15T18:00:00Z'),
+          endTime: new Date('2026-03-15T19:00:00Z'),
         }),
       ]);
       const auth = makeAuth();
       await expect(
-        createReservation(auth, 'C1', '2026-03-15T09:00:00'),
+        createReservation(auth, 'C1', '2026-03-15T16:00:00Z'),
       ).rejects.toThrow('You can only have 1 upcoming reservations.');
     } finally {
       restoreTime();
@@ -278,21 +278,21 @@ describe('createReservation', () => {
   });
 
   it('rejects when max per day exceeded', async () => {
-    mockNow('2026-03-15T08:30:00');
+    mockNow('2026-03-15T15:30:00Z');
     try {
       // Already used the one reservation for today (no-show, still counts)
       mockGetAllReservations.mockResolvedValue([
         makeReservation({
           id: 'R-used',
-          startTime: new Date('2026-03-15T08:00:00'),
-          endTime: new Date('2026-03-15T09:00:00'),
+          startTime: new Date('2026-03-15T15:00:00Z'),
+          endTime: new Date('2026-03-15T16:00:00Z'),
           status: 'no_show',
-          noShowAt: new Date('2026-03-15T08:30:00'),
+          noShowAt: new Date('2026-03-15T15:30:00Z'),
         }),
       ]);
       const auth = makeAuth();
       await expect(
-        createReservation(auth, 'C1', '2026-03-15T09:00:00'),
+        createReservation(auth, 'C1', '2026-03-15T16:00:00Z'),
       ).rejects.toThrow('You already have a reservation for today.');
     } finally {
       restoreTime();
@@ -300,20 +300,20 @@ describe('createReservation', () => {
   });
 
   it('rejects when conflict with existing reservation on charger', async () => {
-    mockNow('2026-03-15T08:30:00');
+    mockNow('2026-03-15T15:30:00Z');
     try {
       // Another user has the 9:00 slot on C1
       mockGetAllReservations.mockResolvedValue([
         makeReservation({
           id: 'R-other',
           userId: 'other@example.com',
-          startTime: new Date('2026-03-15T09:00:00'),
-          endTime: new Date('2026-03-15T10:00:00'),
+          startTime: new Date('2026-03-15T16:00:00Z'),
+          endTime: new Date('2026-03-15T17:00:00Z'),
         }),
       ]);
       const auth = makeAuth();
       await expect(
-        createReservation(auth, 'C1', '2026-03-15T09:00:00'),
+        createReservation(auth, 'C1', '2026-03-15T16:00:00Z'),
       ).rejects.toThrow('conflicts with another reservation');
     } finally {
       restoreTime();
@@ -321,11 +321,11 @@ describe('createReservation', () => {
   });
 
   it('rejects when charger not found', async () => {
-    mockNow('2026-03-15T08:30:00');
+    mockNow('2026-03-15T15:30:00Z');
     try {
       const auth = makeAuth();
       await expect(
-        createReservation(auth, 'NONEXISTENT', '2026-03-15T09:00:00'),
+        createReservation(auth, 'NONEXISTENT', '2026-03-15T16:00:00Z'),
       ).rejects.toThrow('Charger not found.');
     } finally {
       restoreTime();
@@ -333,12 +333,12 @@ describe('createReservation', () => {
   });
 
   it('rejects invalid slot time', async () => {
-    mockNow('2026-03-15T08:30:00');
+    mockNow('2026-03-15T15:30:00Z');
     try {
       // 9:15 is not a valid slot start (slots are at :00)
       const auth = makeAuth();
       await expect(
-        createReservation(auth, 'C1', '2026-03-15T09:15:00'),
+        createReservation(auth, 'C1', '2026-03-15T16:15:00Z'),
       ).rejects.toThrow('Reservations must start at a scheduled slot time.');
     } finally {
       restoreTime();
@@ -346,11 +346,11 @@ describe('createReservation', () => {
   });
 
   it('rejects reservation in the past', async () => {
-    mockNow('2026-03-15T10:30:00');
+    mockNow('2026-03-15T17:30:00Z');
     try {
       const auth = makeAuth();
       await expect(
-        createReservation(auth, 'C1', '2026-03-15T09:00:00'),
+        createReservation(auth, 'C1', '2026-03-15T16:00:00Z'),
       ).rejects.toThrow('Reservation time must be in the future.');
     } finally {
       restoreTime();
@@ -364,17 +364,17 @@ describe('createReservation', () => {
 
 describe('updateReservation', () => {
   it('updates reservation time successfully', async () => {
-    mockNow('2026-03-15T08:30:00');
+    mockNow('2026-03-15T15:30:00Z');
     try {
       const existing = makeReservation({
         id: 'R1',
-        startTime: new Date('2026-03-15T10:00:00'),
-        endTime: new Date('2026-03-15T11:00:00'),
+        startTime: new Date('2026-03-15T17:00:00Z'),
+        endTime: new Date('2026-03-15T18:00:00Z'),
       });
       mockGetAllReservations.mockResolvedValue([existing]);
 
       const auth = makeAuth();
-      const result = await updateReservation(auth, 'R1', 'C1', '2026-03-15T09:00:00');
+      const result = await updateReservation(auth, 'R1', 'C1', '2026-03-15T16:00:00Z');
       expect(result).toBeDefined();
       expect(mockUpdate).toHaveBeenCalled();
     } finally {
@@ -383,14 +383,14 @@ describe('updateReservation', () => {
   });
 
   it('rejects update on checked-in reservation', async () => {
-    mockNow('2026-03-15T08:30:00');
+    mockNow('2026-03-15T15:30:00Z');
     try {
       const existing = makeReservation({
         id: 'R1',
         status: 'checked_in',
-        checkedInAt: new Date('2026-03-15T08:00:00'),
-        startTime: new Date('2026-03-15T10:00:00'),
-        endTime: new Date('2026-03-15T11:00:00'),
+        checkedInAt: new Date('2026-03-15T15:00:00Z'),
+        startTime: new Date('2026-03-15T17:00:00Z'),
+        endTime: new Date('2026-03-15T18:00:00Z'),
       });
       mockGetAllReservations.mockResolvedValue([existing]);
 
@@ -404,12 +404,12 @@ describe('updateReservation', () => {
       const canceled = makeReservation({
         id: 'R2',
         status: 'canceled',
-        canceledAt: new Date('2026-03-15T07:00:00'),
+        canceledAt: new Date('2026-03-15T14:00:00Z'),
       });
       mockGetAllReservations.mockResolvedValue([canceled]);
 
       await expect(
-        updateReservation(auth, 'R2', 'C1', '2026-03-15T09:00:00'),
+        updateReservation(auth, 'R2', 'C1', '2026-03-15T16:00:00Z'),
       ).rejects.toThrow('Reservation not found.');
     } finally {
       restoreTime();
@@ -417,19 +417,19 @@ describe('updateReservation', () => {
   });
 
   it('rejects update on another user\'s reservation', async () => {
-    mockNow('2026-03-15T08:30:00');
+    mockNow('2026-03-15T15:30:00Z');
     try {
       const existing = makeReservation({
         id: 'R1',
         userId: 'other@example.com',
-        startTime: new Date('2026-03-15T10:00:00'),
-        endTime: new Date('2026-03-15T11:00:00'),
+        startTime: new Date('2026-03-15T17:00:00Z'),
+        endTime: new Date('2026-03-15T18:00:00Z'),
       });
       mockGetAllReservations.mockResolvedValue([existing]);
 
       const auth = makeAuth();
       await expect(
-        updateReservation(auth, 'R1', 'C1', '2026-03-15T09:00:00'),
+        updateReservation(auth, 'R1', 'C1', '2026-03-15T16:00:00Z'),
       ).rejects.toThrow('You can only update your own reservations.');
     } finally {
       restoreTime();
@@ -456,7 +456,7 @@ describe('cancelReservation', () => {
     const canceled = makeReservation({
       id: 'R1',
       status: 'canceled',
-      canceledAt: new Date('2026-03-15T07:00:00'),
+      canceledAt: new Date('2026-03-15T14:00:00Z'),
     });
     mockGetAllReservations.mockResolvedValue([canceled]);
 
@@ -489,12 +489,12 @@ describe('cancelReservation', () => {
 describe('checkInReservation', () => {
   it('checks in successfully (creates session, updates charger)', async () => {
     // Reservation at 10:00, check-in at 9:50 (within 15-min early window)
-    mockNow('2026-03-15T09:50:00');
+    mockNow('2026-03-15T16:50:00Z');
     try {
       const reservation = makeReservation({
         id: 'R1',
-        startTime: new Date('2026-03-15T10:00:00'),
-        endTime: new Date('2026-03-15T11:00:00'),
+        startTime: new Date('2026-03-15T17:00:00Z'),
+        endTime: new Date('2026-03-15T18:00:00Z'),
       });
       mockGetAllReservations.mockResolvedValue([reservation]);
 
@@ -512,22 +512,22 @@ describe('checkInReservation', () => {
 
   it('force-ends overdue session on charger during check-in', async () => {
     // Reservation at 10:00, charger has overdue session that ended at 9:30
-    mockNow('2026-03-15T09:50:00');
+    mockNow('2026-03-15T16:50:00Z');
     try {
       const overdueSession = makeSession({
         id: 'S-overdue',
         chargerId: 'C1',
         userId: 'other@example.com',
-        startTime: new Date('2026-03-15T08:00:00'),
-        endTime: new Date('2026-03-15T09:00:00'), // ended at 9:00, now is 9:50
+        startTime: new Date('2026-03-15T15:00:00Z'),
+        endTime: new Date('2026-03-15T16:00:00Z'), // ended at 9:00, now is 9:50
         status: 'active',
         complete: false,
       });
       const charger = makeCharger({ activeSessionId: 'S-overdue' });
       const reservation = makeReservation({
         id: 'R1',
-        startTime: new Date('2026-03-15T10:00:00'),
-        endTime: new Date('2026-03-15T11:00:00'),
+        startTime: new Date('2026-03-15T17:00:00Z'),
+        endTime: new Date('2026-03-15T18:00:00Z'),
       });
 
       mockGetChargers.mockResolvedValue([charger]);
@@ -549,12 +549,12 @@ describe('checkInReservation', () => {
 
   it('rejects check-in outside early window', async () => {
     // Reservation at 10:00, early window is 15 min, trying at 9:00 (too early)
-    mockNow('2026-03-15T09:00:00');
+    mockNow('2026-03-15T16:00:00Z');
     try {
       const reservation = makeReservation({
         id: 'R1',
-        startTime: new Date('2026-03-15T10:00:00'),
-        endTime: new Date('2026-03-15T11:00:00'),
+        startTime: new Date('2026-03-15T17:00:00Z'),
+        endTime: new Date('2026-03-15T18:00:00Z'),
       });
       mockGetAllReservations.mockResolvedValue([reservation]);
 
@@ -569,12 +569,12 @@ describe('checkInReservation', () => {
 
   it('rejects check-in past late grace period', async () => {
     // Reservation at 10:00, late grace is 30 min, trying at 10:31
-    mockNow('2026-03-15T10:31:00');
+    mockNow('2026-03-15T17:31:00Z');
     try {
       const reservation = makeReservation({
         id: 'R1',
-        startTime: new Date('2026-03-15T10:00:00'),
-        endTime: new Date('2026-03-15T11:00:00'),
+        startTime: new Date('2026-03-15T17:00:00Z'),
+        endTime: new Date('2026-03-15T18:00:00Z'),
       });
       mockGetAllReservations.mockResolvedValue([reservation]);
 
@@ -588,14 +588,14 @@ describe('checkInReservation', () => {
   });
 
   it('rejects check-in for canceled reservation', async () => {
-    mockNow('2026-03-15T09:50:00');
+    mockNow('2026-03-15T16:50:00Z');
     try {
       const reservation = makeReservation({
         id: 'R1',
         status: 'canceled',
-        canceledAt: new Date('2026-03-15T08:00:00'),
-        startTime: new Date('2026-03-15T10:00:00'),
-        endTime: new Date('2026-03-15T11:00:00'),
+        canceledAt: new Date('2026-03-15T15:00:00Z'),
+        startTime: new Date('2026-03-15T17:00:00Z'),
+        endTime: new Date('2026-03-15T18:00:00Z'),
       });
       mockGetAllReservations.mockResolvedValue([reservation]);
 
@@ -609,7 +609,7 @@ describe('checkInReservation', () => {
   });
 
   it('rejects check-in when user has active session on another charger', async () => {
-    mockNow('2026-03-15T09:50:00');
+    mockNow('2026-03-15T16:50:00Z');
     try {
       const existingSession = makeSession({
         id: 'S-active',
@@ -622,8 +622,8 @@ describe('checkInReservation', () => {
       const reservation = makeReservation({
         id: 'R1',
         chargerId: 'C1',
-        startTime: new Date('2026-03-15T10:00:00'),
-        endTime: new Date('2026-03-15T11:00:00'),
+        startTime: new Date('2026-03-15T17:00:00Z'),
+        endTime: new Date('2026-03-15T18:00:00Z'),
       });
 
       mockGetChargers.mockResolvedValue([makeCharger(), chargerC2]);
@@ -649,7 +649,7 @@ describe('completeCheckedInReservation', () => {
     const reservation = makeReservation({
       id: 'R1',
       status: 'checked_in',
-      checkedInAt: new Date('2026-03-15T10:00:00'),
+      checkedInAt: new Date('2026-03-15T17:00:00Z'),
     });
     mockGetAllReservations.mockResolvedValue([reservation]);
 
@@ -677,7 +677,7 @@ describe('completeCheckedInReservation', () => {
     const reservation = makeReservation({
       id: 'R1',
       status: 'canceled',
-      canceledAt: new Date('2026-03-15T08:00:00'),
+      canceledAt: new Date('2026-03-15T15:00:00Z'),
     });
     mockGetAllReservations.mockResolvedValue([reservation]);
 
@@ -691,7 +691,7 @@ describe('completeCheckedInReservation', () => {
     const reservation = makeReservation({
       id: 'R1',
       status: 'checked_in',
-      checkedInAt: new Date('2026-03-15T10:00:00'),
+      checkedInAt: new Date('2026-03-15T17:00:00Z'),
       userId: 'other@example.com',
     });
     mockGetAllReservations.mockResolvedValue([reservation]);

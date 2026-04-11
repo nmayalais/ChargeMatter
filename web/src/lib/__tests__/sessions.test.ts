@@ -89,8 +89,8 @@ function makeSession(overrides: Partial<Session> = {}): Session {
     chargerId: 'C1',
     userId: 'user@example.com',
     userName: 'User',
-    startTime: new Date('2026-03-15T08:00:00'),
-    endTime: new Date('2026-03-15T09:00:00'),
+    startTime: new Date('2026-03-15T15:00:00Z'),
+    endTime: new Date('2026-03-15T16:00:00Z'),
     status: 'active',
     active: true,
     overdue: false,
@@ -112,16 +112,16 @@ function makeReservation(overrides: Partial<Reservation> = {}): Reservation {
     chargerId: 'C1',
     userId: 'user@example.com',
     userName: 'User',
-    startTime: new Date('2026-03-15T09:00:00'),
-    endTime: new Date('2026-03-15T10:00:00'),
+    startTime: new Date('2026-03-15T16:00:00Z'),
+    endTime: new Date('2026-03-15T17:00:00Z'),
     status: 'active',
     checkedInAt: null,
     noShowAt: null,
     noShowStrikeAt: null,
     reminder5BeforeSent: false,
     reminder5AfterSent: false,
-    createdAt: new Date('2026-03-14T12:00:00'),
-    updatedAt: new Date('2026-03-14T12:00:00'),
+    createdAt: new Date('2026-03-14T19:00:00Z'),
+    updatedAt: new Date('2026-03-14T19:00:00Z'),
     canceledAt: null,
     releasedEarly: false,
     ...overrides,
@@ -202,7 +202,7 @@ import {
 describe('startSession', () => {
   it('should create a session on an available charger', async () => {
     // Charger is available, no sessions, no reservations, time is within a slot
-    vi.setSystemTime(new Date('2026-03-15T08:30:00'));
+    vi.setSystemTime(new Date('2026-03-15T15:30:00Z'));
 
     const auth = makeAuth();
     const result = await startSession('C1', auth);
@@ -214,7 +214,7 @@ describe('startSession', () => {
   });
 
   it('should throw if charger not found', async () => {
-    vi.setSystemTime(new Date('2026-03-15T08:30:00'));
+    vi.setSystemTime(new Date('2026-03-15T15:30:00Z'));
     const auth = makeAuth();
 
     await expect(startSession('NONEXISTENT', auth)).rejects.toThrow(
@@ -223,7 +223,7 @@ describe('startSession', () => {
   });
 
   it('should throw if charger is already in use', async () => {
-    vi.setSystemTime(new Date('2026-03-15T08:30:00'));
+    vi.setSystemTime(new Date('2026-03-15T15:30:00Z'));
     const existingSession = makeSession({ id: 'S-EXISTING' });
     mockGetChargers.mockResolvedValue([
       makeCharger({ activeSessionId: 'S-EXISTING' }),
@@ -237,7 +237,7 @@ describe('startSession', () => {
   });
 
   it('should throw if user is suspended', async () => {
-    vi.setSystemTime(new Date('2026-03-15T08:30:00'));
+    vi.setSystemTime(new Date('2026-03-15T15:30:00Z'));
     mockAssertNotSuspended.mockRejectedValue(
       new Error('Charging privileges suspended until 5:00 PM on Mar 16, 2026.'),
     );
@@ -249,7 +249,7 @@ describe('startSession', () => {
   });
 
   it('should throw if user already has an active session', async () => {
-    vi.setSystemTime(new Date('2026-03-15T08:30:00'));
+    vi.setSystemTime(new Date('2026-03-15T15:30:00Z'));
     const existingSession = makeSession({
       id: 'S-OTHER',
       chargerId: 'C2',
@@ -268,7 +268,7 @@ describe('startSession', () => {
 
   it('should throw if time is outside scheduled blocks', async () => {
     // 7:00 AM is before the first slot at 8:00
-    vi.setSystemTime(new Date('2026-03-15T07:00:00'));
+    vi.setSystemTime(new Date('2026-03-15T14:00:00Z'));
 
     const auth = makeAuth();
     await expect(startSession('C1', auth)).rejects.toThrow(
@@ -281,14 +281,14 @@ describe('startSession', () => {
     // lateGraceMinutes = 30, so openAt = 8:30.
     // netNewWindowMinutes = 10, so allUsersOpenAt = 8:40.
     // Time is 8:35 — only net-new users allowed.
-    vi.setSystemTime(new Date('2026-03-15T08:35:00'));
+    vi.setSystemTime(new Date('2026-03-15T15:35:00Z'));
 
     const liveReservation = makeReservation({
       id: 'R-LIVE',
       chargerId: 'C1',
       userId: 'other@example.com',
-      startTime: new Date('2026-03-15T08:00:00'),
-      endTime: new Date('2026-03-15T09:00:00'),
+      startTime: new Date('2026-03-15T15:00:00Z'),
+      endTime: new Date('2026-03-15T16:00:00Z'),
       status: 'active',
     });
 
@@ -297,8 +297,8 @@ describe('startSession', () => {
       id: 'S-PRIOR',
       chargerId: 'C2',
       userId: 'user@example.com',
-      startTime: new Date('2026-03-15T07:00:00'),
-      endTime: new Date('2026-03-15T08:00:00'),
+      startTime: new Date('2026-03-15T14:00:00Z'),
+      endTime: new Date('2026-03-15T15:00:00Z'),
       status: 'complete',
       complete: true,
       active: false,
@@ -314,14 +314,14 @@ describe('startSession', () => {
   });
 
   it('should throw if user has a conflicting reservation on another charger', async () => {
-    vi.setSystemTime(new Date('2026-03-15T09:30:00'));
+    vi.setSystemTime(new Date('2026-03-15T16:30:00Z'));
 
     const conflicting = makeReservation({
       id: 'R-CONFLICT',
       chargerId: 'C2',
       userId: 'user@example.com',
-      startTime: new Date('2026-03-15T09:00:00'),
-      endTime: new Date('2026-03-15T10:00:00'),
+      startTime: new Date('2026-03-15T16:00:00Z'),
+      endTime: new Date('2026-03-15T17:00:00Z'),
     });
 
     mockGetAllReservations.mockResolvedValue([conflicting]);
@@ -337,7 +337,7 @@ describe('startSession', () => {
   });
 
   it('should throw if charger max_minutes is not configured', async () => {
-    vi.setSystemTime(new Date('2026-03-15T08:30:00'));
+    vi.setSystemTime(new Date('2026-03-15T15:30:00Z'));
     mockGetChargers.mockResolvedValue([makeCharger({ maxMinutes: 0 })]);
 
     const auth = makeAuth();
@@ -353,7 +353,7 @@ describe('startSession', () => {
 
 describe('endSession', () => {
   it('should end a session owned by the user', async () => {
-    vi.setSystemTime(new Date('2026-03-15T08:30:00'));
+    vi.setSystemTime(new Date('2026-03-15T15:30:00Z'));
 
     const session = makeSession();
     // endSessionInternal does a db.select to find the session
@@ -367,7 +367,7 @@ describe('endSession', () => {
   });
 
   it('should throw if non-owner non-admin tries to end session', async () => {
-    vi.setSystemTime(new Date('2026-03-15T08:30:00'));
+    vi.setSystemTime(new Date('2026-03-15T15:30:00Z'));
 
     const session = makeSession({ userId: 'owner@example.com' });
     mockDbSelectLimit.mockResolvedValueOnce([session]);
@@ -379,7 +379,7 @@ describe('endSession', () => {
   });
 
   it('should allow admin to end any session', async () => {
-    vi.setSystemTime(new Date('2026-03-15T08:30:00'));
+    vi.setSystemTime(new Date('2026-03-15T15:30:00Z'));
 
     const session = makeSession({ userId: 'owner@example.com' });
     mockDbSelectLimit.mockResolvedValueOnce([session]);
@@ -396,7 +396,7 @@ describe('endSession', () => {
   });
 
   it('should throw if session not found', async () => {
-    vi.setSystemTime(new Date('2026-03-15T08:30:00'));
+    vi.setSystemTime(new Date('2026-03-15T15:30:00Z'));
     mockDbSelectLimit.mockResolvedValueOnce([]);
 
     const auth = makeAuth();
@@ -412,7 +412,7 @@ describe('endSession', () => {
 
 describe('endMyActiveSession', () => {
   it('should find and end the user\'s active session', async () => {
-    vi.setSystemTime(new Date('2026-03-15T08:30:00'));
+    vi.setSystemTime(new Date('2026-03-15T15:30:00Z'));
 
     const session = makeSession();
     mockGetActiveSessions.mockResolvedValue([session]);
@@ -426,7 +426,7 @@ describe('endMyActiveSession', () => {
   });
 
   it('should throw if user has no active session', async () => {
-    vi.setSystemTime(new Date('2026-03-15T08:30:00'));
+    vi.setSystemTime(new Date('2026-03-15T15:30:00Z'));
     mockGetActiveSessions.mockResolvedValue([]);
 
     const auth = makeAuth();
@@ -445,18 +445,18 @@ describe('completeReservationForSession', () => {
     const session = makeSession({
       chargerId: 'C1',
       userId: 'user@example.com',
-      startTime: new Date('2026-03-15T09:00:00'),
-      endTime: new Date('2026-03-15T10:00:00'),
+      startTime: new Date('2026-03-15T16:00:00Z'),
+      endTime: new Date('2026-03-15T17:00:00Z'),
     });
 
     const reservation = makeReservation({
       id: 'R1',
       chargerId: 'C1',
       userId: 'user@example.com',
-      startTime: new Date('2026-03-15T09:00:00'),
-      endTime: new Date('2026-03-15T10:00:00'),
+      startTime: new Date('2026-03-15T16:00:00Z'),
+      endTime: new Date('2026-03-15T17:00:00Z'),
       status: 'checked_in',
-      checkedInAt: new Date('2026-03-15T09:00:00'),
+      checkedInAt: new Date('2026-03-15T16:00:00Z'),
     });
 
     const { db } = await import('@/lib/db');
@@ -467,7 +467,7 @@ describe('completeReservationForSession', () => {
     }));
     (db.update as ReturnType<typeof vi.fn>) = mockUpdate;
 
-    const now = new Date('2026-03-15T09:50:00');
+    const now = new Date('2026-03-15T16:50:00Z');
     await completeReservationForSession(session, now, [reservation]);
 
     expect(mockUpdate).toHaveBeenCalled();
@@ -477,18 +477,18 @@ describe('completeReservationForSession', () => {
     const session = makeSession({
       chargerId: 'C1',
       userId: 'user@example.com',
-      startTime: new Date('2026-03-15T09:00:00'),
-      endTime: new Date('2026-03-15T10:00:00'),
+      startTime: new Date('2026-03-15T16:00:00Z'),
+      endTime: new Date('2026-03-15T17:00:00Z'),
     });
 
     const reservation = makeReservation({
       id: 'R1',
       chargerId: 'C1',
       userId: 'user@example.com',
-      startTime: new Date('2026-03-15T09:00:00'),
-      endTime: new Date('2026-03-15T10:00:00'),
+      startTime: new Date('2026-03-15T16:00:00Z'),
+      endTime: new Date('2026-03-15T17:00:00Z'),
       status: 'checked_in',
-      checkedInAt: new Date('2026-03-15T09:00:00'),
+      checkedInAt: new Date('2026-03-15T16:00:00Z'),
     });
 
     let capturedSet: Record<string, unknown> = {};
@@ -502,7 +502,7 @@ describe('completeReservationForSession', () => {
     (db.update as ReturnType<typeof vi.fn>) = mockUpdate;
 
     // Halfway point is 9:30. Ending at 9:15 = before halfway = released_early = true
-    const now = new Date('2026-03-15T09:15:00');
+    const now = new Date('2026-03-15T16:15:00Z');
     await completeReservationForSession(session, now, [reservation]);
 
     expect(capturedSet.releasedEarly).toBe(true);
@@ -513,18 +513,18 @@ describe('completeReservationForSession', () => {
     const session = makeSession({
       chargerId: 'C1',
       userId: 'user@example.com',
-      startTime: new Date('2026-03-15T09:00:00'),
-      endTime: new Date('2026-03-15T10:00:00'),
+      startTime: new Date('2026-03-15T16:00:00Z'),
+      endTime: new Date('2026-03-15T17:00:00Z'),
     });
 
     const reservation = makeReservation({
       id: 'R1',
       chargerId: 'C1',
       userId: 'user@example.com',
-      startTime: new Date('2026-03-15T09:00:00'),
-      endTime: new Date('2026-03-15T10:00:00'),
+      startTime: new Date('2026-03-15T16:00:00Z'),
+      endTime: new Date('2026-03-15T17:00:00Z'),
       status: 'checked_in',
-      checkedInAt: new Date('2026-03-15T09:00:00'),
+      checkedInAt: new Date('2026-03-15T16:00:00Z'),
     });
 
     let capturedSet: Record<string, unknown> = {};
@@ -538,7 +538,7 @@ describe('completeReservationForSession', () => {
     (db.update as ReturnType<typeof vi.fn>) = mockUpdate;
 
     // Halfway point is 9:30. Ending at 9:45 = after halfway = released_early = false
-    const now = new Date('2026-03-15T09:45:00');
+    const now = new Date('2026-03-15T16:45:00Z');
     await completeReservationForSession(session, now, [reservation]);
 
     expect(capturedSet.releasedEarly).toBe(false);
@@ -549,16 +549,16 @@ describe('completeReservationForSession', () => {
     const session = makeSession({
       chargerId: 'C1',
       userId: 'user@example.com',
-      startTime: new Date('2026-03-15T09:00:00'),
-      endTime: new Date('2026-03-15T10:00:00'),
+      startTime: new Date('2026-03-15T16:00:00Z'),
+      endTime: new Date('2026-03-15T17:00:00Z'),
     });
 
     const reservation = makeReservation({
       id: 'R1',
       chargerId: 'C1',
       userId: 'user@example.com',
-      startTime: new Date('2026-03-15T09:00:00'),
-      endTime: new Date('2026-03-15T10:00:00'),
+      startTime: new Date('2026-03-15T16:00:00Z'),
+      endTime: new Date('2026-03-15T17:00:00Z'),
       status: 'active',
       checkedInAt: null, // Not checked in
     });
@@ -571,7 +571,7 @@ describe('completeReservationForSession', () => {
     }));
     (db.update as ReturnType<typeof vi.fn>) = mockUpdate;
 
-    const now = new Date('2026-03-15T09:15:00');
+    const now = new Date('2026-03-15T16:15:00Z');
     await completeReservationForSession(session, now, [reservation]);
 
     expect(mockUpdate).not.toHaveBeenCalled();
@@ -581,18 +581,18 @@ describe('completeReservationForSession', () => {
     const session = makeSession({
       chargerId: 'C1',
       userId: 'user@example.com',
-      startTime: new Date('2026-03-15T09:00:00'),
-      endTime: new Date('2026-03-15T10:00:00'),
+      startTime: new Date('2026-03-15T16:00:00Z'),
+      endTime: new Date('2026-03-15T17:00:00Z'),
     });
 
     const reservation = makeReservation({
       id: 'R1',
       chargerId: 'C2', // Different charger
       userId: 'user@example.com',
-      startTime: new Date('2026-03-15T09:00:00'),
-      endTime: new Date('2026-03-15T10:00:00'),
+      startTime: new Date('2026-03-15T16:00:00Z'),
+      endTime: new Date('2026-03-15T17:00:00Z'),
       status: 'checked_in',
-      checkedInAt: new Date('2026-03-15T09:00:00'),
+      checkedInAt: new Date('2026-03-15T16:00:00Z'),
     });
 
     const { db } = await import('@/lib/db');
@@ -603,7 +603,7 @@ describe('completeReservationForSession', () => {
     }));
     (db.update as ReturnType<typeof vi.fn>) = mockUpdate;
 
-    const now = new Date('2026-03-15T09:15:00');
+    const now = new Date('2026-03-15T16:15:00Z');
     await completeReservationForSession(session, now, [reservation]);
 
     expect(mockUpdate).not.toHaveBeenCalled();

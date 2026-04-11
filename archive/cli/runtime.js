@@ -34,7 +34,7 @@ function createRuntime(options) {
       };
     },
     getScriptTimeZone() {
-      return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+      return 'America/Los_Angeles';
     }
   };
 

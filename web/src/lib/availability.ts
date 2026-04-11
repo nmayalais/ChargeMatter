@@ -83,7 +83,9 @@ export function hasReservationConflict(
 // ---------------------------------------------------------------------------
 
 /**
- * Get the time that reservations open for the day.
+ * Get the time that reservations open for the day (Pacific Time).
+ * Uses Pacific midnight as the base so the open time is always in LA,
+ * regardless of the server's system timezone.
  */
 export function getReservationOpenTime(
   now: Date,
@@ -91,14 +93,7 @@ export function getReservationOpenTime(
 ): Date {
   const openHour = isNaN(config.openHour) ? 5 : config.openHour;
   const openMinute = isNaN(config.openMinute) ? 45 : config.openMinute;
-  return new Date(
-    now.getFullYear(),
-    now.getMonth(),
-    now.getDate(),
-    openHour,
-    openMinute,
-    0,
-  );
+  return addMinutes(startOfDay(now), openHour * 60 + openMinute);
 }
 
 // ---------------------------------------------------------------------------

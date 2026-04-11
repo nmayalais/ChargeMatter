@@ -198,7 +198,7 @@ describe('findReservationForSlot', () => {
 describe('buildBoard', () => {
   it('builds an empty board with no sessions/reservations', () => {
     // Use a time within the 8:00 slot (local time)
-    const now = new Date(2026, 2, 15, 8, 30, 0); // March 15, 2026 8:30 AM local
+    const now = new Date('2026-03-15T15:30:00Z'); // March 15, 2026 8:30 AM PDT
     const charger = makeCharger();
     const result = buildBoard({
       now,

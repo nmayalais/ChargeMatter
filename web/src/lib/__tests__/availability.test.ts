@@ -139,20 +139,39 @@ describe('hasReservationConflict', () => {
 // ---------------------------------------------------------------------------
 // getReservationOpenTime
 // ---------------------------------------------------------------------------
+// Inputs are UTC ISO strings. Pacific offset: PST = UTC-8, PDT = UTC-7.
 
+// January = PST (UTC-8): midnight PST = 08:00 UTC, 5:45 AM PST = 13:45 UTC
+// June = PDT (UTC-7): midnight PDT = 07:00 UTC, 5:45 AM PDT = 12:45 UTC
 describe('getReservationOpenTime', () => {
-  it('returns the configured open time for the day', () => {
-    const now = new Date('2026-03-15T10:00:00');
+  it('returns 5:45 AM PST on the Pacific calendar day (January)', () => {
+    // now = midnight PST Jan 15 = 08:00 UTC
+    const now = new Date('2026-01-15T08:00:00Z');
     const result = getReservationOpenTime(now, { openHour: 5, openMinute: 45 });
-    expect(result.getHours()).toBe(5);
-    expect(result.getMinutes()).toBe(45);
+    // 5:45 AM PST = 08:00Z + 5h45m = 13:45 UTC
+    expect(result.toISOString()).toBe('2026-01-15T13:45:00.000Z');
+  });
+
+  it('uses Pacific calendar date even when UTC has rolled past midnight', () => {
+    // now = 3:00 AM PST Jan 15 = 11:00 UTC
+    const now = new Date('2026-01-15T11:00:00Z');
+    const result = getReservationOpenTime(now, { openHour: 5, openMinute: 45 });
+    // open time is still 5:45 AM PST Jan 15 = 13:45 UTC
+    expect(result.toISOString()).toBe('2026-01-15T13:45:00.000Z');
+  });
+
+  it('handles PDT (UTC-7) correctly in June', () => {
+    // now = noon PDT June 15 = 19:00 UTC
+    const now = new Date('2026-06-15T19:00:00Z');
+    const result = getReservationOpenTime(now, { openHour: 5, openMinute: 45 });
+    // 5:45 AM PDT = 07:00Z + 5h45m = 12:45 UTC
+    expect(result.toISOString()).toBe('2026-06-15T12:45:00.000Z');
   });
 
   it('defaults to 5:45 for NaN inputs', () => {
-    const now = new Date('2026-03-15T10:00:00');
+    const now = new Date('2026-01-15T11:00:00Z');
     const result = getReservationOpenTime(now, { openHour: NaN, openMinute: NaN });
-    expect(result.getHours()).toBe(5);
-    expect(result.getMinutes()).toBe(45);
+    expect(result.toISOString()).toBe('2026-01-15T13:45:00.000Z');
   });
 });
 
@@ -160,10 +179,14 @@ describe('getReservationOpenTime', () => {
 // getNextAvailableSlots
 // ---------------------------------------------------------------------------
 
+// January 2026 = PST (UTC-8).
+// Charger slots: 8:00, 9:00, 10:00 AM PST = 16:00, 17:00, 18:00 UTC on Jan 15.
+// Open time: 5:45 AM PST = 13:45 UTC.
+
 describe('getNextAvailableSlots', () => {
-  it('returns empty if before reservation open time', () => {
-    // 3:00 AM is before 5:45 AM open time
-    const now = new Date('2026-03-15T03:00:00');
+  it('returns empty if before reservation open time (5:45 AM PST)', () => {
+    // 3:00 AM PST Jan 15 = 11:00 UTC — before 5:45 AM PST (13:45 UTC)
+    const now = new Date('2026-01-15T11:00:00Z');
     const result = getNextAvailableSlots({
       now,
       chargers: [makeCharger()],
@@ -173,9 +196,9 @@ describe('getNextAvailableSlots', () => {
     expect(result).toEqual([]);
   });
 
-  it('returns available future slots', () => {
-    // 7:30 — the 8:00 and 9:00 and 10:00 slots are all in the future
-    const now = new Date('2026-03-15T07:30:00');
+  it('returns available future slots after open time', () => {
+    // 7:30 AM PST Jan 15 = 15:30 UTC — after open time, all three slots (8, 9, 10 AM) are future
+    const now = new Date('2026-01-15T15:30:00Z');
     const result = getNextAvailableSlots({
       now,
       chargers: [makeCharger()],
@@ -187,11 +210,12 @@ describe('getNextAvailableSlots', () => {
   });
 
   it('excludes slots with reservation conflicts', () => {
-    const now = new Date('2026-03-15T07:30:00');
+    // 7:30 AM PST Jan 15 = 15:30 UTC
+    const now = new Date('2026-01-15T15:30:00Z');
     const res = makeReservation({
       chargerId: 'C1',
-      startTime: new Date('2026-03-15T09:00:00'),
-      endTime: new Date('2026-03-15T10:00:00'),
+      startTime: new Date('2026-01-15T17:00:00Z'), // 9:00 AM PST
+      endTime: new Date('2026-01-15T18:00:00Z'),   // 10:00 AM PST
     });
     const result = getNextAvailableSlots({
       now,
@@ -199,31 +223,27 @@ describe('getNextAvailableSlots', () => {
       reservations: [res],
       configMap: DEFAULT_CONFIG,
     });
-    // 8:00 and 10:00 should be available; 9:00 is reserved
-    // But 8:00 end (9:00) + 1 gap minute conflicts with 9:00 reservation start,
-    // and 10:00 start - 1 gap minute conflicts with 10:00 reservation end.
-    // Let's just verify it's fewer than 3.
+    // 9:00 AM slot is reserved; gap minutes may also block adjacent slots
     expect(result.length).toBeLessThan(3);
   });
 
   it('excludes past slots', () => {
-    const now = new Date(2026, 2, 15, 9, 30, 0); // 9:30 AM local
+    // 9:30 AM PST Jan 15 = 17:30 UTC — 8:00 and 9:00 AM are past, only 10:00 AM is future
+    const now = new Date('2026-01-15T17:30:00Z');
     const result = getNextAvailableSlots({
       now,
       chargers: [makeCharger()],
       reservations: [],
       configMap: DEFAULT_CONFIG,
     });
-    // 8:00 and 9:00 are in the past; only 10:00 is future
     expect(result.length).toBe(1);
-    // The start time should represent 10:00 local — parse it back to verify
-    const slotStart = new Date(result[0].startTime);
-    expect(slotStart.getHours()).toBe(10);
-    expect(slotStart.getMinutes()).toBe(0);
+    // The start time should be 10:00 AM PST Jan 15 = 18:00 UTC
+    expect(result[0].startTime).toBe('2026-01-15T18:00:00.000Z');
   });
 
   it('respects limit and offset', () => {
-    const now = new Date('2026-03-15T07:30:00');
+    // 7:30 AM PST Jan 15 = 15:30 UTC
+    const now = new Date('2026-01-15T15:30:00Z');
     const result = getNextAvailableSlots({
       now,
       chargers: [makeCharger()],
@@ -243,7 +263,6 @@ describe('getNextAvailableSlots', () => {
       offset: 1,
     });
     expect(result2.length).toBe(1);
-    // Second slot should be different from first
     expect(result2[0].startTime).not.toBe(result[0].startTime);
   });
 });
@@ -252,9 +271,12 @@ describe('getNextAvailableSlots', () => {
 // buildTimelineForCharger
 // ---------------------------------------------------------------------------
 
+// Use noon UTC Jan 15 = 4 AM PST — unambiguously Jan 15 in Pacific.
+// Reserved slot: 9:00 AM PST = 17:00 UTC, end 10:00 AM PST = 18:00 UTC.
+
 describe('buildTimelineForCharger', () => {
   it('builds timeline with all available slots', () => {
-    const day = new Date('2026-03-15T00:00:00');
+    const day = new Date('2026-01-15T12:00:00Z');
     const result = buildTimelineForCharger({
       charger: makeCharger(),
       day,
@@ -267,11 +289,11 @@ describe('buildTimelineForCharger', () => {
   });
 
   it('marks reserved slots', () => {
-    const day = new Date('2026-03-15T00:00:00');
+    const day = new Date('2026-01-15T12:00:00Z');
     const res = makeReservation({
       chargerId: 'C1',
-      startTime: new Date('2026-03-15T09:00:00'),
-      endTime: new Date('2026-03-15T10:00:00'),
+      startTime: new Date('2026-01-15T17:00:00Z'), // 9:00 AM PST
+      endTime: new Date('2026-01-15T18:00:00Z'),   // 10:00 AM PST
     });
     const result = buildTimelineForCharger({
       charger: makeCharger(),
@@ -284,7 +306,7 @@ describe('buildTimelineForCharger', () => {
   });
 
   it('returns empty blocks for a zero-maxMinutes charger', () => {
-    const day = new Date('2026-03-15T00:00:00');
+    const day = new Date('2026-01-15T12:00:00Z');
     const result = buildTimelineForCharger({
       charger: makeCharger({ maxMinutes: 0 }),
       day,
@@ -301,7 +323,7 @@ describe('buildTimelineForCharger', () => {
 
 describe('buildCalendarDay', () => {
   it('counts total and available slots', () => {
-    const day = new Date('2026-03-15T00:00:00');
+    const day = new Date('2026-01-15T12:00:00Z');
     const result = buildCalendarDay({
       day,
       chargers: [makeCharger()],
@@ -313,11 +335,11 @@ describe('buildCalendarDay', () => {
   });
 
   it('deducts reserved slots from available', () => {
-    const day = new Date('2026-03-15T00:00:00');
+    const day = new Date('2026-01-15T12:00:00Z');
     const res = makeReservation({
       chargerId: 'C1',
-      startTime: new Date('2026-03-15T09:00:00'),
-      endTime: new Date('2026-03-15T10:00:00'),
+      startTime: new Date('2026-01-15T17:00:00Z'), // 9:00 AM PST
+      endTime: new Date('2026-01-15T18:00:00Z'),   // 10:00 AM PST
     });
     const result = buildCalendarDay({
       day,
@@ -330,7 +352,7 @@ describe('buildCalendarDay', () => {
   });
 
   it('skips chargers with zero maxMinutes', () => {
-    const day = new Date('2026-03-15T00:00:00');
+    const day = new Date('2026-01-15T12:00:00Z');
     const result = buildCalendarDay({
       day,
       chargers: [makeCharger({ maxMinutes: 0 })],
