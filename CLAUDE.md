@@ -68,6 +68,14 @@ Six Postgres tables (defined in `web/src/lib/db/schema.ts`):
 - `web/src/lib/config.ts` — App configuration with defaults
 - `web/src/components/dashboard.tsx` — Main UI orchestrator
 
+## Timezone
+
+All calendar-day logic is locked to **`America/Los_Angeles`** (Pacific Time, auto-adjusting for DST). The constant `APP_TIMEZONE` is exported from `web/src/lib/utils.ts`.
+
+- Never use `new Date(year, month, day, ...)` or bare `.getHours()` / `.getDate()` for business logic — these use the server's local timezone (UTC on Vercel).
+- Use `startOfDay`, `dayKey`, `monthKey`, `formatTime`, `formatDate` from `web/src/lib/utils.ts` — they all use Pacific Time internally via `Intl.DateTimeFormat`.
+- Tests run with `TZ=UTC` (set in `web/vitest.config.ts`) to simulate Vercel. Write test dates as explicit UTC ISO strings (e.g. `'2026-01-15T16:00:00Z'` for 8:00 AM PST).
+
 ## Subtree guidance
 
 Detailed context lives in subdirectory CLAUDE.md files:
