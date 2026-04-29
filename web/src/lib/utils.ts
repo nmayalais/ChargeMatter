@@ -72,14 +72,18 @@ export function toDate(value: unknown): Date | null {
  */
 export function startOfDay(date: Date): Date {
   const { year, month, day } = pacificParts(date);
-  // Find the Pacific UTC offset for this date by checking where noon UTC lands in Pacific.
-  // Noon UTC is always within the same Pacific calendar day, so the offset is stable.
-  const noonUtc = new Date(Date.UTC(year, month, day, 12, 0, 0));
-  const { hours: pacificNoonHour } = pacificParts(noonUtc);
-  // PST (UTC-8): noon UTC = 4 AM Pacific → offset = 8h
-  // PDT (UTC-7): noon UTC = 5 AM Pacific → offset = 7h
-  const pacificOffsetHours = 12 - pacificNoonHour;
-  return new Date(Date.UTC(year, month, day, pacificOffsetHours, 0, 0));
+  // Try PST (UTC-8) before PDT (UTC-7). On the spring-forward day, midnight is still
+  // in PST even though noon is in PDT — using noon to infer the offset would pick PDT
+  // and return 07:00 UTC instead of the correct PST midnight at 08:00 UTC.
+  for (const offsetHours of [8, 7]) {
+    const candidate = new Date(Date.UTC(year, month, day, offsetHours, 0, 0));
+    const parts = pacificParts(candidate);
+    if (parts.year === year && parts.month === month && parts.day === day && parts.hours === 0) {
+      return candidate;
+    }
+  }
+  // Fallback — not reachable for valid Pacific dates
+  return new Date(Date.UTC(year, month, day, 8, 0, 0));
 }
 
 /** "yyyy-MM-dd" key for grouping by day (Pacific Time). */

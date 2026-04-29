@@ -82,9 +82,14 @@ export function groupReservationsByCharger(
     const chargerId = reservation.chargerId;
 
     if (now.getTime() >= startTime.getTime() && now.getTime() < endTime.getTime()) {
-      // Currently active — keep the first one found
+      // Currently active — keep the earliest-starting one (guards against stale unprocessed reservations)
       if (!active[chargerId]) {
         active[chargerId] = reservation;
+      } else {
+        const existingStart = toDate(active[chargerId].startTime);
+        if (existingStart && startTime.getTime() < existingStart.getTime()) {
+          active[chargerId] = reservation;
+        }
       }
     } else if (startTime.getTime() > now.getTime()) {
       // Future — keep the soonest

@@ -25,7 +25,11 @@ interface SlotPickerProps {
 function formatTime(iso: string): string {
   const d = new Date(iso);
   if (isNaN(d.getTime())) return '';
-  return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  return d.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZone: 'America/Los_Angeles',
+  });
 }
 
 function formatDuration(startIso: string, endIso: string): string {
@@ -46,10 +50,11 @@ interface SlotGroup {
 
 function groupSlots(slots: AvailableSlot[], serverTime: string): SlotGroup[] {
   const now = new Date(serverTime);
-  const todayStr = now.toLocaleDateString([], {
+  const todayStr = now.toLocaleDateString('en-US', {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
+    timeZone: 'America/Los_Angeles',
   });
 
   const buckets: {
@@ -61,10 +66,11 @@ function groupSlots(slots: AvailableSlot[], serverTime: string): SlotGroup[] {
 
   for (const slot of slots) {
     const start = new Date(slot.startTime);
-    const slotDay = start.toLocaleDateString([], {
+    const slotDay = start.toLocaleDateString('en-US', {
       year: 'numeric',
       month: '2-digit',
       day: '2-digit',
+      timeZone: 'America/Los_Angeles',
     });
 
     if (slotDay !== todayStr) {
@@ -77,9 +83,18 @@ function groupSlots(slots: AvailableSlot[], serverTime: string): SlotGroup[] {
     const diffMinutes = Math.round(
       (start.getTime() - now.getTime()) / 60000,
     );
+    const pacificHour =
+      parseInt(
+        new Intl.DateTimeFormat('en-US', {
+          timeZone: 'America/Los_Angeles',
+          hour: 'numeric',
+          hour12: false,
+        }).format(start),
+        10,
+      ) % 24;
     if (diffMinutes <= 120) {
       buckets.next.push(slot);
-    } else if (start.getHours() < 17) {
+    } else if (pacificHour < 17) {
       buckets.later.push(slot);
     } else {
       buckets.tonight.push(slot);

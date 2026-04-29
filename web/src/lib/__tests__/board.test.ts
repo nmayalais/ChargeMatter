@@ -157,6 +157,86 @@ describe('groupReservationsByCharger', () => {
     expect(result.active).toEqual({});
     expect(result.next).toEqual({});
   });
+
+  // --- Regression: Bug #2 — active selection is deterministic regardless of array order ---
+
+  it('picks the current-slot reservation regardless of array order (regression: wrong person shown)', () => {
+    // 10:00 AM PDT = 17:00 UTC — midway through slot A (9:00–10:30 AM PDT)
+    const now = new Date('2026-04-29T17:00:00Z');
+    const slotA = makeReservation({
+      id: 'R-current',
+      chargerId: 'C1',
+      userId: 'person-a@test.com',
+      startTime: new Date('2026-04-29T16:00:00Z'), // 9:00 AM PDT
+      endTime: new Date('2026-04-29T17:30:00Z'),   // 10:30 AM PDT
+    });
+    const slotB = makeReservation({
+      id: 'R-next',
+      chargerId: 'C1',
+      userId: 'person-b@test.com',
+      startTime: new Date('2026-04-29T17:30:00Z'), // 10:30 AM PDT
+      endTime: new Date('2026-04-29T19:00:00Z'),   // 12:00 PM PDT
+    });
+
+    // Array order: next before current — must still pick current
+    const result1 = groupReservationsByCharger([slotB, slotA], now);
+    expect(result1.active['C1']!.userId).toBe('person-a@test.com');
+    expect(result1.next['C1']!.userId).toBe('person-b@test.com');
+
+    // Array order: current before next — same result
+    const result2 = groupReservationsByCharger([slotA, slotB], now);
+    expect(result2.active['C1']!.userId).toBe('person-a@test.com');
+    expect(result2.next['C1']!.userId).toBe('person-b@test.com');
+  });
+
+  it('when two reservations overlap in active window, picks the earlier-starting one', () => {
+    // Simulates a cron failure leaving the previous slot unprocessed (still status=active past endTime)
+    // now = 9:30 AM PDT = 16:30 UTC
+    const now = new Date('2026-04-29T16:30:00Z');
+    const stale = makeReservation({
+      id: 'R-stale',
+      chargerId: 'C1',
+      userId: 'stale-person@test.com',
+      startTime: new Date('2026-04-29T15:00:00Z'), // 8:00 AM PDT — older slot, cron missed
+      endTime: new Date('2026-04-29T17:00:00Z'),   // 10:00 AM PDT (past nominal end but still active)
+    });
+    const current = makeReservation({
+      id: 'R-current',
+      chargerId: 'C1',
+      userId: 'current-person@test.com',
+      startTime: new Date('2026-04-29T16:00:00Z'), // 9:00 AM PDT — the real current slot
+      endTime: new Date('2026-04-29T17:30:00Z'),   // 10:30 AM PDT
+    });
+
+    // Both satisfy now >= startTime && now < endTime — earliest start (stale) should win
+    const result1 = groupReservationsByCharger([current, stale], now);
+    expect(result1.active['C1']!.userId).toBe('stale-person@test.com');
+
+    const result2 = groupReservationsByCharger([stale, current], now);
+    expect(result2.active['C1']!.userId).toBe('stale-person@test.com');
+  });
+
+  it('does not classify the previous slot as active at the exact slot boundary', () => {
+    // now === slot1.endTime === slot2.startTime: slot1 must NOT be active, slot2 MUST be active
+    const boundary = new Date('2026-04-29T17:30:00Z'); // 10:30 AM PDT
+    const slot1 = makeReservation({
+      id: 'R1',
+      chargerId: 'C1',
+      userId: 'person-a@test.com',
+      startTime: new Date('2026-04-29T16:00:00Z'), // 9:00 AM PDT
+      endTime: boundary,                            // ends exactly at boundary
+    });
+    const slot2 = makeReservation({
+      id: 'R2',
+      chargerId: 'C1',
+      userId: 'person-b@test.com',
+      startTime: boundary,                          // starts exactly at boundary
+      endTime: new Date('2026-04-29T19:00:00Z'),   // 12:00 PM PDT
+    });
+
+    const result = groupReservationsByCharger([slot1, slot2], boundary);
+    expect(result.active['C1']!.userId).toBe('person-b@test.com');
+  });
 });
 
 // ---------------------------------------------------------------------------

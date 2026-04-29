@@ -1,6 +1,6 @@
 import { db } from '@/lib/db';
 import { chargers, sessions, reservations, config, userPreferences } from '@/lib/db/schema';
-import { eq, not, inArray } from 'drizzle-orm';
+import { eq, not, inArray, asc } from 'drizzle-orm';
 import type { Charger, Session, Reservation } from '@/types';
 
 /**
@@ -31,7 +31,8 @@ export async function getActiveReservations(): Promise<Reservation[]> {
   return db
     .select()
     .from(reservations)
-    .where(not(inArray(reservations.status, ['canceled', 'no_show', 'complete'])));
+    .where(not(inArray(reservations.status, ['canceled', 'no_show', 'complete'])))
+    .orderBy(asc(reservations.startTime));
 }
 
 /**
@@ -39,7 +40,7 @@ export async function getActiveReservations(): Promise<Reservation[]> {
  * Needed for net-new/returning user checks and board walkup logic.
  */
 export async function getAllReservations(): Promise<Reservation[]> {
-  return db.select().from(reservations);
+  return db.select().from(reservations).orderBy(asc(reservations.startTime));
 }
 
 /**

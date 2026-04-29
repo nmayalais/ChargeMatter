@@ -128,6 +128,28 @@ describe('startOfDay', () => {
     // Midnight PDT = 07:00 UTC
     expect(sod.toISOString()).toBe('2026-06-15T07:00:00.000Z');
   });
+
+  // --- Regression: DST spring-forward edge case ---
+  // On March 8, 2026 (spring-forward) clocks jump 2:00 AM PST → 3:00 AM PDT.
+  // Pacific midnight starts in PST (08:00 UTC). The previous implementation used
+  // noon UTC to infer the offset — noon is already in PDT, so it returned 07:00 UTC
+  // (11 PM PST the prior night). The fixed version tries PST offset first.
+  it('returns PST midnight (08:00 UTC) on the spring-forward day, not PDT midnight', () => {
+    const afternoonSpringForward = new Date('2026-03-08T20:00:00Z'); // 1:00 PM PDT
+    expect(startOfDay(afternoonSpringForward).toISOString()).toBe('2026-03-08T08:00:00.000Z');
+  });
+
+  it('returns PDT midnight (07:00 UTC) on a normal PDT day (April)', () => {
+    const afternoonPDT = new Date('2026-04-29T20:00:00Z'); // 1:00 PM PDT
+    expect(startOfDay(afternoonPDT).toISOString()).toBe('2026-04-29T07:00:00.000Z');
+  });
+
+  it('returns PDT midnight (07:00 UTC) on the fall-back day — midnight starts in PDT', () => {
+    // November 1, 2026: clocks fall back at 2:00 AM PDT → 1:00 AM PST.
+    // Midnight still starts in PDT → midnight PDT = 07:00 UTC.
+    const afternoonFallBack = new Date('2026-11-01T21:00:00Z'); // 1:00 PM PST (after fall-back)
+    expect(startOfDay(afternoonFallBack).toISOString()).toBe('2026-11-01T07:00:00.000Z');
+  });
 });
 
 describe('dayKey', () => {

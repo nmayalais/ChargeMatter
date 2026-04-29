@@ -5,7 +5,7 @@ import { getChargers, getAllSessions, getAllReservations, getOnboardingComplete 
 import { getActiveSuspensionForUser } from '@/lib/auth-helpers';
 import { buildBoard, isNetNewUser, isReturningUser } from '@/lib/board';
 import { getUpcomingReservationsForUser } from '@/lib/user-reservations';
-import { serializeSuspension } from '@/lib/utils';
+import { serializeSuspension, APP_TIMEZONE } from '@/lib/utils';
 import type { Auth, BoardData } from '@/types';
 
 /**
@@ -69,7 +69,7 @@ export async function getBoardData(auth: Auth): Promise<BoardData> {
     chargers: board.chargers,
     reservations: userReservations,
     serverTime: board.serverTime,
-    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    timezone: APP_TIMEZONE,
     config: board.config,
     onboardingComplete,
   };
