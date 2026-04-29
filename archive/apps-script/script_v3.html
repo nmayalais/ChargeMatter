@@ -21,7 +21,7 @@
     slotsAllLoaded: false,
     _noticeDismissTimer: null,
     hiddenAt: null,
-    timezone: null
+    timezone: 'America/Los_Angeles'
   };
 
   const confirmState = {
@@ -458,9 +458,7 @@
     state.reservations = data.reservations || [];
     state.serverTime = new Date(data.serverTime);
     state.lastFetch = Date.now();
-    if (data.timezone) {
-      state.timezone = data.timezone;
-    }
+    state.timezone = data.timezone || 'America/Los_Angeles';
     const board = document.getElementById('board');
 
     // Capture previous statuses for flash animation (only meaningful after first render)

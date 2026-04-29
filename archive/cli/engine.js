@@ -2397,7 +2397,15 @@ function createEngine(options) {
       }
       var chargerId = String(reservation.charger_id || '');
       if (now.getTime() >= startTime.getTime() && now.getTime() < endTime.getTime()) {
-        active[chargerId] = active[chargerId] || reservation;
+        // Keep the earliest-starting active reservation — guards against stale unprocessed slots
+        if (!active[chargerId]) {
+          active[chargerId] = reservation;
+        } else {
+          var existingActive = toDate_(active[chargerId].start_time);
+          if (existingActive && startTime.getTime() < existingActive.getTime()) {
+            active[chargerId] = reservation;
+          }
+        }
       } else if (startTime.getTime() > now.getTime()) {
         if (!next[chargerId]) {
           next[chargerId] = reservation;
