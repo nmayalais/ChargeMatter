@@ -60,6 +60,7 @@ var SESSIONS_HEADERS = [
   'ended_at',
   'released_early'
 ];
+var SESSIONS_ARCHIVE_HEADERS = SESSIONS_HEADERS.concat(['archived_at']);
 
 var RESERVATIONS_HEADERS = [
   'reservation_id',
@@ -79,6 +80,7 @@ var RESERVATIONS_HEADERS = [
   'canceled_at',
   'released_early'
 ];
+var RESERVATIONS_ARCHIVE_HEADERS = RESERVATIONS_HEADERS.concat(['archived_at']);
 
 var STRIKES_HEADERS = [
   'strike_id',
@@ -156,9 +158,10 @@ function buildBoardResponse_(opts) {
   var sessionsData = opts.sessionsData || getSheetData_(SHEETS.sessions, SESSIONS_HEADERS);
   var reservationsData = opts.reservationsData || getSheetData_(SHEETS.reservations, RESERVATIONS_HEADERS);
   var suspensionsData = opts.suspensionsData || getSheetData_(SHEETS.suspensions, SUSPENSIONS_HEADERS);
-  var board = buildBoard_(now, reservationsData, sessionsData, chargersData);
+  var reservationIndex = buildReservationIndex_(reservationsData.rows, now);
+  var board = buildBoard_(now, reservationsData, sessionsData, chargersData, reservationIndex);
   var userReservations = getUpcomingReservationsForUser_(reservationsData.rows, auth.email, now);
-  var suspension = getActiveSuspensionForUser_(auth.email, suspensionsData);
+  var suspension = getActiveSuspensionForUser_(auth.email, suspensionsData, false);
   if (suspension) {
     auth.suspension = serializeSuspension_(suspension);
   }
@@ -214,6 +217,7 @@ function startSession(chargerId) {
     }
     var now = new Date();
     var config = getConfig_();
+    var reservationIndex = buildReservationIndex_(reservationsData.rows, now);
     var activeSession = findActiveSessionForUser_(sessionsData.rows, auth.email);
     if (activeSession) {
       var activeCharger = findById_(chargersData.rows, 'charger_id', activeSession.charger_id);
@@ -236,7 +240,7 @@ function startSession(chargerId) {
     if (!slot) {
       throw new Error('Charging is only available during scheduled blocks.');
     }
-    var slotReservation = findReservationForSlot_(reservationsData.rows, chargerId, slot.startTime);
+    var slotReservation = findReservationForSlot_(reservationIndex, chargerId, slot.startTime);
     if (
       slotReservation &&
       (isReservationCanceled_(slotReservation) ||
@@ -291,9 +295,11 @@ function startSession(chargerId) {
       if (existing && !isComplete_(existing)) {
         throw new Error('Charger is already in use.');
       }
-      updateRow_(chargersData.sheet, chargersData.headerMap, charger._row, {
+      var staleChargerUpdates = {
         active_session_id: ''
-      });
+      };
+      updateRow_(chargersData.sheet, chargersData.headerMap, charger._row, staleChargerUpdates);
+      applyUpdatesToRow_(charger, staleChargerUpdates);
     }
     var endTime = slot.endTime;
     var sessionId = Utilities.getUuid();
@@ -316,12 +322,12 @@ function startSession(chargerId) {
       '',
       ''
     ];
-    sessionsData.sheet.appendRow(sessionRow);
-    updateRow_(chargersData.sheet, chargersData.headerMap, charger._row, {
+    appendRowToData_(sessionsData, SESSIONS_HEADERS, sessionRow);
+    var chargerUpdates = {
       active_session_id: sessionId
-    });
-    sessionsData = getSheetData_(SHEETS.sessions, SESSIONS_HEADERS);
-    chargersData = getSheetData_(SHEETS.chargers, CHARGERS_HEADERS);
+    };
+    updateRow_(chargersData.sheet, chargersData.headerMap, charger._row, chargerUpdates);
+    applyUpdatesToRow_(charger, chargerUpdates);
     return buildBoardResponse_({
       auth: auth,
       now: now,
@@ -360,6 +366,7 @@ function createReservation(chargerId, startTimeIso) {
       throw new Error('Charger max minutes is not configured.');
     }
     var endTime = addMinutes_(startTime, maxMinutes);
+    var reservationIndex = buildReservationIndex_(reservationsData.rows, now);
     validateReservation_({
       charger: charger,
       startTime: startTime,
@@ -368,7 +375,8 @@ function createReservation(chargerId, startTimeIso) {
       now: now,
       reservations: reservationsData.rows,
       sessions: sessionsData.rows,
-      excludeReservationId: ''
+      excludeReservationId: '',
+      reservationIndex: reservationIndex
     });
     var reservationId = Utilities.getUuid();
     var row = [
@@ -388,8 +396,7 @@ function createReservation(chargerId, startTimeIso) {
       now,
       ''
     ];
-    reservationsData.sheet.appendRow(row);
-    reservationsData = getSheetData_(SHEETS.reservations, RESERVATIONS_HEADERS);
+    appendRowToData_(reservationsData, RESERVATIONS_HEADERS, row);
     return buildBoardResponse_({
       auth: auth,
       now: now,
@@ -443,6 +450,7 @@ function updateReservation(reservationId, chargerId, startTimeIso) {
       throw new Error('Charger max minutes is not configured.');
     }
     var endTime = addMinutes_(startTime, maxMinutes);
+    var reservationIndex = buildReservationIndex_(reservationsData.rows, now);
     validateReservation_({
       charger: charger,
       startTime: startTime,
@@ -451,9 +459,10 @@ function updateReservation(reservationId, chargerId, startTimeIso) {
       now: now,
       reservations: reservationsData.rows,
       sessions: sessionsData.rows,
-      excludeReservationId: reservationId
+      excludeReservationId: reservationId,
+      reservationIndex: reservationIndex
     });
-    updateRow_(reservationsData.sheet, reservationsData.headerMap, reservation._row, {
+    var reservationUpdates = {
       charger_id: chargerId,
       start_time: startTime,
       end_time: endTime,
@@ -465,8 +474,9 @@ function updateReservation(reservationId, chargerId, startTimeIso) {
       reminder_5_after_sent: '',
       canceled_at: '',
       updated_at: now
-    });
-    reservationsData = getSheetData_(SHEETS.reservations, RESERVATIONS_HEADERS);
+    };
+    updateRow_(reservationsData.sheet, reservationsData.headerMap, reservation._row, reservationUpdates);
+    applyUpdatesToRow_(reservation, reservationUpdates);
     return buildBoardResponse_({
       auth: auth,
       now: now,
@@ -510,12 +520,13 @@ function cancelReservation(reservationId) {
     if (!auth.isAdmin && String(reservation.user_id).toLowerCase() !== auth.email.toLowerCase()) {
       throw new Error('You can only cancel your own reservations.');
     }
-    updateRow_(reservationsData.sheet, reservationsData.headerMap, reservation._row, {
+    var cancelUpdates = {
       status: 'canceled',
       canceled_at: now,
       updated_at: now
-    });
-    reservationsData = getSheetData_(SHEETS.reservations, RESERVATIONS_HEADERS);
+    };
+    updateRow_(reservationsData.sheet, reservationsData.headerMap, reservation._row, cancelUpdates);
+    applyUpdatesToRow_(reservation, cancelUpdates);
     return buildBoardResponse_({
       auth: auth,
       now: now,
@@ -551,7 +562,8 @@ function getAvailabilitySummary(offset) {
   var now = new Date();
   var chargersData = getSheetData_(SHEETS.chargers, CHARGERS_HEADERS);
   var reservationsData = getSheetData_(SHEETS.reservations, RESERVATIONS_HEADERS);
-  var slots = getNextAvailableSlots_(now, chargersData.rows, reservationsData.rows, 1, 10, offset || 0);
+  var reservationIndex = buildReservationIndex_(reservationsData.rows, now);
+  var slots = getNextAvailableSlots_(now, chargersData.rows, reservationsData.rows, 1, 10, offset || 0, reservationIndex);
   return slots.map(function (slot) {
     return {
       chargerId: String(slot.charger_id),
@@ -574,7 +586,8 @@ function getChargerTimeline(chargerId, dateIso) {
   if (!charger) {
     throw new Error('Charger not found.');
   }
-  var timeline = buildTimelineForCharger_(charger, day, reservationsData.rows);
+  var reservationIndex = buildReservationIndex_(reservationsData.rows, day);
+  var timeline = buildTimelineForCharger_(charger, day, reservationsData.rows, reservationIndex);
   return timeline;
 }
 
@@ -588,10 +601,11 @@ function getCalendarAvailability(startDateIso, days) {
   var rangeDays = Math.max(1, Math.min(7, parseInt(days, 10) || 7));
   var chargersData = getSheetData_(SHEETS.chargers, CHARGERS_HEADERS);
   var reservationsData = getSheetData_(SHEETS.reservations, RESERVATIONS_HEADERS);
+  var reservationIndex = buildReservationIndex_(reservationsData.rows, start);
   var calendar = [];
   for (var i = 0; i < rangeDays; i++) {
     var day = addMinutes_(startOfDay_(start), i * 1440);
-    calendar.push(buildCalendarDay_(day, chargersData.rows, reservationsData.rows));
+    calendar.push(buildCalendarDay_(day, chargersData.rows, reservationsData.rows, reservationIndex));
   }
   return calendar;
 }
@@ -636,18 +650,14 @@ function checkInReservation(reservationId) {
       throw new Error('This reservation is too late to check in.');
     }
     // Force-end overdue session on this charger so next reservation holder can check in
-    var forceEndedSession = forceEndOverdueSessionForCheckin_(
+    forceEndOverdueSessionForCheckin_(
       reservation.charger_id,
       chargersData,
       sessionsData,
       now,
-      rawConfig
+      rawConfig,
+      reservationsData
     );
-    if (forceEndedSession) {
-      // Re-read stale in-memory data after force-end updates
-      chargersData = getSheetData_(SHEETS.chargers, CHARGERS_HEADERS);
-      sessionsData = getSheetData_(SHEETS.sessions, SESSIONS_HEADERS);
-    }
     var ownerEmail = String(reservation.user_id || '').toLowerCase();
     var activeSession = findActiveSessionForUser_(sessionsData.rows, ownerEmail);
     if (activeSession) {
@@ -667,15 +677,14 @@ function checkInReservation(reservationId) {
     };
     startSessionForReservation_(reservation, ownerAuth, now, config, chargersData, sessionsData, reservationsData);
     if (!reservation.checked_in_at) {
-      updateRow_(reservationsData.sheet, reservationsData.headerMap, reservation._row, {
+      var checkinUpdates = {
         checked_in_at: now,
         status: 'checked_in',
         updated_at: now
-      });
+      };
+      updateRow_(reservationsData.sheet, reservationsData.headerMap, reservation._row, checkinUpdates);
+      applyUpdatesToRow_(reservation, checkinUpdates);
     }
-    sessionsData = getSheetData_(SHEETS.sessions, SESSIONS_HEADERS);
-    chargersData = getSheetData_(SHEETS.chargers, CHARGERS_HEADERS);
-    reservationsData = getSheetData_(SHEETS.reservations, RESERVATIONS_HEADERS);
     return buildBoardResponse_({
       auth: auth,
       now: now,
@@ -700,10 +709,7 @@ function endSession(sessionId) {
     var chargersData = getSheetData_(SHEETS.chargers, CHARGERS_HEADERS);
     var reservationsData = getSheetData_(SHEETS.reservations, RESERVATIONS_HEADERS);
     var suspensionsData = getSheetData_(SHEETS.suspensions, SUSPENSIONS_HEADERS);
-    endSessionInternal_(sessionId, auth, false, sessionsData, chargersData);
-    sessionsData = getSheetData_(SHEETS.sessions, SESSIONS_HEADERS);
-    chargersData = getSheetData_(SHEETS.chargers, CHARGERS_HEADERS);
-    reservationsData = getSheetData_(SHEETS.reservations, RESERVATIONS_HEADERS);
+    endSessionInternal_(sessionId, auth, false, sessionsData, chargersData, reservationsData);
     return buildBoardResponse_({
       auth: auth,
       now: now,
@@ -732,10 +738,7 @@ function endMyActiveSession() {
     if (!activeSession) {
       throw new Error('Active session not found.');
     }
-    endSessionInternal_(activeSession.session_id, auth, false, sessionsData, chargersData);
-    sessionsData = getSheetData_(SHEETS.sessions, SESSIONS_HEADERS);
-    chargersData = getSheetData_(SHEETS.chargers, CHARGERS_HEADERS);
-    reservationsData = getSheetData_(SHEETS.reservations, RESERVATIONS_HEADERS);
+    endSessionInternal_(activeSession.session_id, auth, false, sessionsData, chargersData, reservationsData);
     return buildBoardResponse_({
       auth: auth,
       now: now,
@@ -796,10 +799,7 @@ function endSessionForReservation(reservationId) {
     if (!overlaps) {
       throw new Error('Session does not match this reservation.');
     }
-    endSessionInternal_(activeSession.session_id, auth, false, sessionsData, chargersData);
-    sessionsData = getSheetData_(SHEETS.sessions, SESSIONS_HEADERS);
-    chargersData = getSheetData_(SHEETS.chargers, CHARGERS_HEADERS);
-    reservationsData = getSheetData_(SHEETS.reservations, RESERVATIONS_HEADERS);
+    endSessionInternal_(activeSession.session_id, auth, false, sessionsData, chargersData, reservationsData);
     return buildBoardResponse_({
       auth: auth,
       now: now,
@@ -836,12 +836,13 @@ function completeCheckedInReservation(reservationId) {
     if (!reservation.checked_in_at) {
       throw new Error('Reservation is not checked in.');
     }
-    updateRow_(reservationsData.sheet, reservationsData.headerMap, reservation._row, {
+    var completeUpdates = {
       status: 'complete',
       end_time: now,
       updated_at: now
-    });
-    reservationsData = getSheetData_(SHEETS.reservations, RESERVATIONS_HEADERS);
+    };
+    updateRow_(reservationsData.sheet, reservationsData.headerMap, reservation._row, completeUpdates);
+    applyUpdatesToRow_(reservation, completeUpdates);
     return buildBoardResponse_({
       auth: auth,
       now: now,
@@ -932,10 +933,7 @@ function forceEnd(chargerId) {
         suspensionsData: suspensionsData
       });
     }
-    endSessionInternal_(charger.active_session_id, auth, true, sessionsData, chargersData);
-    sessionsData = getSheetData_(SHEETS.sessions, SESSIONS_HEADERS);
-    chargersData = getSheetData_(SHEETS.chargers, CHARGERS_HEADERS);
-    reservationsData = getSheetData_(SHEETS.reservations, RESERVATIONS_HEADERS);
+    endSessionInternal_(charger.active_session_id, auth, true, sessionsData, chargersData, reservationsData);
     return buildBoardResponse_({
       auth: auth,
       now: now,
@@ -968,20 +966,22 @@ function resetCharger(chargerId) {
     if (charger.active_session_id) {
       var session = findById_(sessionsData.rows, 'session_id', charger.active_session_id);
       if (session && !isComplete_(session)) {
-        updateRow_(sessionsData.sheet, sessionsData.headerMap, session._row, {
+        var sessionUpdates = {
           status: 'complete',
           active: false,
           overdue: false,
           complete: true,
           ended_at: now
-        });
+        };
+        updateRow_(sessionsData.sheet, sessionsData.headerMap, session._row, sessionUpdates);
+        applyUpdatesToRow_(session, sessionUpdates);
       }
     }
-    updateRow_(chargersData.sheet, chargersData.headerMap, charger._row, {
+    var resetUpdates = {
       active_session_id: ''
-    });
-    sessionsData = getSheetData_(SHEETS.sessions, SESSIONS_HEADERS);
-    chargersData = getSheetData_(SHEETS.chargers, CHARGERS_HEADERS);
+    };
+    updateRow_(chargersData.sheet, chargersData.headerMap, charger._row, resetUpdates);
+    applyUpdatesToRow_(charger, resetUpdates);
     return buildBoardResponse_({
       auth: auth,
       now: now,
@@ -1012,18 +1012,22 @@ function resetAllChargersAtMidnight() {
       }
       var session = findById_(sessionsData.rows, 'session_id', charger.active_session_id);
       if (session && !isComplete_(session)) {
-        updateRow_(sessionsData.sheet, sessionsData.headerMap, session._row, {
+        var sessionUpdates = {
           status: 'complete',
           active: false,
           overdue: false,
           complete: true,
           ended_at: now
-        });
+        };
+        updateRow_(sessionsData.sheet, sessionsData.headerMap, session._row, sessionUpdates);
+        applyUpdatesToRow_(session, sessionUpdates);
         completeReservationForSession_(session, now, reservationsData);
       }
-      updateRow_(chargersData.sheet, chargersData.headerMap, charger._row, {
+      var chargerUpdates = {
         active_session_id: ''
-      });
+      };
+      updateRow_(chargersData.sheet, chargersData.headerMap, charger._row, chargerUpdates);
+      applyUpdatesToRow_(charger, chargerUpdates);
     });
   } finally {
     lock.releaseLock();
@@ -1075,6 +1079,7 @@ function sendRemindersCore_() {
     var reminder10Enabled = isTrue_(config.reminder_10_enabled);
     var reminder5Enabled = isTrue_(config.reminder_5_enabled);
     var sessionsData = getSheetData_(SHEETS.sessions, SESSIONS_HEADERS);
+    reconcileSessionState_(now, chargersData, sessionsData, config);
     var hasActiveSessions = sessionsData.rows.some(function (s) {
       return s.session_id && !isComplete_(s);
     });
@@ -1189,6 +1194,7 @@ function sendRemindersCore_() {
         }
         if (Object.keys(updates).length > 0) {
           updateRow_(sessionsData.sheet, sessionsData.headerMap, session._row, updates);
+          applyUpdatesToRow_(session, updates);
         }
       } catch (err) {
         logError_('sendReminders session failed', err, {
@@ -1199,12 +1205,7 @@ function sendRemindersCore_() {
     });
     reservationsData.rows.forEach(function (reservation) {
       try {
-        if (
-          !reservation.reservation_id ||
-          isReservationCanceled_(reservation) ||
-          isReservationNoShow_(reservation) ||
-          isReservationComplete_(reservation)
-        ) {
+        if (!isReservableActive_(reservation)) {
           return;
         }
         if (reservation.checked_in_at) {
@@ -1244,6 +1245,7 @@ function sendRemindersCore_() {
         }
         if (Object.keys(resUpdates).length > 0) {
           updateRow_(reservationsData.sheet, reservationsData.headerMap, reservation._row, resUpdates);
+          applyUpdatesToRow_(reservation, resUpdates);
         }
       } catch (err) {
         logError_('sendReminders reservation failed', err, {
@@ -1284,7 +1286,175 @@ function installReminderTrigger_(minutes) {
   ScriptApp.newTrigger('sendReminders').timeBased().everyMinutes(interval).create();
 }
 
-function endSessionInternal_(sessionId, auth, adminOverride, sessionsData, chargersData) {
+function repairOperationalState() {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    initSheets_();
+    var auth = requireAuthorizedUser_();
+    assertAdmin_(auth);
+    var now = new Date();
+    var config = getConfig_();
+    var chargersData = getSheetData_(SHEETS.chargers, CHARGERS_HEADERS);
+    var sessionsData = getSheetData_(SHEETS.sessions, SESSIONS_HEADERS);
+    var repaired = reconcileSessionState_(now, chargersData, sessionsData, config);
+    return {
+      repairedChargers: repaired.repairedChargers,
+      updatedSessions: repaired.updatedSessions
+    };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function archiveOldOperationalRows(days, execute) {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    initSheets_();
+    var auth = requireAuthorizedUser_();
+    assertAdmin_(auth);
+    var retentionDays = parseInt(days, 10);
+    if (isNaN(retentionDays) || retentionDays < 1) {
+      retentionDays = 90;
+    }
+    var shouldExecute = execute === true || execute === 'true' || execute === 'TRUE';
+    var now = new Date();
+    var cutoff = new Date(now.getTime() - retentionDays * 24 * 60 * 60 * 1000);
+    var sessionsData = getSheetData_(SHEETS.sessions, SESSIONS_HEADERS);
+    var reservationsData = getSheetData_(SHEETS.reservations, RESERVATIONS_HEADERS);
+    var sessionRows = collectArchivableRows_(sessionsData.rows, SESSIONS_HEADERS, cutoff, function (row) {
+      if (!row.session_id || !isComplete_(row)) {
+        return false;
+      }
+      var endedAt = toDate_(row.ended_at) || toDate_(row.end_time);
+      return endedAt && endedAt.getTime() < cutoff.getTime();
+    });
+    var reservationRows = collectArchivableRows_(reservationsData.rows, RESERVATIONS_HEADERS, cutoff, function (row) {
+      if (!row.reservation_id) {
+        return false;
+      }
+      if (!isReservationCanceled_(row) && !isReservationNoShow_(row) && !isReservationComplete_(row)) {
+        return false;
+      }
+      var completedAt = toDate_(row.updated_at) || toDate_(row.canceled_at) || toDate_(row.no_show_at) || toDate_(row.end_time);
+      return completedAt && completedAt.getTime() < cutoff.getTime();
+    });
+    var result = {
+      dryRun: !shouldExecute,
+      retentionDays: retentionDays,
+      cutoff: toIso_(cutoff),
+      sessionsToArchive: sessionRows.length,
+      reservationsToArchive: reservationRows.length
+    };
+    if (!shouldExecute) {
+      return result;
+    }
+    archiveRows_(SHEETS.sessions + '_archive', SESSIONS_ARCHIVE_HEADERS, sessionRows, now);
+    archiveRows_(SHEETS.reservations + '_archive', RESERVATIONS_ARCHIVE_HEADERS, reservationRows, now);
+    deleteRowsBottomUp_(sessionsData.sheet, sessionRows);
+    deleteRowsBottomUp_(reservationsData.sheet, reservationRows);
+    result.archivedAt = toIso_(now);
+    return result;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function collectArchivableRows_(rows, headers, cutoff, predicate) {
+  return (rows || [])
+    .filter(function (row) {
+      return predicate(row, cutoff);
+    })
+    .map(function (row) {
+      return {
+        rowIndex: row._row,
+        values: headers.map(function (header) {
+          return row[header];
+        })
+      };
+    });
+}
+
+function archiveRows_(sheetName, archiveHeaders, rows, archivedAt) {
+  if (!rows.length) {
+    return;
+  }
+  var sheet = getSheet_(sheetName);
+  ensureHeaders_(sheet, archiveHeaders);
+  var archiveValues = rows.map(function (row) {
+    return row.values.concat([archivedAt]);
+  });
+  sheet.getRange(sheet.getLastRow() + 1, 1, archiveValues.length, archiveHeaders.length).setValues(archiveValues);
+}
+
+function deleteRowsBottomUp_(sheet, rows) {
+  rows
+    .map(function (row) {
+      return row.rowIndex;
+    })
+    .sort(function (a, b) {
+      return b - a;
+    })
+    .forEach(function (rowIndex) {
+      sheet.deleteRow(rowIndex);
+    });
+}
+
+function reconcileSessionState_(now, chargersData, sessionsData, config) {
+  var repairedChargers = 0;
+  var updatedSessions = 0;
+  var sessionMoveGraceMinutes = parseInt(config.session_move_grace_minutes, 10);
+  sessionMoveGraceMinutes = isNaN(sessionMoveGraceMinutes)
+    ? APP_DEFAULTS.sessionMoveGraceMinutes
+    : sessionMoveGraceMinutes;
+  var sessionsById = {};
+  sessionsData.rows.forEach(function (session) {
+    if (session.session_id) {
+      sessionsById[String(session.session_id)] = session;
+    }
+  });
+  chargersData.rows.forEach(function (charger) {
+    if (!charger.charger_id || !charger.active_session_id) {
+      return;
+    }
+    var session = sessionsById[String(charger.active_session_id)];
+    if (!session || isComplete_(session)) {
+      var chargerUpdates = { active_session_id: '' };
+      updateRow_(chargersData.sheet, chargersData.headerMap, charger._row, chargerUpdates);
+      applyUpdatesToRow_(charger, chargerUpdates);
+      repairedChargers += 1;
+    }
+  });
+  sessionsData.rows.forEach(function (session) {
+    if (!session.session_id || isComplete_(session)) {
+      return;
+    }
+    var endTime = toDate_(session.end_time);
+    if (!endTime) {
+      return;
+    }
+    var graceCutoff = addMinutes_(endTime, sessionMoveGraceMinutes);
+    var isOverdue = now.getTime() >= graceCutoff.getTime();
+    var desired = isOverdue
+      ? { status: 'overdue', active: true, overdue: true, complete: false }
+      : { status: 'active', active: true, overdue: false, complete: false };
+    var changed = Object.keys(desired).some(function (key) {
+      return String(session[key]) !== String(desired[key]);
+    });
+    if (changed) {
+      updateRow_(sessionsData.sheet, sessionsData.headerMap, session._row, desired);
+      applyUpdatesToRow_(session, desired);
+      updatedSessions += 1;
+    }
+  });
+  return {
+    repairedChargers: repairedChargers,
+    updatedSessions: updatedSessions
+  };
+}
+
+function endSessionInternal_(sessionId, auth, adminOverride, sessionsData, chargersData, reservationsData) {
   var session = findById_(sessionsData.rows, 'session_id', sessionId);
   if (!session) {
     throw new Error('Session not found.');
@@ -1311,11 +1481,14 @@ function endSessionInternal_(sessionId, auth, adminOverride, sessionsData, charg
     sessionUpdates.released_early = true;
   }
   updateRow_(sessionsData.sheet, sessionsData.headerMap, session._row, sessionUpdates);
+  applyUpdatesToRow_(session, sessionUpdates);
   var charger = findById_(chargersData.rows, 'charger_id', session.charger_id);
   if (charger && String(charger.active_session_id) === String(sessionId)) {
-    updateRow_(chargersData.sheet, chargersData.headerMap, charger._row, {
+    var chargerUpdates = {
       active_session_id: ''
-    });
+    };
+    updateRow_(chargersData.sheet, chargersData.headerMap, charger._row, chargerUpdates);
+    applyUpdatesToRow_(charger, chargerUpdates);
   }
   if (sessionEnd && now.getTime() < sessionEnd.getTime()) {
     var chargerDetails = charger || { charger_id: session.charger_id };
@@ -1324,10 +1497,10 @@ function endSessionInternal_(sessionId, auth, adminOverride, sessionsData, charg
       notifyChannel_(earlyText);
     }
   }
-  completeReservationForSession_(session, now, null, isShortSession);
+  completeReservationForSession_(session, now, reservationsData, isShortSession);
 }
 
-function forceEndOverdueSessionForCheckin_(chargerId, chargersData, sessionsData, now, config) {
+function forceEndOverdueSessionForCheckin_(chargerId, chargersData, sessionsData, now, config, reservationsData) {
   if (config.force_end_on_checkin_enabled === false) {
     return null;
   }
@@ -1337,9 +1510,11 @@ function forceEndOverdueSessionForCheckin_(chargerId, chargersData, sessionsData
   }
   var session = findById_(sessionsData.rows, 'session_id', charger.active_session_id);
   if (!session || isComplete_(session)) {
-    updateRow_(chargersData.sheet, chargersData.headerMap, charger._row, {
+    var staleChargerUpdates = {
       active_session_id: ''
-    });
+    };
+    updateRow_(chargersData.sheet, chargersData.headerMap, charger._row, staleChargerUpdates);
+    applyUpdatesToRow_(charger, staleChargerUpdates);
     return null;
   }
   var sessionEnd = toDate_(session.end_time);
@@ -1368,10 +1543,13 @@ function forceEndOverdueSessionForCheckin_(chargerId, chargersData, sessionsData
     sessionUpdates.late_strike_at = now;
   }
   updateRow_(sessionsData.sheet, sessionsData.headerMap, session._row, sessionUpdates);
-  updateRow_(chargersData.sheet, chargersData.headerMap, charger._row, {
+  applyUpdatesToRow_(session, sessionUpdates);
+  var chargerUpdates = {
     active_session_id: ''
-  });
-  completeReservationForSession_(session, now, null);
+  };
+  updateRow_(chargersData.sheet, chargersData.headerMap, charger._row, chargerUpdates);
+  applyUpdatesToRow_(charger, chargerUpdates);
+  completeReservationForSession_(session, now, reservationsData);
   var appName = getAppName_(config);
   var chargerName = charger.name || 'Charger ' + charger.charger_id;
   var userDisplay = formatUserDisplay_(session.user_name, session.user_id);
@@ -1399,12 +1577,7 @@ function completeReservationForSession_(session, now, reservationsData, forceEar
   var userEmail = String(session.user_id || '').toLowerCase();
   var chargerId = String(session.charger_id || '');
   reservationsData.rows.forEach(function (reservation) {
-    if (
-      !reservation.reservation_id ||
-      isReservationCanceled_(reservation) ||
-      isReservationNoShow_(reservation) ||
-      isReservationComplete_(reservation)
-    ) {
+    if (!isReservableActive_(reservation)) {
       return;
     }
     if (!reservation.checked_in_at) {
@@ -1427,18 +1600,21 @@ function completeReservationForSession_(session, now, reservationsData, forceEar
     }
     var halfwayTime = new Date(resStart.getTime() + (resEnd.getTime() - resStart.getTime()) / 2);
     var releasedEarly = forceEarlyRelease || now.getTime() < halfwayTime.getTime();
-    updateRow_(reservationsData.sheet, reservationsData.headerMap, reservation._row, {
+    var reservationUpdates = {
       status: 'complete',
       end_time: now,
       released_early: releasedEarly,
       updated_at: now
-    });
+    };
+    updateRow_(reservationsData.sheet, reservationsData.headerMap, reservation._row, reservationUpdates);
+    applyUpdatesToRow_(reservation, reservationUpdates);
   });
 }
 
-function buildBoard_(now, reservationsData, sessionsData, chargersData) {
+function buildBoard_(now, reservationsData, sessionsData, chargersData, reservationIndex) {
   var config = getConfig_();
   var reservations = reservationsData ? reservationsData.rows : [];
+  reservationIndex = reservationIndex || buildReservationIndex_(reservations, now);
   var reservationConfig = getReservationConfig_(config);
   var sessionMoveGraceMinutes = Number(config.session_move_grace_minutes) || APP_DEFAULTS.sessionMoveGraceMinutes;
   var sessionsById = {};
@@ -1447,7 +1623,7 @@ function buildBoard_(now, reservationsData, sessionsData, chargersData) {
       sessionsById[String(session.session_id)] = session;
     }
   });
-  var reservationsByCharger = groupReservationsByCharger_(reservations, now);
+  var reservationsByCharger = { active: reservationIndex.active, next: reservationIndex.next };
   var chargersView = chargersData.rows
     .filter(function (charger) {
       return charger.charger_id;
@@ -1457,9 +1633,6 @@ function buildBoard_(now, reservationsData, sessionsData, chargersData) {
       if (charger.active_session_id) {
         session = sessionsById[String(charger.active_session_id)];
         if (!session || isComplete_(session)) {
-          updateRow_(chargersData.sheet, chargersData.headerMap, charger._row, {
-            active_session_id: ''
-          });
           session = null;
         }
       }
@@ -1473,7 +1646,7 @@ function buildBoard_(now, reservationsData, sessionsData, chargersData) {
         var graceCutoff = endTime ? addMinutes_(endTime, sessionMoveGraceMinutes) : null;
         var isOverdue = graceCutoff && now.getTime() >= graceCutoff.getTime();
         if (isOverdue && session.status !== 'overdue') {
-          updateRow_(sessionsData.sheet, sessionsData.headerMap, session._row, {
+          session = applyUpdatesToRow_(copyRow_(session), {
             status: 'overdue',
             active: true,
             overdue: true,
@@ -1481,7 +1654,7 @@ function buildBoard_(now, reservationsData, sessionsData, chargersData) {
           });
         }
         if (!isOverdue && session.status !== 'active') {
-          updateRow_(sessionsData.sheet, sessionsData.headerMap, session._row, {
+          session = applyUpdatesToRow_(copyRow_(session), {
             status: 'active',
             active: true,
             overdue: false,
@@ -1496,7 +1669,7 @@ function buildBoard_(now, reservationsData, sessionsData, chargersData) {
       } else {
         var slot = findSlotForTime_(charger, now);
         if (slot) {
-          var slotReservation = findReservationForSlot_(reservations, charger.charger_id, slot.startTime);
+          var slotReservation = findReservationForSlot_(reservationIndex, charger.charger_id, slot.startTime);
           if (
             slotReservation &&
             (isReservationCanceled_(slotReservation) ||
@@ -1535,7 +1708,7 @@ function buildBoard_(now, reservationsData, sessionsData, chargersData) {
         var userEmail = '';
         var reservationId = null;
         // Check for a reservation in this slot
-        var slotReservation = findReservationForSlot_(reservations, charger.charger_id, slotStart);
+        var slotReservation = findReservationForSlot_(reservationIndex, charger.charger_id, slotStart);
         if (slotReservation) {
           var resStatus = String(slotReservation.status || '').toLowerCase();
           if (resStatus === 'checked_in') {
@@ -1683,6 +1856,39 @@ function updateRow_(sheet, headerMap, rowIndex, updates) {
     existing[headerMap[key] - minCol] = updates[key];
   });
   range.setValues([existing]);
+}
+
+function makeRowObject_(headers, values, rowIndex) {
+  var obj = { _row: rowIndex };
+  headers.forEach(function (header, index) {
+    obj[header] = index < values.length ? values[index] : '';
+  });
+  return obj;
+}
+
+function appendRowToData_(data, headers, values) {
+  data.sheet.appendRow(values);
+  var row = makeRowObject_(headers, values, data.rows.length + 2);
+  data.rows.push(row);
+  return row;
+}
+
+function applyUpdatesToRow_(row, updates) {
+  if (!row || !updates) {
+    return row;
+  }
+  Object.keys(updates).forEach(function (key) {
+    row[key] = updates[key];
+  });
+  return row;
+}
+
+function copyRow_(row) {
+  var copy = {};
+  Object.keys(row || {}).forEach(function (key) {
+    copy[key] = row[key];
+  });
+  return copy;
 }
 
 function getSheet_(name) {
@@ -2086,14 +2292,7 @@ function findUserReservationAtTime_(reservations, userEmail, moment, excludeChar
   var target = moment ? moment.getTime() : 0;
   for (var i = 0; i < reservations.length; i++) {
     var reservation = reservations[i];
-    if (!reservation || !reservation.reservation_id) {
-      continue;
-    }
-    if (
-      isReservationCanceled_(reservation) ||
-      isReservationNoShow_(reservation) ||
-      isReservationComplete_(reservation)
-    ) {
+    if (!isReservableActive_(reservation)) {
       continue;
     }
     if (String(reservation.user_id || '').toLowerCase() !== email) {
@@ -2131,11 +2330,12 @@ function addBusinessDays_(date, days) {
   return result;
 }
 
-function getActiveSuspensionForUser_(email, suspensionsData) {
+function getActiveSuspensionForUser_(email, suspensionsData, repairExpired) {
   var data = suspensionsData || getSheetData_(SHEETS.suspensions, SUSPENSIONS_HEADERS);
   var now = new Date();
   var normalized = String(email || '').toLowerCase();
   var active = null;
+  var shouldRepair = repairExpired !== false;
   data.rows.forEach(function (row) {
     if (!row.user_id || String(row.user_id).toLowerCase() !== normalized) {
       return;
@@ -2143,8 +2343,9 @@ function getActiveSuspensionForUser_(email, suspensionsData) {
     var endAt = toDate_(row.end_at);
     var isActive = isTrue_(row.active);
     if (endAt && now.getTime() > endAt.getTime()) {
-      if (isActive) {
+      if (isActive && shouldRepair) {
         updateRow_(data.sheet, data.headerMap, row._row, { active: false });
+        applyUpdatesToRow_(row, { active: false });
       }
       return;
     }
@@ -2156,7 +2357,7 @@ function getActiveSuspensionForUser_(email, suspensionsData) {
 }
 
 function assertNotSuspended_(auth, suspensionsData) {
-  var suspension = getActiveSuspensionForUser_(auth.email, suspensionsData);
+  var suspension = getActiveSuspensionForUser_(auth.email, suspensionsData, true);
   if (suspension) {
     var endAt = toDate_(suspension.end_at);
     var endDisplay = endAt
@@ -2249,6 +2450,89 @@ function maybeApplySuspension_(userEmail, userName, monthKey, now, strikeCount) 
 
 function isTrue_(value) {
   return value === true || value === 'TRUE' || value === 'true' || value === 1;
+}
+
+function isReservableActive_(reservation) {
+  return Boolean(
+    reservation &&
+      reservation.reservation_id &&
+      !isReservationCanceled_(reservation) &&
+      !isReservationNoShow_(reservation) &&
+      !isReservationComplete_(reservation)
+  );
+}
+
+function reservationSlotKey_(chargerId, slotStart) {
+  var start = toDate_(slotStart);
+  return String(chargerId || '') + '::' + (start ? start.getTime() : '');
+}
+
+function buildReservationIndex_(reservations, now) {
+  var index = {
+    byCharger: {},
+    bySlot: {},
+    active: {},
+    next: {}
+  };
+  var nowMs = now ? now.getTime() : null;
+  (reservations || []).forEach(function (reservation) {
+    if (!isReservableActive_(reservation)) {
+      return;
+    }
+    var startTime = toDate_(reservation.start_time);
+    var endTime = toDate_(reservation.end_time);
+    if (!startTime || !endTime) {
+      return;
+    }
+    var chargerId = String(reservation.charger_id || '');
+    if (!index.byCharger[chargerId]) {
+      index.byCharger[chargerId] = [];
+    }
+    index.byCharger[chargerId].push(reservation);
+    var slotKey = reservationSlotKey_(chargerId, startTime);
+    if (!index.bySlot[slotKey]) {
+      index.bySlot[slotKey] = reservation;
+    }
+    if (nowMs === null) {
+      return;
+    }
+    if (nowMs >= startTime.getTime() && nowMs < endTime.getTime()) {
+      if (!index.active[chargerId]) {
+        index.active[chargerId] = reservation;
+      } else {
+        var activeStart = toDate_(index.active[chargerId].start_time);
+        if (activeStart && startTime.getTime() < activeStart.getTime()) {
+          index.active[chargerId] = reservation;
+        }
+      }
+    } else if (startTime.getTime() > nowMs) {
+      if (!index.next[chargerId]) {
+        index.next[chargerId] = reservation;
+      } else {
+        var nextStart = toDate_(index.next[chargerId].start_time);
+        if (nextStart && startTime.getTime() < nextStart.getTime()) {
+          index.next[chargerId] = reservation;
+        }
+      }
+    }
+  });
+  Object.keys(index.byCharger).forEach(function (chargerId) {
+    index.byCharger[chargerId].sort(function (a, b) {
+      var aStart = toDate_(a.start_time);
+      var bStart = toDate_(b.start_time);
+      return (aStart ? aStart.getTime() : 0) - (bStart ? bStart.getTime() : 0);
+    });
+  });
+  return index;
+}
+
+function getIndexedReservationsForCharger_(reservationsOrIndex, chargerId) {
+  if (reservationsOrIndex && reservationsOrIndex.byCharger) {
+    return reservationsOrIndex.byCharger[String(chargerId || '')] || [];
+  }
+  return (reservationsOrIndex || []).filter(function (reservation) {
+    return String(reservation.charger_id) === String(chargerId);
+  });
 }
 
 function findById_(rows, key, idValue) {
@@ -2361,12 +2645,7 @@ function getUpcomingReservationsForUser_(reservations, email, now) {
   var userEmail = String(email || '').toLowerCase();
   return reservations
     .filter(function (reservation) {
-      if (
-        !reservation.reservation_id ||
-        isReservationCanceled_(reservation) ||
-        isReservationNoShow_(reservation) ||
-        isReservationComplete_(reservation)
-      ) {
+      if (!isReservableActive_(reservation)) {
         return false;
       }
       var endTime = toDate_(reservation.end_time);
@@ -2384,45 +2663,8 @@ function getUpcomingReservationsForUser_(reservations, email, now) {
 }
 
 function groupReservationsByCharger_(reservations, now) {
-  var active = {};
-  var next = {};
-  reservations.forEach(function (reservation) {
-    if (
-      !reservation.reservation_id ||
-      isReservationCanceled_(reservation) ||
-      isReservationNoShow_(reservation) ||
-      isReservationComplete_(reservation)
-    ) {
-      return;
-    }
-    var startTime = toDate_(reservation.start_time);
-    var endTime = toDate_(reservation.end_time);
-    if (!startTime || !endTime) {
-      return;
-    }
-    var chargerId = String(reservation.charger_id || '');
-    if (now.getTime() >= startTime.getTime() && now.getTime() < endTime.getTime()) {
-      // Keep the earliest-starting active reservation — guards against stale unprocessed slots
-      if (!active[chargerId]) {
-        active[chargerId] = reservation;
-      } else {
-        var existingActive = toDate_(active[chargerId].start_time);
-        if (existingActive && startTime.getTime() < existingActive.getTime()) {
-          active[chargerId] = reservation;
-        }
-      }
-    } else if (startTime.getTime() > now.getTime()) {
-      if (!next[chargerId]) {
-        next[chargerId] = reservation;
-      } else {
-        var existing = toDate_(next[chargerId].start_time);
-        if (existing && startTime.getTime() < existing.getTime()) {
-          next[chargerId] = reservation;
-        }
-      }
-    }
-  });
-  return { active: active, next: next };
+  var index = buildReservationIndex_(reservations, now);
+  return { active: index.active, next: index.next };
 }
 
 function isReservationCanceled_(reservation) {
@@ -2444,6 +2686,7 @@ function validateReservation_(params) {
   var now = params.now;
   var auth = params.auth;
   var reservations = params.reservations || [];
+  var reservationIndex = params.reservationIndex || buildReservationIndex_(reservations, now);
   var excludeId = String(params.excludeReservationId || '');
   var userEmail = String(auth.email || '').toLowerCase();
 
@@ -2497,12 +2740,7 @@ function validateReservation_(params) {
   }
 
   var upcoming = reservations.filter(function (reservation) {
-    if (
-      !reservation.reservation_id ||
-      isReservationCanceled_(reservation) ||
-      isReservationNoShow_(reservation) ||
-      isReservationComplete_(reservation)
-    ) {
+    if (!isReservableActive_(reservation)) {
       return false;
     }
     if (String(reservation.reservation_id) === excludeId) {
@@ -2520,19 +2758,8 @@ function validateReservation_(params) {
   }
 
   var gapMs = config.gapMinutes * 60000;
-  reservations.forEach(function (reservation) {
-    if (
-      !reservation.reservation_id ||
-      isReservationCanceled_(reservation) ||
-      isReservationNoShow_(reservation) ||
-      isReservationComplete_(reservation)
-    ) {
-      return;
-    }
-    if (String(reservation.reservation_id) === excludeId) {
-      return;
-    }
-    if (String(reservation.charger_id) !== String(params.charger.charger_id)) {
+  getIndexedReservationsForCharger_(reservationIndex, params.charger.charger_id).forEach(function (reservation) {
+    if (!isReservableActive_(reservation) || String(reservation.reservation_id) === excludeId) {
       return;
     }
     var existingStart = toDate_(reservation.start_time);
@@ -2635,15 +2862,13 @@ function isSlotStart_(charger, startTime) {
 }
 
 function findReservationForSlot_(reservations, chargerId, slotStart) {
+  if (reservations && reservations.bySlot) {
+    return reservations.bySlot[reservationSlotKey_(chargerId, slotStart)] || null;
+  }
   var slotStartMs = slotStart.getTime();
   for (var i = 0; i < reservations.length; i++) {
     var reservation = reservations[i];
-    if (
-      !reservation.reservation_id ||
-      isReservationCanceled_(reservation) ||
-      isReservationNoShow_(reservation) ||
-      isReservationComplete_(reservation)
-    ) {
+    if (!isReservableActive_(reservation)) {
       continue;
     }
     if (String(reservation.charger_id) !== String(chargerId)) {
@@ -2661,12 +2886,7 @@ function findPreviousReservation_(reservations, chargerId, startTime) {
   var startMs = startTime.getTime();
   var previous = null;
   reservations.forEach(function (reservation) {
-    if (
-      !reservation.reservation_id ||
-      isReservationCanceled_(reservation) ||
-      isReservationNoShow_(reservation) ||
-      isReservationComplete_(reservation)
-    ) {
+    if (!isReservableActive_(reservation)) {
       return;
     }
     if (String(reservation.charger_id) !== String(chargerId)) {
@@ -2707,7 +2927,8 @@ function startSessionForReservation_(reservation, auth, now, config, chargersDat
     throw new Error('Check-in is available within ' + config.earlyStartMinutes + ' minutes of start time.');
   }
 
-  var previous = findPreviousReservation_(reservationsData.rows, reservation.charger_id, startTime);
+  var reservationIndex = buildReservationIndex_(reservationsData.rows, now);
+  var previous = findPreviousReservation_(reservationIndex.byCharger[String(reservation.charger_id || '')] || [], reservation.charger_id, startTime);
   if (previous && !previous.checked_in_at) {
     var previousStart = toDate_(previous.start_time);
     if (previousStart) {
@@ -2723,24 +2944,18 @@ function startSessionForReservation_(reservation, auth, now, config, chargersDat
     if (existing && !isComplete_(existing)) {
       throw new Error('Charger is already in use.');
     }
-    updateRow_(chargersData.sheet, chargersData.headerMap, charger._row, {
+    var staleChargerUpdates = {
       active_session_id: ''
-    });
+    };
+    updateRow_(chargersData.sheet, chargersData.headerMap, charger._row, staleChargerUpdates);
+    applyUpdatesToRow_(charger, staleChargerUpdates);
   }
 
-  var hasConflict = reservationsData.rows.some(function (other) {
-    if (
-      !other.reservation_id ||
-      isReservationCanceled_(other) ||
-      isReservationNoShow_(other) ||
-      isReservationComplete_(other)
-    ) {
+  var hasConflict = getIndexedReservationsForCharger_(reservationIndex, reservation.charger_id).some(function (other) {
+    if (!isReservableActive_(other)) {
       return false;
     }
     if (String(other.reservation_id) === String(reservation.reservation_id)) {
-      return false;
-    }
-    if (String(other.charger_id) !== String(reservation.charger_id)) {
       return false;
     }
     var otherStart = toDate_(other.start_time);
@@ -2787,10 +3002,12 @@ function startSessionForReservation_(reservation, auth, now, config, chargersDat
     '',
     ''
   ];
-  sessionsData.sheet.appendRow(sessionRow);
-  updateRow_(chargersData.sheet, chargersData.headerMap, charger._row, {
+  appendRowToData_(sessionsData, SESSIONS_HEADERS, sessionRow);
+  var chargerUpdates = {
     active_session_id: sessionId
-  });
+  };
+  updateRow_(chargersData.sheet, chargersData.headerMap, charger._row, chargerUpdates);
+  applyUpdatesToRow_(charger, chargerUpdates);
 }
 
 function getReservationOpenTime_(now, config) {
@@ -2809,12 +3026,7 @@ function findBlockingReservationForSession_(reservations, chargerId, startTime, 
   var user = String(userEmail || '').toLowerCase();
   for (var i = 0; i < reservations.length; i++) {
     var reservation = reservations[i];
-    if (
-      !reservation.reservation_id ||
-      isReservationCanceled_(reservation) ||
-      isReservationNoShow_(reservation) ||
-      isReservationComplete_(reservation)
-    ) {
+    if (!isReservableActive_(reservation)) {
       continue;
     }
     if (String(reservation.charger_id) !== String(chargerId)) {
@@ -2849,8 +3061,9 @@ function getNextAvailableSlot_(now, chargers, reservations) {
   return slots.length ? slots[0] : null;
 }
 
-function getNextAvailableSlots_(now, chargers, reservations, rangeDays, limit, offset) {
+function getNextAvailableSlots_(now, chargers, reservations, rangeDays, limit, offset, reservationIndex) {
   var config = getReservationConfig_(getConfig_());
+  reservationIndex = reservationIndex || buildReservationIndex_(reservations, now);
   var openTime = getReservationOpenTime_(now, config);
   if (now.getTime() < openTime.getTime()) {
     return [];
@@ -2868,7 +3081,7 @@ function getNextAvailableSlots_(now, chargers, reservations, rangeDays, limit, o
         return;
       }
       var conflict = hasReservationConflict_(
-        reservations,
+        reservationIndex,
         charger.charger_id,
         slot.start_time,
         slot.end_time,
@@ -2891,8 +3104,9 @@ function getNextAvailableSlots_(now, chargers, reservations, rangeDays, limit, o
   return slots.slice(start, start + pageSize);
 }
 
-function buildTimelineForCharger_(charger, day, reservations) {
+function buildTimelineForCharger_(charger, day, reservations, reservationIndex) {
   var config = getReservationConfig_(getConfig_());
+  reservationIndex = reservationIndex || buildReservationIndex_(reservations, day);
   var start = startOfDay_(day);
   var blocks = [];
   var maxMinutes = Number(charger.max_minutes) || 0;
@@ -2907,7 +3121,7 @@ function buildTimelineForCharger_(charger, day, reservations) {
   var slots = buildSlotsForDay_(charger, start);
   slots.forEach(function (slot) {
     var conflict = hasReservationConflict_(
-      reservations,
+      reservationIndex,
       charger.charger_id,
       slot.start_time,
       slot.end_time,
@@ -2927,8 +3141,9 @@ function buildTimelineForCharger_(charger, day, reservations) {
   };
 }
 
-function buildCalendarDay_(day, chargers, reservations) {
+function buildCalendarDay_(day, chargers, reservations, reservationIndex) {
   var config = getReservationConfig_(getConfig_());
+  reservationIndex = reservationIndex || buildReservationIndex_(reservations, day);
   var start = startOfDay_(day);
   var totalSlots = 0;
   var availableSlots = 0;
@@ -2941,7 +3156,7 @@ function buildCalendarDay_(day, chargers, reservations) {
     slots.forEach(function (slot) {
       totalSlots += 1;
       var conflict = hasReservationConflict_(
-        reservations,
+        reservationIndex,
         charger.charger_id,
         slot.start_time,
         slot.end_time,
@@ -2965,17 +3180,10 @@ function startOfDay_(date) {
 
 function hasReservationConflict_(reservations, chargerId, startTime, endTime, gapMinutes) {
   var gapMs = Math.max(0, gapMinutes) * 60000;
-  for (var i = 0; i < reservations.length; i++) {
-    var reservation = reservations[i];
-    if (
-      !reservation.reservation_id ||
-      isReservationCanceled_(reservation) ||
-      isReservationNoShow_(reservation) ||
-      isReservationComplete_(reservation)
-    ) {
-      continue;
-    }
-    if (String(reservation.charger_id) !== String(chargerId)) {
+  var candidates = getIndexedReservationsForCharger_(reservations, chargerId);
+  for (var i = 0; i < candidates.length; i++) {
+    var reservation = candidates[i];
+    if (!isReservableActive_(reservation)) {
       continue;
     }
     var existingStart = toDate_(reservation.start_time);
@@ -3038,6 +3246,7 @@ function markNoShowReservations_(now, reservationsData, chargersData, rawConfig)
         updates.no_show_strike_at = now;
       }
       updateRow_(reservationsData.sheet, reservationsData.headerMap, reservation._row, updates);
+      applyUpdatesToRow_(reservation, updates);
       var charger = chargersById[String(reservation.charger_id)] || {};
       var chargerName = charger.name || 'Charger ' + reservation.charger_id;
       var releasedUser = formatUserDisplay_(reservation.user_name, reservation.user_id);
