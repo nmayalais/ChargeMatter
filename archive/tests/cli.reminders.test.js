@@ -7,11 +7,21 @@ jest.mock('../cli/runtime', () => {
     createRuntime: (options) => {
       const rt = actual.createRuntime(options);
       rt.Utilities.sleep = jest.fn();
-      rt.UrlFetchApp.fetch = jest.fn(() => ({
+      rt.UrlFetchApp.fetch = jest.fn((url, options = {}) => ({
         getContentText() {
-          return JSON.stringify({ ok: true });
+          if (String(url).includes('users.lookupByEmail')) {
+            return JSON.stringify({ ok: true, user: { id: 'U123' } });
+          }
+          if (String(url).includes('conversations.open')) {
+            return JSON.stringify({ ok: true, channel: { id: 'D123' } });
+          }
+          if (String(url).includes('chat.postMessage')) {
+            return JSON.stringify({ ok: true, url, options });
+          }
+          return JSON.stringify({ ok: true, url, options });
         }
       }));
+      rt.MailApp.sendEmail = jest.fn(() => true);
       return rt;
     }
   };
@@ -86,6 +96,73 @@ function createTestEngine(store) {
     authName: 'Admin',
     isAdmin: true
   });
+}
+
+function addSlackBotConfig(store) {
+  store.sheets.config.rows.push(['slack_bot_token', 'xoxb-test']);
+  store.sheets.config.rows.push(['slack_webhook_channel', 'C123']);
+  store.sheets.config.rows.push(['slack_webhook_url', 'https://hooks.example.com/test']);
+  store.sheets.config.rows.push(['reminder_10_enabled', 'TRUE']);
+  store.sheets.config.rows.push(['reminder_5_enabled', 'TRUE']);
+}
+
+function chatPostChannels(engine) {
+  return engine.runtime.UrlFetchApp.fetch.mock.calls
+    .filter(([url]) => String(url).includes('chat.postMessage'))
+    .map(([, options]) => JSON.parse(options.payload).channel);
+}
+
+function pushSession(store, overrides = {}) {
+  const now = new Date();
+  store.sheets.chargers.rows.push([
+    overrides.chargerId || '1',
+    overrides.chargerName || 'Charger 1',
+    60,
+    '06:00,07:00,08:00,09:00',
+    overrides.sessionId || 'session-1'
+  ]);
+  store.sheets.sessions.rows.push([
+    overrides.sessionId || 'session-1',
+    overrides.chargerId || '1',
+    overrides.userEmail || 'driver@example.com',
+    overrides.userName || 'Driver',
+    overrides.start || new Date(now.getTime() - 3000000),
+    overrides.end || new Date(now.getTime() + 600000),
+    overrides.status || 'active',
+    overrides.active !== undefined ? overrides.active : true,
+    overrides.overdue !== undefined ? overrides.overdue : false,
+    false,
+    overrides.reminder10 || false,
+    overrides.reminder5 || false,
+    overrides.reminder0 || false,
+    overrides.overdueLastSentAt || '',
+    overrides.graceNotifiedAt || '',
+    overrides.lateStrikeAt || '',
+    '',
+    ''
+  ]);
+}
+
+function pushReservation(store, overrides = {}) {
+  const now = new Date();
+  store.sheets.reservations.rows.push([
+    overrides.reservationId || 'res-1',
+    overrides.chargerId || '1',
+    overrides.userEmail || 'driver@example.com',
+    overrides.userName || 'Driver',
+    overrides.start || new Date(now.getTime() + 300000),
+    overrides.end || new Date(now.getTime() + 3900000),
+    overrides.status || 'active',
+    overrides.checkedInAt || '',
+    '',
+    '',
+    overrides.reminderBefore || '',
+    overrides.reminderAfter || '',
+    now,
+    now,
+    '',
+    ''
+  ]);
 }
 
 describe('sendReminders transient error handling', () => {
@@ -206,6 +283,214 @@ describe('Notification cutoff', () => {
       engine.sendReminders();
       const fetchCalls = engine.runtime.UrlFetchApp.fetch.mock.calls;
       expect(fetchCalls.length).toBe(0);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+});
+
+describe('DM-first notification routing', () => {
+  test('routine session reminder sends a Slack DM, not a public channel post', () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date(2026, 2, 19, 8, 50, 0));
+    try {
+      const store = buildBaseStore();
+      addSlackBotConfig(store);
+      pushSession(store, {
+        start: new Date(2026, 2, 19, 8, 0, 0),
+        end: new Date(2026, 2, 19, 9, 0, 0)
+      });
+      const engine = createTestEngine(store);
+
+      engine.sendReminders();
+
+      expect(chatPostChannels(engine)).toContain('D123');
+      expect(chatPostChannels(engine)).not.toContain('C123');
+      expect(store.sheets.sessions.rows[0][10]).toBe(true);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test('reservation upcoming reminder sends a Slack DM, not a public channel post', () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date(2026, 2, 19, 8, 55, 0));
+    try {
+      const store = buildBaseStore();
+      addSlackBotConfig(store);
+      store.sheets.chargers.rows.push(['1', 'Charger 1', 60, '09:00,10:00', '']);
+      pushReservation(store, {
+        start: new Date(2026, 2, 19, 9, 0, 0),
+        end: new Date(2026, 2, 19, 10, 0, 0)
+      });
+      const engine = createTestEngine(store);
+
+      engine.sendReminders();
+
+      expect(chatPostChannels(engine)).toContain('D123');
+      expect(chatPostChannels(engine)).not.toContain('C123');
+      expect(store.sheets.reservations.rows[0][10]).toBe(true);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test('reservation late reminder inside grace sends a Slack DM, not a public channel post', () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date(2026, 2, 19, 9, 5, 0));
+    try {
+      const store = buildBaseStore();
+      addSlackBotConfig(store);
+      store.sheets.chargers.rows.push(['1', 'Charger 1', 60, '09:00,10:00', '']);
+      pushReservation(store, {
+        start: new Date(2026, 2, 19, 9, 0, 0),
+        end: new Date(2026, 2, 19, 10, 0, 0)
+      });
+      const engine = createTestEngine(store);
+
+      engine.sendReminders();
+
+      expect(chatPostChannels(engine)).toContain('D123');
+      expect(chatPostChannels(engine)).not.toContain('C123');
+      expect(store.sheets.reservations.rows[0][11]).toBe(true);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test('grace escalation still posts to the public channel', () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date(2026, 2, 19, 9, 15, 0));
+    try {
+      const store = buildBaseStore();
+      addSlackBotConfig(store);
+      const now = new Date();
+      pushSession(store, {
+        start: new Date(2026, 2, 19, 8, 0, 0),
+        end: new Date(2026, 2, 19, 9, 0, 0),
+        reminder0: true,
+        overdueLastSentAt: now
+      });
+      const engine = createTestEngine(store);
+
+      engine.sendReminders();
+
+      expect(chatPostChannels(engine)).toContain('C123');
+      expect(store.sheets.sessions.rows[0][14]).toEqual(now);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test('no-show release still posts to the public channel', () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date(2026, 2, 19, 9, 40, 0));
+    try {
+      const store = buildBaseStore();
+      addSlackBotConfig(store);
+      store.sheets.chargers.rows.push(['1', 'Charger 1', 60, '09:00,10:00', '']);
+      pushReservation(store, {
+        start: new Date(2026, 2, 19, 9, 0, 0),
+        end: new Date(2026, 2, 19, 10, 0, 0)
+      });
+      const engine = createTestEngine(store);
+
+      engine.sendReminders();
+
+      expect(chatPostChannels(engine)).toContain('C123');
+      expect(store.sheets.reservations.rows[0][6]).toBe('no_show');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test('channel escalation config suppresses public escalation without sending it as a DM', () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date(2026, 2, 19, 9, 15, 0));
+    try {
+      const store = buildBaseStore();
+      addSlackBotConfig(store);
+      store.sheets.config.rows.push(['channel_escalations_enabled', 'FALSE']);
+      pushSession(store, {
+        start: new Date(2026, 2, 19, 8, 0, 0),
+        end: new Date(2026, 2, 19, 9, 0, 0),
+        reminder0: true,
+        overdueLastSentAt: new Date()
+      });
+      const engine = createTestEngine(store);
+
+      engine.sendReminders();
+
+      expect(chatPostChannels(engine)).not.toContain('C123');
+      expect(chatPostChannels(engine)).not.toContain('D123');
+      expect(store.sheets.sessions.rows[0][14]).toBeFalsy();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test('Slack DM failure falls back to email and marks the reminder sent', () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date(2026, 2, 19, 8, 50, 0));
+    try {
+      const store = buildBaseStore();
+      addSlackBotConfig(store);
+      pushSession(store, {
+        start: new Date(2026, 2, 19, 8, 0, 0),
+        end: new Date(2026, 2, 19, 9, 0, 0)
+      });
+      const engine = createTestEngine(store);
+      engine.runtime.UrlFetchApp.fetch.mockImplementation((url) => ({
+        getContentText() {
+          if (String(url).includes('users.lookupByEmail')) {
+            return JSON.stringify({ ok: false });
+          }
+          return JSON.stringify({ ok: true });
+        }
+      }));
+
+      engine.sendReminders();
+
+      expect(engine.runtime.MailApp.sendEmail).toHaveBeenCalledWith(
+        'driver@example.com',
+        'EV Charging reminder',
+        expect.stringContaining('ends in 10 minutes')
+      );
+      expect(chatPostChannels(engine)).not.toContain('C123');
+      expect(store.sheets.sessions.rows[0][10]).toBe(true);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test('failed DM and failed email leaves reminder flag unset for retry', () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date(2026, 2, 19, 8, 50, 0));
+    try {
+      const store = buildBaseStore();
+      addSlackBotConfig(store);
+      pushSession(store, {
+        start: new Date(2026, 2, 19, 8, 0, 0),
+        end: new Date(2026, 2, 19, 9, 0, 0)
+      });
+      const engine = createTestEngine(store);
+      engine.runtime.UrlFetchApp.fetch.mockImplementation((url) => ({
+        getContentText() {
+          if (String(url).includes('users.lookupByEmail')) {
+            return JSON.stringify({ ok: false });
+          }
+          return JSON.stringify({ ok: true });
+        }
+      }));
+      engine.runtime.MailApp.sendEmail.mockImplementation(() => {
+        throw new Error('email unavailable');
+      });
+
+      engine.sendReminders();
+
+      expect(engine.runtime.MailApp.sendEmail).toHaveBeenCalled();
+      expect(chatPostChannels(engine)).not.toContain('C123');
+      expect(store.sheets.sessions.rows[0][10]).toBe(false);
     } finally {
       jest.useRealTimers();
     }
