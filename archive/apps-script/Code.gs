@@ -26,7 +26,10 @@ var APP_DEFAULTS = {
   walkupReturningWindowMinutes: 10,
   notificationCutoffHour: 19,
   sessionMinMinutes: 10,
-  forceEndOnCheckinEnabled: true
+  forceEndOnCheckinEnabled: true,
+  dmRemindersEnabled: true,
+  channelEscalationsEnabled: true,
+  notificationPublicEscalationTier: 'grace'
 };
 
 var SHEETS = {
@@ -1127,7 +1130,7 @@ function sendRemindersCore_() {
         }
         if (reminder10Enabled && !isTrue_(session.reminder_10_sent) && minutesToEnd <= 10 && minutesToEnd > 5) {
           if (
-            notifyChannel_(
+            notifyDriver_(
               buildReminderText_('tminus10', session, charger, endTime, now, sessionMoveGraceMinutes),
               session.user_id
             )
@@ -1137,7 +1140,7 @@ function sendRemindersCore_() {
         }
         if (reminder5Enabled && !isTrue_(session.reminder_5_sent) && minutesToEnd <= 5 && minutesToEnd > 0) {
           if (
-            notifyChannel_(
+            notifyDriver_(
               buildReminderText_('tminus5', session, charger, endTime, now, sessionMoveGraceMinutes),
               session.user_id
             )
@@ -1147,7 +1150,7 @@ function sendRemindersCore_() {
         }
         if (!isTrue_(session.reminder_0_sent) && minutesToEnd <= 0) {
           if (
-            notifyChannel_(
+            notifyDriver_(
               buildReminderText_('expire', session, charger, endTime, now, sessionMoveGraceMinutes),
               session.user_id
             )
@@ -1159,9 +1162,10 @@ function sendRemindersCore_() {
         if (isOverdue) {
           if (!session.grace_notified_at) {
             if (
-              notifyChannel_(
+              notifyEscalation_(
                 buildReminderText_('grace', session, charger, endTime, now, sessionMoveGraceMinutes),
-                session.user_id
+                session.user_id,
+                'grace'
               )
             ) {
               updates.grace_notified_at = now;
@@ -1183,9 +1187,10 @@ function sendRemindersCore_() {
           var lastSent = toDate_(session.overdue_last_sent_at);
           if (!lastSent || now.getTime() - lastSent.getTime() >= overdueRepeatMinutes * 60000) {
             if (
-              notifyChannel_(
+              notifyEscalation_(
                 buildReminderText_('overdue', session, charger, endTime, now, sessionMoveGraceMinutes),
-                session.user_id
+                session.user_id,
+                'overdue'
               )
             ) {
               updates.overdue_last_sent_at = now;
@@ -1221,7 +1226,7 @@ function sendRemindersCore_() {
         var resUpdates = {};
         if (!isTrue_(reservation.reminder_5_before_sent) && minutesToStart <= 5 && minutesToStart > 0) {
           if (
-            notifyChannel_(
+            notifyDriver_(
               buildReservationReminderText_('upcoming', reservation, charger, startTime, reservationConfig),
               reservation.user_id
             )
@@ -1235,7 +1240,7 @@ function sendRemindersCore_() {
           minutesSinceStart < reservationConfig.lateGraceMinutes
         ) {
           if (
-            notifyChannel_(
+            notifyDriver_(
               buildReservationReminderText_('late', reservation, charger, startTime, reservationConfig),
               reservation.user_id
             )
@@ -1553,14 +1558,15 @@ function forceEndOverdueSessionForCheckin_(chargerId, chargersData, sessionsData
   var appName = getAppName_(config);
   var chargerName = charger.name || 'Charger ' + charger.charger_id;
   var userDisplay = formatUserDisplay_(session.user_name, session.user_id);
-  notifyChannel_(
+  notifyEscalation_(
     appName +
       ': ' +
       userDisplay +
       "'s overdue session on " +
       chargerName +
       ' was automatically ended because the next reservation holder checked in.',
-    session.user_id
+    session.user_id,
+    'force_end'
   );
   return session;
 }
@@ -2020,6 +2026,20 @@ function getConfig_() {
   } else {
     config.force_end_on_checkin_enabled = APP_DEFAULTS.forceEndOnCheckinEnabled;
   }
+  config.dm_reminders_enabled = resolveConfigValue_(
+    config.dm_reminders_enabled,
+    props.getProperty('DM_REMINDERS_ENABLED'),
+    APP_DEFAULTS.dmRemindersEnabled
+  );
+  config.channel_escalations_enabled = resolveConfigValue_(
+    config.channel_escalations_enabled,
+    props.getProperty('CHANNEL_ESCALATIONS_ENABLED'),
+    APP_DEFAULTS.channelEscalationsEnabled
+  );
+  config.notification_public_escalation_tier =
+    config.notification_public_escalation_tier ||
+    props.getProperty('NOTIFICATION_PUBLIC_ESCALATION_TIER') ||
+    APP_DEFAULTS.notificationPublicEscalationTier;
   // Store in cross-request cache (5-min TTL)
   try {
     CacheService.getScriptCache().put('app_config', JSON.stringify(config), 300);
@@ -3250,7 +3270,7 @@ function markNoShowReservations_(now, reservationsData, chargersData, rawConfig)
       var charger = chargersById[String(reservation.charger_id)] || {};
       var chargerName = charger.name || 'Charger ' + reservation.charger_id;
       var releasedUser = formatUserDisplay_(reservation.user_name, reservation.user_id);
-      notifyChannel_(
+      notifyEscalation_(
         appName +
           ': ' +
           releasedUser +
@@ -3259,7 +3279,8 @@ function markNoShowReservations_(now, reservationsData, chargersData, rawConfig)
           ' was released (no-show after ' +
           config.lateGraceMinutes +
           ' minutes).',
-        reservation.user_id
+        reservation.user_id,
+        'no_show'
       );
     }
   });
@@ -3497,10 +3518,7 @@ function getSlackChannelMention_(config) {
 
 function notifyChannel_(text, email) {
   var config = getConfig_();
-  var cutoffHour = Number(config.notification_cutoff_hour);
-  if (isNaN(cutoffHour)) cutoffHour = APP_DEFAULTS.notificationCutoffHour;
-  var currentHour = new Date().getHours();
-  if (cutoffHour > 0 && currentHour >= cutoffHour) {
+  if (!isNotificationAllowed_(config)) {
     return false;
   }
   var sentSlack = false;
@@ -3545,6 +3563,70 @@ function notifyChannel_(text, email) {
     }
   }
   return sentSlack || sentEmail;
+}
+
+function notifyDriver_(text, email) {
+  var config = getConfig_();
+  if (!isNotificationAllowed_(config)) {
+    return false;
+  }
+  var sentSlack = false;
+  var sentEmail = false;
+  if (isTrueDefault_(config.dm_reminders_enabled, APP_DEFAULTS.dmRemindersEnabled) && config.slack_bot_token && email) {
+    try {
+      sendSlackDm_(config.slack_bot_token, email, text);
+      sentSlack = true;
+    } catch (err) {
+      logError_('Slack DM failed', err, { email: email });
+    }
+  }
+  if (!sentSlack && email) {
+    try {
+      MailApp.sendEmail(email, getAppName_(config) + ' reminder', text);
+      sentEmail = true;
+    } catch (err) {
+      logError_('Email notification failed', err, { email: email });
+    }
+  }
+  return sentSlack || sentEmail;
+}
+
+function notifyEscalation_(text, email, tier) {
+  var config = getConfig_();
+  if (!isTrueDefault_(config.channel_escalations_enabled, APP_DEFAULTS.channelEscalationsEnabled)) {
+    return false;
+  }
+  if (!isPublicEscalationTierEnabled_(config, tier)) {
+    return false;
+  }
+  return notifyChannel_(text, email);
+}
+
+function isNotificationAllowed_(config) {
+  var cutoffHour = Number(config.notification_cutoff_hour);
+  if (isNaN(cutoffHour)) cutoffHour = APP_DEFAULTS.notificationCutoffHour;
+  var currentHour = new Date().getHours();
+  return !(cutoffHour > 0 && currentHour >= cutoffHour);
+}
+
+function isPublicEscalationTierEnabled_(config, tier) {
+  var configured = String(config.notification_public_escalation_tier || APP_DEFAULTS.notificationPublicEscalationTier)
+    .toLowerCase()
+    .trim();
+  if (configured === 'none' || configured === 'off' || configured === 'false') {
+    return false;
+  }
+  if (configured === 'overdue') {
+    return tier === 'overdue' || tier === 'no_show' || tier === 'force_end';
+  }
+  return tier === 'grace' || tier === 'overdue' || tier === 'no_show' || tier === 'force_end';
+}
+
+function isTrueDefault_(value, defaultValue) {
+  if (value === '' || value === null || typeof value === 'undefined') {
+    return Boolean(defaultValue);
+  }
+  return isTrue_(value);
 }
 
 function sendSlackWebhook_(webhookUrl, text, channel) {
@@ -3592,7 +3674,7 @@ function sendSlackDm_(token, email, text) {
   if (!channelId) {
     throw new Error('Slack DM channel not created.');
   }
-  UrlFetchApp.fetch('https://slack.com/api/chat.postMessage', {
+  var response = UrlFetchApp.fetch('https://slack.com/api/chat.postMessage', {
     method: 'post',
     contentType: 'application/json',
     headers: {
@@ -3604,6 +3686,10 @@ function sendSlackDm_(token, email, text) {
     }),
     muteHttpExceptions: true
   });
+  var data = JSON.parse(response.getContentText() || '{}');
+  if (!data || data.ok !== true) {
+    throw new Error('Slack DM post failed.');
+  }
 }
 
 function lookupSlackUserId_(token, email) {
