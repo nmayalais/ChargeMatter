@@ -35,11 +35,16 @@ Run this sequence whenever invoked:
 
 3. Run local validation.
    - Prefer the repository's existing scripts. Common checks may include:
-     - `npm test`
-     - `npm run policy-check`
-     - `npm run cli -- seed`
-     - `npm run cli -- board`
+     - `TZ=America/Los_Angeles npm run test:legacy -- --runInBand`
+     - `cd web && npm test`
+     - `npm run lint`
+     - `node --check archive/cli/engine.js`
+     - `node --check` on an Apps Script `.js` temp copy of `archive/apps-script/Code.gs`
+     - `clasp status`
    - If dependencies are missing, report the missing prerequisite and the exact command needed. Do not install without approval.
+   - Match GitHub Actions, not just the local shell: root dependencies and `web/` dependencies are installed separately, and legacy policy tests must run in `America/Los_Angeles` because Apps Script calendar-day policy uses that timezone.
+   - If a PR exists, inspect GitHub Actions for both `pull_request` and `push` runs. Do not report done while checks are failing or still in progress.
+   - If CI fails, capture the failing command and log snippet, reproduce locally where possible (including `TZ=UTC` if the runner-only failure appears timezone-related), apply the smallest fix, push/update the branch, and re-check until GitHub checks are green or a credential blocker is explicit.
 
 4. Inspect for correctness bugs.
    - Search for recent TODO/FIXME/HACK notes.
@@ -81,6 +86,7 @@ When asked to fix issues, follow this order:
 3. Keep Apps Script changes compatible with `clasp` deployment.
 4. Update docs whenever the fix changes setup, deployment, config keys, triggers, or live architecture.
 5. Re-run the smallest meaningful validation suite before reporting done.
+6. For PR work, confirm GitHub Actions is green before reporting done; local pass alone is not enough.
 
 ## Report Template
 

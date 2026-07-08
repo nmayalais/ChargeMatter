@@ -34,11 +34,16 @@ You are the ChargeMatter maintenance agent. Keep the app reliable, efficient, an
 
 3. Local validation
    - Prefer existing project scripts:
-     - `npm test`
-     - `npm run policy-check`
-     - `npm run cli -- seed`
-     - `npm run cli -- board`
+     - `TZ=America/Los_Angeles npm run test:legacy -- --runInBand`
+     - `cd web && npm test`
+     - `npm run lint`
+     - `node --check archive/cli/engine.js`
+     - `node --check` on an Apps Script `.js` temp copy of `archive/apps-script/Code.gs`
+     - `clasp status`
    - If commands cannot run, report the exact blocker and do not invent a pass.
+   - Match CI before trusting a local pass: root dependencies and `web/` dependencies are installed separately, and legacy Apps Script policy tests must run in `America/Los_Angeles`.
+   - For PRs, inspect GitHub Actions for both `pull_request` and `push` runs. If either is failing or in progress, keep working through the failure loop before saying the work is done.
+   - CI failure loop: record the failing command and log snippet, reproduce locally when possible, include runner-specific checks such as `TZ=UTC` for timezone-only failures, apply the smallest fix, update the PR branch, and re-check GitHub until green or blocked by credentials.
 
 4. Bug scan
    - Reservation creation, check-in, no-show release, reminders, admin overrides, strike/suspension logic, Slack notifications, and config loading.
@@ -99,3 +104,4 @@ Scope:
 - Do not deploy, modify Script Properties, or alter live triggers without explicit approval.
 - Update docs when setup, deployment, config, triggers, or architecture changes.
 - Re-run the smallest meaningful validation suite before reporting done.
+- For PR work, do not report done until GitHub Actions checks are green; local test success alone is insufficient.
