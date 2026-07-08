@@ -81,6 +81,9 @@ Script Properties equivalents:
 - `RESERVATION_OPEN_MINUTE`
 - `WALKUP_NET_NEW_WINDOW_MINUTES`
 - `WALKUP_RETURNING_WINDOW_MINUTES`
+- `DM_REMINDERS_ENABLED` (optional, default `true`)
+- `CHANNEL_ESCALATIONS_ENABLED` (optional, default `true`)
+- `NOTIFICATION_PUBLIC_ESCALATION_TIER` (optional, default `grace`)
 
 ## 5) Slack setup (optional)
 ### Incoming webhook (cheapest)
@@ -94,6 +97,8 @@ Script Properties equivalents:
    - `chat:write`
 2. Install the app to your workspace.
 3. Copy the Bot User OAuth Token into `slack_bot_token`.
+
+Routine reminders use Slack DM first, then email fallback. They do not fall back to the public channel. Public channel posts remain for operational escalations such as grace/overdue, no-show release, and force-end-on-checkin.
 
 ## 6) Add reminder trigger
 Option A (recommended): run the helper function once.

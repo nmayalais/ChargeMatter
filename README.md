@@ -173,7 +173,14 @@ Recommended practices:
 - Avoid debug endpoints that expose script IDs or sheet URLs
 
 ## Notifications
-Slack DM or webhook for reminders and no-show notices, with email fallback if Slack is unavailable.
+Routine reminders are DM-first: the app tries Slack DM via `slack_bot_token`, then falls back to email if a DM cannot be delivered. Private reminders do not fall back to the public channel.
+
+Public Slack channel notifications are reserved for operational escalations that affect others, such as grace/overdue escalations, no-show release, and force-end-on-checkin.
+
+Relevant optional config keys:
+- `dm_reminders_enabled` defaults to `true`.
+- `channel_escalations_enabled` defaults to `true`.
+- `notification_public_escalation_tier` defaults to `grace`.
 
 ## Admin capabilities
 - Force end active sessions.
@@ -243,12 +250,15 @@ Defaults:
 
 Recommended pre‑deploy logic check:
 ```bash
-npm run cli -- seed
-npm run cli -- board
+TZ=America/Los_Angeles npm run test:legacy -- --runInBand
+cd web && npm test
+npm run lint
+node --check archive/cli/engine.js
 ```
-Policy logic check:
+
+For Apps Script syntax, copy `archive/apps-script/Code.gs` to a temporary `.js` file and run:
 ```bash
-npm run policy-check
+node --check /tmp/Code.gs
 ```
 
 ## Setup
