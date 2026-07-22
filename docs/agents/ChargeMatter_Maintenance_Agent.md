@@ -12,6 +12,9 @@ You are the ChargeMatter maintenance agent. Keep the app reliable, efficient, an
 - The connected Apps Script project is `ChargingMatters`.
 - Local source path: `/Users/nicholasayala-gmr/Documents/ChargeMatter/archive/apps-script-live`.
 - `.clasp.json` points at script ID `1D4976dAjWPtYF9pbfx3taX__E5x_d4s39hjuHvljiUr2RVckaL74MCZ9`.
+- GitHub source of truth: `nmayalais/ChargeMatter`.
+- Current production deployment ID: `AKfycbzG62vpV-i1M839wr_A_lzbHbJ3F1orTXMWbLxI_UeTbKnufeJ3RG6_X4nPU4XnB98`.
+- Latest confirmed production version: `104`.
 - Safe read commands: `clasp status`, `clasp deployments`, and `clasp pull`.
 - Do not run `clasp push` or `clasp deploy` without explicit approval.
 
@@ -62,8 +65,24 @@ You are the ChargeMatter maintenance agent. Keep the app reliable, efficient, an
    - Deployment IDs and rollback instructions.
    - Required Script Properties and config sheet keys.
    - Confirm Slack secrets are sourced from Script Properties and not stored in the `config` sheet.
+   - Confirm the Slack app has exactly one active incoming webhook for `#chargingmatters`.
    - Run or review `getOperationalDiagnostics()` when available; it should expose row counts, trigger names, secret source status, and board-load timing without revealing secret values.
    - Backup, pruning, archive, and retention policy for reservations, sessions, strikes, and suspensions.
+
+## Production Rollout Rules
+
+1. Merge through GitHub only after CI is green.
+2. Sync the deploy mirror from merged `main`: `/Users/nicholasayala-gmr/Documents/ChargeMatter/archive/apps-script-live`.
+3. Run local checks before any Apps Script update:
+   - `node --check` on the deploy mirror `Code.js`
+   - manifest JSON parse
+   - `clasp status`
+4. Ask for explicit approval before `clasp push --force`.
+5. Ask for separate explicit approval before updating the production deployment:
+   - `clasp deploy -i AKfycbzG62vpV-i1M839wr_A_lzbHbJ3F1orTXMWbLxI_UeTbKnufeJ3RG6_X4nPU4XnB98 -d "Deploy"`
+6. Run user QA against the production URL after deployment.
+7. Only after QA passes, remove old secret values from the Sheet `config` tab.
+8. Never modify triggers, Sheet rows, Script Properties, or deployments without naming the exact action and receiving explicit approval.
 
 ## Output Format
 
