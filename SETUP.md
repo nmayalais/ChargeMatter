@@ -82,8 +82,10 @@ Script Properties equivalents:
 ## 5) Slack setup (optional)
 ### Incoming webhook (cheapest)
 1. Create a Slack app with an Incoming Webhook.
-2. Store the webhook URL in Script Properties as `SLACK_WEBHOOK_URL`.
-3. Do not store webhook URLs in the `config` sheet.
+2. Use one active webhook for the production channel `#chargingmatters`.
+3. Store the webhook URL in Apps Script Script Properties as `SLACK_WEBHOOK_URL`.
+4. Delete old duplicate webhooks only after the new Script Property is saved and the app has been verified.
+5. Do not store webhook URLs in the `config` sheet.
 
 ### Slack DM (preferred)
 1. Create a Slack app with OAuth scopes:
@@ -93,6 +95,15 @@ Script Properties equivalents:
 2. Install the app to your workspace.
 3. Store the Bot User OAuth Token in Script Properties as `SLACK_BOT_TOKEN`.
 4. Do not store bot tokens in the `config` sheet.
+
+After Script Properties are saved and production QA passes, remove any legacy secret values from the Sheet `config` tab:
+- `slack_webhook_url`
+- `slack_bot_token`
+
+Keep non-secret Slack values in the Sheet if they are useful:
+- `slack_channel_name`
+- `slack_channel_url`
+- `slack_webhook_channel`
 
 ## 6) Add reminder trigger
 Option A (recommended): run the helper function once.
@@ -114,7 +125,10 @@ Option B (manual):
 ## 7.5) Optional: use clasp for faster updates
 1. Install clasp and log in (`npm i -g @google/clasp`, `clasp login`).
 2. Create a local `.clasp.json` with your Apps Script `scriptId` and `rootDir: "apps-script"`.
-3. Keep `.clasp.json` out of git (it contains identifiers) and run `clasp push` to sync changes.
+3. Keep `.clasp.json` out of git (it contains identifiers).
+4. Run `clasp status` before any push.
+5. Use `clasp push --force` when manifest changes are intentional, such as OAuth scope updates.
+6. Use a separate explicit approval for `clasp deploy`; pushing source does not update the production deployment URL.
 
 ## UI modes
 The app has two modes:

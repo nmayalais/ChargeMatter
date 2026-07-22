@@ -172,6 +172,11 @@ Recommended practices:
 - Review `git status` before pushing
 - Avoid debug endpoints that expose script IDs or sheet URLs
 - Run `getOperationalDiagnostics()` as an admin when checking production health. It reports row counts, trigger names, Slack secret source status, and latest board-load timing without returning secret values.
+- Store Slack secrets in Apps Script Script Properties:
+  - `SLACK_WEBHOOK_URL`
+  - `SLACK_BOT_TOKEN`
+- Keep only non-secret Slack config in the Sheet, such as `slack_channel_name`, `slack_channel_url`, and optional `slack_webhook_channel`.
+- Keep exactly one active Slack incoming webhook for the production channel `#chargingmatters`; remove old duplicate hooks after Script Properties are verified.
 
 ## Notifications
 Slack DM or webhook for reminders and no-show notices, with email fallback if Slack is unavailable.
@@ -212,6 +217,21 @@ webApp --> reminders[TimeDrivenTrigger]
 ## Deployment
 Apps Script web app deployed within the Google Workspace domain. The reminder trigger runs `sendReminders()` periodically (recommended every 5 minutes).
 Before any recommended push to production, run routine backend logic checks using the CLI to validate core flows (sessions, reservations, reminders).
+
+Current production deployment:
+- Apps Script project ID: `1D4976dAjWPtYF9pbfx3taX__E5x_d4s39hjuHvljiUr2RVckaL74MCZ9`
+- Production deployment ID: `AKfycbzG62vpV-i1M839wr_A_lzbHbJ3F1orTXMWbLxI_UeTbKnufeJ3RG6_X4nPU4XnB98`
+- Latest confirmed production version: `104`
+- Production URL: `https://script.google.com/a/macros/graymatter-robotics.com/s/AKfycbzG62vpV-i1M839wr_A_lzbHbJ3F1orTXMWbLxI_UeTbKnufeJ3RG6_X4nPU4XnB98/exec`
+
+Production rollout checklist:
+1. Merge through GitHub only after CI is green.
+2. Sync `/Users/nicholasayala-gmr/Documents/ChargeMatter/archive/apps-script-live` from the merged Apps Script source.
+3. Run `node --check` on the deploy mirror and `clasp status`.
+4. Get explicit approval before `clasp push --force`.
+5. Get separate explicit approval before `clasp deploy -i AKfycbzG62vpV-i1M839wr_A_lzbHbJ3F1orTXMWbLxI_UeTbKnufeJ3RG6_X4nPU4XnB98 -d "Deploy"`.
+6. Run user QA against the production URL.
+7. Only after QA passes, clean old secret values from the Sheet `config` tab.
 
 ## CLI (local backend mirror)
 The CLI runs the same backend rules as `apps-script/Code.gs`, backed by a local JSON store. This makes it easy to test reservation/session logic without Google Apps Script.
