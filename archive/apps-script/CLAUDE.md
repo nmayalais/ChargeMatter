@@ -121,6 +121,7 @@ Uses [clasp](https://github.com/google/clasp). Config is in `.clasp.json` (git-i
 **WARNING:** `appsscript.json` MUST contain the `"webapp"` property. Without it, `clasp deploy` creates a Library deployment instead of a Web App, removing the web app URL. Never delete this property.
 
 **Safe deployment workflow:**
+- Before deployment, run `TZ=America/Los_Angeles npm run test:legacy -- --runInBand`, `cd web && npm test`, `npm run lint`, `node --check archive/cli/engine.js`, and `node --check` against a temporary `.js` copy of `archive/apps-script/Code.gs`.
 - `clasp push` — sync code only (safe, no deployment change)
 - `clasp deploy -i <DEPLOYMENT_ID> -d "message"` — update existing deployment (requires `"webapp"` in manifest)
 - **Never run `clasp deploy` without `-i`** — this creates a new deployment instead of updating the existing one

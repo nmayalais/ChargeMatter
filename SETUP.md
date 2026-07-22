@@ -78,6 +78,9 @@ Script Properties equivalents:
 - `RESERVATION_OPEN_MINUTE`
 - `WALKUP_NET_NEW_WINDOW_MINUTES`
 - `WALKUP_RETURNING_WINDOW_MINUTES`
+- `DM_REMINDERS_ENABLED` (optional, default `true`)
+- `CHANNEL_ESCALATIONS_ENABLED` (optional, default `true`)
+- `NOTIFICATION_PUBLIC_ESCALATION_TIER` (optional, default `grace`)
 
 ## 5) Slack setup (optional)
 ### Incoming webhook (cheapest)
@@ -104,6 +107,8 @@ Keep non-secret Slack values in the Sheet if they are useful:
 - `slack_channel_name`
 - `slack_channel_url`
 - `slack_webhook_channel`
+
+Routine reminders use Slack DM first, then email fallback. They do not fall back to the public channel. Public channel posts remain for operational escalations such as grace/overdue, no-show release, and force-end-on-checkin.
 
 ## 6) Add reminder trigger
 Option A (recommended): run the helper function once.
