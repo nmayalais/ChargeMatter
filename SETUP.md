@@ -28,7 +28,7 @@ This MVP runs on Google Apps Script + Google Sheets with optional Slack notifica
 This creates these tabs: `chargers`, `sessions`, `config`, `reservations`.
 
 ## 4) Configure settings
-Use the `config` tab (key/value pairs) or Script Properties.
+Use the `config` tab (key/value pairs) for non-secret settings. Use Script Properties for secrets and identifiers.
 
 Recommended keys:
 - `allowed_domain`: `example.com`
@@ -40,9 +40,6 @@ Recommended keys:
 - `ui_v2_allowlist`: comma-separated emails for v2 access
 - `overdue_repeat_minutes`: `15`
 - `session_move_grace_minutes`: `10`
-- `slack_webhook_url`: webhook URL for a channel (optional)
-- `slack_webhook_channel`: channel override (optional)
-- `slack_bot_token`: Slack bot token for DMs (optional)
 - `reservation_advance_days`: `7`
 - `reservation_max_upcoming`: `3`
 - `reservation_max_per_day`: `1`
@@ -85,7 +82,8 @@ Script Properties equivalents:
 ## 5) Slack setup (optional)
 ### Incoming webhook (cheapest)
 1. Create a Slack app with an Incoming Webhook.
-2. Copy the webhook URL into `slack_webhook_url`.
+2. Store the webhook URL in Script Properties as `SLACK_WEBHOOK_URL`.
+3. Do not store webhook URLs in the `config` sheet.
 
 ### Slack DM (preferred)
 1. Create a Slack app with OAuth scopes:
@@ -93,7 +91,8 @@ Script Properties equivalents:
    - `conversations:write`
    - `chat:write`
 2. Install the app to your workspace.
-3. Copy the Bot User OAuth Token into `slack_bot_token`.
+3. Store the Bot User OAuth Token in Script Properties as `SLACK_BOT_TOKEN`.
+4. Do not store bot tokens in the `config` sheet.
 
 ## 6) Add reminder trigger
 Option A (recommended): run the helper function once.
@@ -134,6 +133,7 @@ On mobile, the mode switch appears as a bottom tab bar and a sticky action bar f
 Admins are defined by `admin_emails`. Admins will see:
 - **Force end** to stop an active session
 - **Reset charger** to clear stuck sessions
+- `getOperationalDiagnostics()` in Apps Script for row counts, trigger names, Slack secret source status, and latest board-load timing. It returns status only, not secret values.
 
 Standard users can tap **Notify owner** on in-use or overdue chargers.
 

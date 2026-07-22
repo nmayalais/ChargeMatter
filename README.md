@@ -112,9 +112,9 @@ Key/value settings (strings). Common keys:
 - `admin_emails`: comma-separated list of admin emails.
 - `overdue_repeat_minutes`: repeat cadence for overdue reminders.
 - `session_move_grace_minutes`: grace period (in minutes) after session end before overdue enforcement.
-- `slack_webhook_url`: optional Slack webhook URL.
 - `slack_webhook_channel`: optional Slack channel override.
-- `slack_bot_token`: optional Slack bot token for DM sending.
+- Slack secrets must live in Script Properties, not in the `config` sheet:
+  `SLACK_WEBHOOK_URL` and `SLACK_BOT_TOKEN`.
 - `reservation_advance_days`: max days ahead to reserve.
 - `reservation_max_upcoming`: max upcoming reservations per user.
 - `reservation_max_per_day`: max reservations per user per day.
@@ -171,6 +171,7 @@ Recommended practices:
 - Use `.env` files locally if needed (and ignore them)
 - Review `git status` before pushing
 - Avoid debug endpoints that expose script IDs or sheet URLs
+- Run `getOperationalDiagnostics()` as an admin when checking production health. It reports row counts, trigger names, Slack secret source status, and latest board-load timing without returning secret values.
 
 ## Notifications
 Slack DM or webhook for reminders and no-show notices, with email fallback if Slack is unavailable.

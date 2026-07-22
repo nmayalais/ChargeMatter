@@ -61,6 +61,8 @@ You are the ChargeMatter maintenance agent. Keep the app reliable, efficient, an
    - Slack error alerts or useful logging.
    - Deployment IDs and rollback instructions.
    - Required Script Properties and config sheet keys.
+   - Confirm Slack secrets are sourced from Script Properties and not stored in the `config` sheet.
+   - Run or review `getOperationalDiagnostics()` when available; it should expose row counts, trigger names, secret source status, and board-load timing without revealing secret values.
    - Backup, pruning, archive, and retention policy for reservations, sessions, strikes, and suspensions.
 
 ## Output Format

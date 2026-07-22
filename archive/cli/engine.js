@@ -121,6 +121,11 @@ function createEngine(options) {
     notificationPublicEscalationTier: 'grace'
   };
 
+  var BOARD_LOAD_LIMITS = {
+    sessions: 500,
+    reservations: 1000
+  };
+
   var SHEETS = {
     chargers: 'chargers',
     sessions: 'sessions',
@@ -139,21 +144,32 @@ function createEngine(options) {
   }
 
   function getBoardData() {
-    initSheets_();
+    var timing = createTiming_('getBoardData');
     var auth = requireAuthorizedUser_();
+    markTiming_(timing, 'auth');
     var now = new Date();
-    var chargersData = getSheetData_(SHEETS.chargers, CHARGERS_HEADERS);
-    var sessionsData = getSheetData_(SHEETS.sessions, SESSIONS_HEADERS);
-    var reservationsData = getSheetData_(SHEETS.reservations, RESERVATIONS_HEADERS);
-    var suspensionsData = getSheetData_(SHEETS.suspensions, SUSPENSIONS_HEADERS);
-    return buildBoardResponse_({
+    var config = getConfig_();
+    markTiming_(timing, 'config');
+    var chargersData = getSheetDataReadOnly_(SHEETS.chargers, CHARGERS_HEADERS);
+    markTiming_(timing, 'chargers');
+    var sessionsData = getBoardSessionsData_(now, auth.email);
+    markTiming_(timing, 'sessions');
+    var reservationsData = getBoardReservationsData_(now, auth.email, config);
+    markTiming_(timing, 'reservations');
+    var suspensionsData = getBoardSuspensionsData_(auth.email);
+    markTiming_(timing, 'suspensions');
+    var response = buildBoardResponse_({
       auth: auth,
       now: now,
+      config: config,
       chargersData: chargersData,
       sessionsData: sessionsData,
       reservationsData: reservationsData,
       suspensionsData: suspensionsData
     });
+    markTiming_(timing, 'response');
+    finishTiming_(timing);
+    return response;
   }
 
   function buildBoardResponse_(opts) {
@@ -198,6 +214,65 @@ function createEngine(options) {
         walkupNetNewWindowMinutes: board.walkupNetNewWindowMinutes,
         walkupReturningWindowMinutes: board.walkupReturningWindowMinutes
       }
+    };
+  }
+
+  function getBoardSessionsData_(now, userEmail) {
+    var todayStart = startOfDay_(now);
+    var data = getSheetDataReadOnly_(SHEETS.sessions, SESSIONS_HEADERS, {
+      recentRowLimit: BOARD_LOAD_LIMITS.sessions
+    });
+    var rows = data.rows.filter(function (session) {
+      if (!isComplete_(session)) {
+        return true;
+      }
+      if (normalizeEmail_(session.user_id) !== normalizeEmail_(userEmail)) {
+        return false;
+      }
+      var endedAt = asDate_(session.ended_at) || asDate_(session.end_time);
+      return endedAt && endedAt >= todayStart;
+    });
+    return cloneSheetDataWithRows_(data, rows);
+  }
+
+  function getBoardReservationsData_(now, userEmail, config) {
+    var todayStart = startOfDay_(now);
+    var reservationConfig = getReservationConfig_(config || getConfig_());
+    var lookbackMs = Math.max(Number(reservationConfig.lateGraceMinutes) || 0, 60) * 60 * 1000;
+    var operationalStart = new Date(todayStart.getTime() - lookbackMs);
+    var data = getSheetDataReadOnly_(SHEETS.reservations, RESERVATIONS_HEADERS, {
+      recentRowLimit: BOARD_LOAD_LIMITS.reservations
+    });
+    var normalizedUser = normalizeEmail_(userEmail);
+    var rows = data.rows.filter(function (reservation) {
+      var start = asDate_(reservation.start_time);
+      var end = asDate_(reservation.end_time);
+      var isCurrentUser = normalizeEmail_(reservation.user_id) === normalizedUser;
+      if (isCurrentUser && start && start >= todayStart) {
+        return true;
+      }
+      if (isCurrentUser && end && end >= operationalStart) {
+        return true;
+      }
+      return isReservableActive_(reservation) && end && end >= operationalStart;
+    });
+    return cloneSheetDataWithRows_(data, rows);
+  }
+
+  function getBoardSuspensionsData_(userEmail) {
+    var data = getSheetDataReadOnly_(SHEETS.suspensions, SUSPENSIONS_HEADERS);
+    var normalizedUser = normalizeEmail_(userEmail);
+    var rows = data.rows.filter(function (suspension) {
+      return normalizeEmail_(suspension.user_id) === normalizedUser && isActive_(suspension.active);
+    });
+    return cloneSheetDataWithRows_(data, rows);
+  }
+
+  function cloneSheetDataWithRows_(data, rows) {
+    return {
+      sheet: data.sheet,
+      headerMap: data.headerMap,
+      rows: rows
     };
   }
 
@@ -1271,6 +1346,50 @@ function createEngine(options) {
     initSheets_();
   }
 
+  function getOperationalDiagnostics() {
+    var auth = requireAuthorizedUser_();
+    assertAdmin_(auth);
+    var props = PropertiesService.getScriptProperties();
+    var config = getConfig_();
+    var rowCounts = {};
+    Object.keys(SHEETS).forEach(function (key) {
+      var sheetName = SHEETS[key];
+      var sheet = getSheet_(sheetName);
+      rowCounts[sheetName] = Math.max(sheet.getLastRow() - 1, 0);
+    });
+    var triggers = ScriptApp.getProjectTriggers().map(function (trigger) {
+      return {
+        handlerFunction: trigger.getHandlerFunction ? trigger.getHandlerFunction() : '',
+        eventType: trigger.getEventType ? String(trigger.getEventType()) : ''
+      };
+    });
+    var lastBoardTiming = '';
+    try {
+      lastBoardTiming = CacheService.getScriptCache().get('last_board_timing') || '';
+    } catch (e) {}
+    return {
+      generatedAt: new Date().toISOString(),
+      rowCounts: rowCounts,
+      triggers: triggers,
+      configSources: {
+        slackBotToken: getConfigSourceStatus_(props.getProperty('SLACK_BOT_TOKEN'), config.slack_bot_token),
+        slackWebhookUrl: getConfigSourceStatus_(props.getProperty('SLACK_WEBHOOK_URL'), config.slack_webhook_url),
+        spreadsheetId: props.getProperty('SPREADSHEET_ID') ? 'script_property' : 'missing'
+      },
+      lastBoardTiming: lastBoardTiming ? JSON.parse(lastBoardTiming) : null
+    };
+  }
+
+  function getConfigSourceStatus_(scriptPropertyValue, resolvedValue) {
+    if (scriptPropertyValue) {
+      return 'script_property';
+    }
+    if (resolvedValue) {
+      return 'sheet_or_default';
+    }
+    return 'missing';
+  }
+
   function installReminderTrigger() {
     installReminderTrigger_(5);
   }
@@ -1795,17 +1914,36 @@ function createEngine(options) {
     };
   }
 
-  function getSheetData_(name, expectedHeaders) {
+  function getSheetData_(name, expectedHeaders, options) {
+    return getSheetDataInternal_(name, expectedHeaders, options, true);
+  }
+
+  function getSheetDataReadOnly_(name, expectedHeaders, options) {
+    return getSheetDataInternal_(name, expectedHeaders, options, false);
+  }
+
+  function getSheetDataInternal_(name, expectedHeaders, options, repairHeaders) {
+    options = options || {};
     var sheet = getSheet_(name);
-    var headerMap = ensureHeaders_(sheet, expectedHeaders);
+    var headerMap = repairHeaders ? ensureHeaders_(sheet, expectedHeaders) : readHeaderMap_(sheet);
     var lastRow = sheet.getLastRow();
-    var lastColumn = sheet.getLastColumn();
     if (lastRow < 2) {
       return { sheet: sheet, headerMap: headerMap, rows: [] };
     }
-    var values = sheet.getRange(2, 1, lastRow - 1, lastColumn).getValues();
+    var readColumnCount = getReadColumnCount_(sheet, headerMap, expectedHeaders);
+    if (readColumnCount < 1) {
+      return { sheet: sheet, headerMap: headerMap, rows: [] };
+    }
+    var startRow = 2;
+    var rowCount = lastRow - 1;
+    var recentRowLimit = parseInt(options.recentRowLimit, 10);
+    if (!isNaN(recentRowLimit) && recentRowLimit > 0 && rowCount > recentRowLimit) {
+      startRow = lastRow - recentRowLimit + 1;
+      rowCount = recentRowLimit;
+    }
+    var values = sheet.getRange(startRow, 1, rowCount, readColumnCount).getValues();
     var rows = values.map(function (row, index) {
-      var obj = { _row: index + 2 };
+      var obj = { _row: startRow + index };
       expectedHeaders.forEach(function (header) {
         var col = headerMap[header];
         obj[header] = col ? row[col - 1] : '';
@@ -1813,6 +1951,31 @@ function createEngine(options) {
       return obj;
     });
     return { sheet: sheet, headerMap: headerMap, rows: rows };
+  }
+
+  function readHeaderMap_(sheet) {
+    var lastColumn = sheet.getLastColumn();
+    if (lastColumn === 0) {
+      return {};
+    }
+    var headerRow = sheet.getRange(1, 1, 1, lastColumn).getValues()[0];
+    var headerMap = {};
+    headerRow.forEach(function (header, index) {
+      if (header) {
+        headerMap[header] = index + 1;
+      }
+    });
+    return headerMap;
+  }
+
+  function getReadColumnCount_(sheet, headerMap, expectedHeaders) {
+    var maxExpectedColumn = 0;
+    expectedHeaders.forEach(function (header) {
+      if (headerMap[header] && headerMap[header] > maxExpectedColumn) {
+        maxExpectedColumn = headerMap[header];
+      }
+    });
+    return maxExpectedColumn || sheet.getLastColumn();
   }
 
   function ensureHeaders_(sheet, expectedHeaders) {
@@ -1963,9 +2126,9 @@ function createEngine(options) {
       config.slack_channel_name || props.getProperty('SLACK_CHANNEL_NAME') || APP_DEFAULTS.slackChannelName;
     config.slack_channel_url =
       config.slack_channel_url || props.getProperty('SLACK_CHANNEL_URL') || APP_DEFAULTS.slackChannelUrl;
-    config.slack_webhook_url = config.slack_webhook_url || props.getProperty('SLACK_WEBHOOK_URL') || '';
-    config.slack_webhook_channel = config.slack_webhook_channel || props.getProperty('SLACK_WEBHOOK_CHANNEL') || '';
-    config.slack_bot_token = config.slack_bot_token || props.getProperty('SLACK_BOT_TOKEN') || '';
+    config.slack_webhook_url = props.getProperty('SLACK_WEBHOOK_URL') || config.slack_webhook_url || '';
+    config.slack_webhook_channel = props.getProperty('SLACK_WEBHOOK_CHANNEL') || config.slack_webhook_channel || '';
+    config.slack_bot_token = props.getProperty('SLACK_BOT_TOKEN') || config.slack_bot_token || '';
     config.admin_emails = config.admin_emails || props.getProperty('ADMIN_EMAILS') || '';
     config.overdue_repeat_minutes =
       config.overdue_repeat_minutes || props.getProperty('OVERDUE_REPEAT_MINUTES') || APP_DEFAULTS.overdueRepeatMinutes;
@@ -2112,8 +2275,16 @@ function createEngine(options) {
       .join(' ');
   }
 
+  function normalizeEmail_(email) {
+    return String(email || '').trim().toLowerCase();
+  }
+
   function addMinutes_(date, minutes) {
     return new Date(date.getTime() + minutes * 60000);
+  }
+
+  function asDate_(value) {
+    return toDate_(value);
   }
 
   function toDate_(value) {
@@ -3728,6 +3899,43 @@ function createEngine(options) {
     Logger.log(message + (detail ? ' :: ' + detail : '') + (payload ? ' :: ' + payload : ''));
   }
 
+  function createTiming_(name) {
+    var now = new Date().getTime();
+    return {
+      name: name,
+      startedAt: now,
+      lastAt: now,
+      marks: []
+    };
+  }
+
+  function markTiming_(timing, label) {
+    if (!timing) return;
+    var now = new Date().getTime();
+    timing.marks.push({
+      label: label,
+      stepMs: now - timing.lastAt,
+      totalMs: now - timing.startedAt
+    });
+    timing.lastAt = now;
+  }
+
+  function finishTiming_(timing) {
+    if (!timing) return;
+    markTiming_(timing, 'done');
+    var summary = {
+      name: timing.name,
+      totalMs: timing.marks.length ? timing.marks[timing.marks.length - 1].totalMs : 0,
+      marks: timing.marks
+    };
+    Logger.log('timing :: ' + JSON.stringify(summary));
+    if (timing.name === 'getBoardData') {
+      try {
+        CacheService.getScriptCache().put('last_board_timing', JSON.stringify(summary), 21600);
+      } catch (e) {}
+    }
+  }
+
   function runWithRetries_(fn, label) {
     var maxAttempts = 3;
     var baseDelayMs = 1000;
@@ -3789,6 +3997,7 @@ function createEngine(options) {
     include,
     doGet,
     initSheets,
+    getOperationalDiagnostics,
     getBoardData,
     startSession,
     createReservation,
